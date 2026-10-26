@@ -1,0 +1,16 @@
+{
+  "name": "ai-office",
+  "owner": {
+    "name": "Alex Ojeda Copa",
+    "url": "https://github.com/alex-roc"
+  },
+  "plugins": [
+    {
+      "name": "ai-office",
+      "source": "./",
+      "description": "Visor y editor de tu arquitectura de agentes en Claude Code.",
+      "version": "0.1.0"
+    }
+  ],
+  "description": "Herramientas para auditar y editar tu propia configuración de Claude Code."
+}

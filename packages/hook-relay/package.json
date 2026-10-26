@@ -1,0 +1,9 @@
+{
+  "name": "@ai-office/hook-relay",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "ai-office-hook": "./bin/ai-office-hook.mjs"
+  }
+}

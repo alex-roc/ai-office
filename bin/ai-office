@@ -1,0 +1,12 @@
+#!/usr/bin/env node
+// Punto de entrada cuando ai-office se instala como plugin: el directorio `bin/` del plugin
+// entra en el PATH de la herramienta Bash, así que `ai-office` queda disponible sin instalar nada.
+import { fileURLToPath } from 'node:url'
+import { dirname, join } from 'node:path'
+import { spawn } from 'node:child_process'
+
+const here = dirname(fileURLToPath(import.meta.url))
+const cli = join(here, '..', 'packages', 'cli', 'src', 'index.ts')
+spawn(process.execPath, [cli, ...process.argv.slice(2)], { stdio: 'inherit' }).on('exit', (code) => {
+  process.exit(code ?? 0)
+})

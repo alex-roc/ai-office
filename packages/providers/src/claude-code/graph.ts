@@ -1,0 +1,203 @@
+import type { Agent, Catalog, Command, Edge, EdgeEvidence, Skill } from '@ai-office/core'
+
+/**
+ * Extrae el grafo que ya está escrito en los archivos, casi siempre en prosa.
+ *
+ * Hallazgo que motiva este módulo: los agentes citan skills en el cuerpo de su prompt
+ * ("antes de trabajar, lee tal skill"), los comandos nombran a los agentes que convocan,
+ * y algunas skills declaran su clientela. Nada de eso es un campo estructurado, así que
+ * ninguna herramienta lo ve. Aquí se recupera, con la línea y el texto que lo justifican.
+ */
+
+/** Frontera de token que admite guiones dentro del nombre: `release-tools` no casa dentro de `x-release-tools-y`. */
+const mentionRegex = (name: string): RegExp =>
+  new RegExp(
+    `(?<![A-Za-z0-9_-])${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![A-Za-z0-9_-])`,
+    'g',
+  )
+
+interface Mention {
+  line: number
+  excerpt: string
+  /** La mención va entre backticks o dentro de una ruta: intención inequívoca. */
+  explicit: boolean
+}
+
+/** Busca menciones de `name` en `text`, ignorando las que están dentro de un bloque de código. */
+const findMentions = (text: string, name: string): Mention[] => {
+  const out: Mention[] = []
+  const lines = text.split('\n')
+  const re = mentionRegex(name)
+  let inFence = false
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i] ?? ''
+    if (/^\s*```/.test(line)) {
+      inFence = !inFence
+      continue
+    }
+    if (inFence) continue
+    re.lastIndex = 0
+    const m = re.exec(line)
+    if (!m) continue
+    const idx = m.index
+    const around = line.slice(Math.max(0, idx - 2), idx + name.length + 2)
+    const explicit =
+      /`/.test(around) || line.includes(`skills/${name}`) || line.includes(`/${name}/SKILL.md`)
+    out.push({
+      line: i + 1,
+      excerpt: line.trim().slice(0, 180),
+      explicit,
+    })
+  }
+  return out
+}
+
+/** `bodyStartLine - 1` convierte una línea del cuerpo en la línea real del archivo. */
+const evidenceFrom = (path: string, mentions: Mention[], bodyStartLine: number): EdgeEvidence[] =>
+  mentions.slice(0, 3).map((m) => ({
+    path,
+    line: m.line + bodyStartLine - 1,
+    excerpt: m.excerpt,
+  }))
+
+/**
+ * Aristas agente→skill.
+ * - `preloaded`: campo `skills:` del frontmatter. Carga el contenido completo siempre.
+ * - `declared`: citada en la prosa del cuerpo. Depende de que el modelo obedezca la frase.
+ */
+export const agentSkillEdges = (agents: Agent[], skills: Skill[]): Edge[] => {
+  const edges: Edge[] = []
+  const byName = new Map(skills.map((s) => [s.name, s]))
+
+  for (const agent of agents) {
+    for (const skillName of agent.preloadedSkills) {
+      const skill = byName.get(skillName)
+      edges.push({
+        from: agent.id,
+        to: skill?.id ?? `skill:claude-code/user/${skillName}`,
+        kind: 'agent-uses-skill',
+        layer: 'preloaded',
+        dangling: !skill,
+        evidence: [{ path: agent.source.realPath, field: 'skills', excerpt: skillName }],
+      })
+    }
+    const preloaded = new Set(agent.preloadedSkills)
+    for (const skill of skills) {
+      if (preloaded.has(skill.name)) continue
+      const mentions = findMentions(agent.body, skill.name)
+      if (mentions.length === 0) continue
+      // Una mención suelta y no explícita es demasiado débil para afirmar una relación.
+      if (mentions.length === 1 && !mentions[0]?.explicit) continue
+      edges.push({
+        from: agent.id,
+        to: skill.id,
+        kind: 'agent-uses-skill',
+        layer: 'declared',
+        evidence: evidenceFrom(agent.source.realPath, mentions, agent.bodyStartLine),
+      })
+    }
+  }
+  return edges
+}
+
+/** Aristas comando→agente y comando→skill: el reparto que cada slash command convoca. */
+export const commandEdges = (commands: Command[], agents: Agent[], skills: Skill[]): Edge[] => {
+  const edges: Edge[] = []
+  for (const cmd of commands) {
+    for (const agent of agents) {
+      const mentions = findMentions(cmd.body, agent.name)
+      if (mentions.length === 0) continue
+      edges.push({
+        from: cmd.id,
+        to: agent.id,
+        kind: 'command-invokes-agent',
+        layer: 'declared',
+        evidence: evidenceFrom(cmd.source.realPath, mentions, cmd.bodyStartLine),
+      })
+    }
+    for (const skill of skills) {
+      const mentions = findMentions(cmd.body, skill.name)
+      if (mentions.length === 0) continue
+      if (mentions.length === 1 && !mentions[0]?.explicit) continue
+      edges.push({
+        from: cmd.id,
+        to: skill.id,
+        kind: 'command-invokes-skill',
+        layer: 'declared',
+        evidence: evidenceFrom(cmd.source.realPath, mentions, cmd.bodyStartLine),
+      })
+    }
+  }
+  return edges
+}
+
+/** Aristas skill→agente: la clientela que una skill declara en su propia description o cuerpo. */
+export const skillClientEdges = (skills: Skill[], agents: Agent[]): Edge[] => {
+  const edges: Edge[] = []
+  for (const skill of skills) {
+    const haystack = `${skill.description}\n${skill.body}`
+    for (const agent of agents) {
+      const mentions = findMentions(haystack, agent.name)
+      if (mentions.length === 0) continue
+      edges.push({
+        from: skill.id,
+        to: agent.id,
+        kind: 'skill-declares-client',
+        layer: 'declared',
+        evidence: mentions
+          .slice(0, 3)
+          .map((m) => ({ path: skill.source.realPath, excerpt: m.excerpt })),
+      })
+    }
+  }
+  return edges
+}
+
+/** Aristas agente→agente: delegación declarada en la prosa. */
+export const agentDelegationEdges = (agents: Agent[]): Edge[] => {
+  const edges: Edge[] = []
+  for (const from of agents) {
+    for (const to of agents) {
+      if (from.id === to.id) continue
+      const mentions = findMentions(from.body, to.name)
+      if (mentions.length === 0) continue
+      edges.push({
+        from: from.id,
+        to: to.id,
+        kind: 'agent-delegates-agent',
+        layer: 'declared',
+        evidence: evidenceFrom(from.source.realPath, mentions, from.bodyStartLine),
+      })
+    }
+  }
+  return edges
+}
+
+/** Aristas agente→tool y agente→servidor MCP, del frontmatter. */
+export const agentToolEdges = (agents: Agent[]): Edge[] => {
+  const edges: Edge[] = []
+  for (const agent of agents) {
+    for (const tool of agent.tools ?? []) {
+      const isMcp = tool.startsWith('mcp__')
+      edges.push({
+        from: agent.id,
+        to: isMcp
+          ? `mcp:claude-code/user/${tool.split('__')[1] ?? tool}`
+          : `tool:claude-code/builtin/${tool}`,
+        kind: isMcp ? 'agent-uses-mcp' : 'agent-has-tool',
+        layer: 'declared',
+        evidence: [{ path: agent.source.realPath, field: 'tools', excerpt: tool }],
+      })
+    }
+  }
+  return edges
+}
+
+/** El grafo declarado completo: todo lo que los archivos afirman que debería pasar. */
+export const buildDeclaredGraph = (catalog: Catalog): Edge[] => [
+  ...agentSkillEdges(catalog.agents, catalog.skills),
+  ...commandEdges(catalog.commands, catalog.agents, catalog.skills),
+  ...skillClientEdges(catalog.skills, catalog.agents),
+  ...agentDelegationEdges(catalog.agents),
+  ...agentToolEdges(catalog.agents),
+]

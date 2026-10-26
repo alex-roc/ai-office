@@ -1,0 +1,19 @@
+An asset sheet laid out as a strict grid of 4 columns by 3 rows containing 12 separate isometric office objects. Each object is centred inside its own invisible cell with a generous empty transparent margin on all sides, and no two objects ever touch or overlap. The grid spacing is perfectly even.
+
+All twelve objects are seen from the same high three-quarter isometric angle, facing front-left, and are drawn at one consistent scale relative to each other, sized as if a standing adult of about 1.7 metres were present for reference.
+
+The twelve objects are:
+1. a wooden office desk with a small drawer unit
+2. an office swivel chair
+3. a tall wooden filing cabinet with four drawers
+4. a tall open bookshelf packed with coloured book spines
+5. a low open bookshelf that is half empty
+6. a large potted fiddle-leaf plant
+7. an office water cooler with a blue bottle
+8. a cork notice board on a wooden stand
+9. an angled desk lamp
+10. a stack of three paper filing trays
+11. a round meeting table
+12. a small wooden stool
+
+Nothing else in the image: no characters, no floor tiles, no walls, no shadows, no background, only the twelve objects on full transparency.

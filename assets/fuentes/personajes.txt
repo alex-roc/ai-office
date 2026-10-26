@@ -1,0 +1,17 @@
+An asset sheet laid out as a strict grid of 4 columns by 2 rows containing 8 separate characters. Each character is centred inside its own invisible cell with a generous empty transparent margin on all sides, and no two characters ever touch or overlap. The grid spacing is perfectly even.
+
+Every character is a full-body office worker seen from a high three-quarter isometric angle, standing upright in a neutral idle pose, facing front-left, arms relaxed. All eight are drawn at exactly the same scale and exactly the same height, feet aligned to the same baseline within each row.
+
+The eight characters are:
+1. a researcher hugging a thick book
+2. a data analyst holding a small printed chart
+3. a lawyer carrying a leather folder
+4. an accountant holding a pocket calculator
+5. an auditor holding a clipboard
+6. a writer holding a pen and a notepad
+7. an engineer holding an open laptop
+8. a director standing with hands clasped, holding nothing
+
+Vary skin tone, hair colour and hairstyle across the eight so they read as eight distinct people. Simple clean office clothing only: shirts, blouses, knitted vests, plain trousers or skirts. Faces are simple and readable, not detailed portraits.
+
+Nothing else in the image: no furniture, no floor, no shadows, no background, only the eight figures on full transparency.

@@ -1,0 +1,40 @@
+{
+  "name": "ai-office",
+  "displayName": "ai-office",
+  "version": "0.1.0",
+  "description": "Visor y editor de tu arquitectura de agentes: qué tienes, qué usas y qué nunca has estrenado.",
+  "author": {
+    "name": "Alex Ojeda Copa",
+    "url": "https://github.com/alex-roc"
+  },
+  "license": "MIT",
+  "keywords": [
+    "skills",
+    "agents",
+    "visualization",
+    "audit",
+    "graph"
+  ],
+  "commands": [
+    "./commands/"
+  ],
+  "hooks": "./hooks/hooks.json",
+  "userConfig": {
+    "port": {
+      "type": "number",
+      "description": "Puerto local de la interfaz",
+      "default": 7377,
+      "min": 1024,
+      "max": 65535,
+      "title": "Puerto"
+    },
+    "telemetry": {
+      "type": "boolean",
+      "description": "Registrar la actividad de las sesiones para poblar las fichas. Todo queda en tu disco.",
+      "default": true,
+      "title": "Registrar actividad"
+    }
+  },
+  "homepage": "https://alex-roc.github.io/ai-office/",
+  "repository": "https://github.com/alex-roc/ai-office"
+}

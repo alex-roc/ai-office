@@ -1,0 +1,7 @@
+packages:
+  - "packages/*"
+  - "apps/*"
+
+# esbuild compila su binario en la instalación; sin esto Vite no arranca.
+allowBuilds:
+  esbuild: true

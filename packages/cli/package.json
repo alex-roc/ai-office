@@ -1,0 +1,44 @@
+{
+  "name": "ai-office",
+  "version": "0.1.0",
+  "description": "Visor y editor de tu arquitectura de agentes en Claude Code: qué tienes, qué usas y qué nunca has estrenado.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/alex-roc/ai-office.git"
+  },
+  "homepage": "https://github.com/alex-roc/ai-office#readme",
+  "bugs": {
+    "url": "https://github.com/alex-roc/ai-office/issues"
+  },
+  "keywords": [
+    "claude-code",
+    "agents",
+    "skills",
+    "cli",
+    "audit"
+  ],
+  "type": "module",
+  "engines": {
+    "node": ">=22.16"
+  },
+  "bin": {
+    "ai-office": "./dist/packages/cli/src/index.mjs"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "dependencies": {
+    "yaml": "^2.9.0",
+    "fastify": "^5.6.1",
+    "@fastify/static": "^8.2.0",
+    "@fastify/websocket": "^11.3.0"
+  },
+  "devDependencies": {
+    "@ai-office/core": "workspace:*",
+    "@ai-office/providers": "workspace:*",
+    "@ai-office/daemon": "workspace:*"
+  }
+}

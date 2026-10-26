@@ -1,0 +1,218 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/packages/hook-relay/bin/ai-office-hook.mjs\"",
+            "async": true,
+            "timeout": 5,
+            "statusMessage": "ai-office"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/packages/hook-relay/bin/ai-office-hook.mjs\"",
+            "async": true,
+            "timeout": 5,
+            "statusMessage": "ai-office"
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/packages/hook-relay/bin/ai-office-hook.mjs\"",
+            "async": true,
+            "timeout": 5,
+            "statusMessage": "ai-office"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/packages/hook-relay/bin/ai-office-hook.mjs\"",
+            "async": true,
+            "timeout": 5,
+            "statusMessage": "ai-office"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/packages/hook-relay/bin/ai-office-hook.mjs\"",
+            "async": true,
+            "timeout": 5,
+            "statusMessage": "ai-office"
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/packages/hook-relay/bin/ai-office-hook.mjs\"",
+            "async": true,
+            "timeout": 5,
+            "statusMessage": "ai-office"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/packages/hook-relay/bin/ai-office-hook.mjs\"",
+            "async": true,
+            "timeout": 5,
+            "statusMessage": "ai-office"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/packages/hook-relay/bin/ai-office-hook.mjs\"",
+            "async": true,
+            "timeout": 5,
+            "statusMessage": "ai-office"
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/packages/hook-relay/bin/ai-office-hook.mjs\"",
+            "async": true,
+            "timeout": 5,
+            "statusMessage": "ai-office"
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/packages/hook-relay/bin/ai-office-hook.mjs\"",
+            "async": true,
+            "timeout": 5,
+            "statusMessage": "ai-office"
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/packages/hook-relay/bin/ai-office-hook.mjs\"",
+            "async": true,
+            "timeout": 5,
+            "statusMessage": "ai-office"
+          }
+        ]
+      }
+    ],
+    "PermissionDenied": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/packages/hook-relay/bin/ai-office-hook.mjs\"",
+            "async": true,
+            "timeout": 5,
+            "statusMessage": "ai-office"
+          }
+        ]
+      }
+    ],
+    "TaskCreated": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/packages/hook-relay/bin/ai-office-hook.mjs\"",
+            "async": true,
+            "timeout": 5,
+            "statusMessage": "ai-office"
+          }
+        ]
+      }
+    ],
+    "TaskCompleted": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/packages/hook-relay/bin/ai-office-hook.mjs\"",
+            "async": true,
+            "timeout": 5,
+            "statusMessage": "ai-office"
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/packages/hook-relay/bin/ai-office-hook.mjs\"",
+            "async": true,
+            "timeout": 5,
+            "statusMessage": "ai-office"
+          }
+        ]
+      }
+    ],
+    "PostCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/packages/hook-relay/bin/ai-office-hook.mjs\"",
+            "async": true,
+            "timeout": 5,
+            "statusMessage": "ai-office"
+          }
+        ]
+      }
+    ]
+  }
+}

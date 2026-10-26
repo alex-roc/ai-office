@@ -1,0 +1,11 @@
+Isometric pixel art asset sheet in true 2:1 dimetric projection: every tile edge runs exactly two pixels across for each pixel down.
+
+Chunky, crisp, hard-edged pixels. Absolutely NO anti-aliasing, NO blur, NO soft edges, NO gradients, NO airbrush shading.
+
+Strict limited palette of about 28 colours only: warm oak and walnut brown, cream paper, soft plaster beige, muted terracotta red, sage green, slate blue-grey, dusty mustard, and a deep warm brown used for outlines. No neon, no pure black, no pure white, no saturated primaries.
+
+Shading is done with flat colour steps only, at most three steps per material, with the light coming consistently from the upper left. Dark outlines only on the outer silhouette, not on interior details.
+
+Cosy, lived-in, 1970s-modern office feeling. Must stay readable when shrunk down small: bold silhouettes, generous shapes, minimal fussy interior detail.
+
+Fully transparent background with real alpha. No ground plane, no cast shadow baked into the sprite, no text, no labels, no numbers, no UI, no frame, no border, no grid lines drawn, no watermark, no signature.

@@ -1,0 +1,158 @@
+import assert from 'node:assert/strict'
+import { test } from 'node:test'
+import type { Agent, Command, Skill } from '@ai-office/core'
+import { compileFlow, type Flow, importFlow } from '../src/claude-code/compile.ts'
+
+const base = {
+  scope: 'user' as const,
+  provider: 'claude-code',
+  status: 'active' as const,
+  problems: [],
+  bodyStartLine: 3,
+  source: {
+    path: '/x',
+    realPath: '/x',
+    mtimeMs: 0,
+    size: 0,
+    symlink: false,
+    projections: [],
+    readOnly: false,
+  },
+}
+
+const agent = (name: string): Agent => ({
+  ...base,
+  id: `agent:claude-code/user/${name}`,
+  kind: 'agent',
+  name,
+  description: '',
+  tools: null,
+  model: null,
+  color: null,
+  preloadedSkills: [],
+  body: '',
+  bodyTokens: 0,
+})
+
+const skill = (name: string): Skill => ({
+  ...base,
+  id: `skill:claude-code/user/${name}`,
+  kind: 'skill',
+  name,
+  description: '',
+  allowedTools: null,
+  disabledForModel: false,
+  metadata: null,
+  dir: `/skills/${name}`,
+  body: '',
+  descriptionTokens: 0,
+  bodyTokens: 0,
+})
+
+const command = (name: string, body: string): Command => ({
+  ...base,
+  id: `command:claude-code/user/${name}`,
+  kind: 'command',
+  name,
+  description: 'un comando',
+  argumentHint: null,
+  body,
+})
+
+const AGENTS = [agent('security-auditor'), agent('code-reviewer'), agent('revisor-codigo')]
+const SKILLS = [skill('style-guide'), skill('team-context')]
+
+test('compila un flujo secuencial legible', () => {
+  const flow: Flow = {
+    name: 'consulta',
+    description: 'Consulta legal y fiscal',
+    steps: [
+      { agent: 'security-auditor', task: 'audita las dependencias', skills: ['style-guide'] },
+      { agent: 'code-reviewer', task: 'mide el rendimiento' },
+    ],
+  }
+  const md = compileFlow(flow)
+  assert.match(md, /description: Consulta legal y fiscal/)
+  assert.match(
+    md,
+    /1\. Delega al agente `security-auditor`: audita las dependencias\. Consulta `style-guide`\./,
+  )
+  assert.match(md, /2\. Delega al agente `code-reviewer`/)
+  assert.match(md, /\$ARGUMENTS/)
+})
+
+test('los pasos de la misma fase se compilan como paralelos', () => {
+  const md = compileFlow({
+    name: 'x',
+    description: 'd',
+    steps: [
+      { agent: 'security-auditor', task: 'a', phase: 1 },
+      { agent: 'code-reviewer', task: 'b', phase: 1 },
+      { agent: 'revisor-codigo', task: 'c', phase: 2 },
+    ],
+  })
+  assert.match(md, /1\. \*\*En paralelo\*\*/)
+  assert.match(md, /- agente `security-auditor`: a/)
+  assert.match(md, /- agente `code-reviewer`: b/)
+  assert.match(md, /2\. Delega al agente `revisor-codigo`/)
+})
+
+test('ida y vuelta: compilar e importar conserva agentes, orden y fases', () => {
+  const flow: Flow = {
+    name: 'junta',
+    description: 'La junta',
+    steps: [
+      { agent: 'security-auditor', task: 'revisa el contrato', phase: 1 },
+      { agent: 'code-reviewer', task: 'revisa los numeros', phase: 1 },
+      { agent: 'revisor-codigo', task: 'cierra el acta', phase: 2 },
+    ],
+  }
+  const md = compileFlow(flow)
+  const back = importFlow(command('junta', md.split('---')[2] ?? ''), AGENTS, SKILLS)
+  assert.deepEqual(
+    back.steps.map((s) => s.agent),
+    ['security-auditor', 'code-reviewer', 'revisor-codigo'],
+  )
+  assert.equal(back.steps[0]?.phase, 1)
+  assert.equal(back.steps[1]?.phase, 1)
+  assert.equal(back.steps[2]?.phase, 2)
+})
+
+test('importa un comando escrito a mano', () => {
+  const body = `
+Revisa el trabajo actual.
+
+1. Delega al agente \`revisor-codigo\` la revision del diff.
+2. Si hay hallazgos, pide a \`security-auditor\` que valide las licencias con \`style-guide\`.
+`
+  const flow = importFlow(command('ship', body), AGENTS, SKILLS)
+  assert.equal(flow.steps.length, 2)
+  assert.equal(flow.steps[0]?.agent, 'revisor-codigo')
+  assert.equal(flow.steps[1]?.agent, 'security-auditor')
+  assert.deepEqual(flow.steps[1]?.skills, ['style-guide'])
+})
+
+test('no inventa pasos cuando el comando no nombra agentes', () => {
+  const flow = importFlow(
+    command('bump', 'Sube la version del paquete y crea el tag.'),
+    AGENTS,
+    SKILLS,
+  )
+  assert.equal(flow.steps.length, 0)
+})
+
+test('la ida y vuelta no duplica la coletilla de skills', () => {
+  const flow: Flow = {
+    name: 'x',
+    description: 'd',
+    steps: [{ agent: 'security-auditor', task: 'valida las licencias', skills: ['style-guide'] }],
+  }
+  const md = compileFlow(flow)
+  const back = importFlow(command('x', md.split('---')[2] ?? ''), AGENTS, SKILLS)
+  // El compilador cierra la frase con un punto; lo que no debe quedar es la coletilla de skills.
+  assert.equal(back.steps[0]?.task, 'valida las licencias.')
+  assert.deepEqual(back.steps[0]?.skills, ['style-guide'])
+  // Y al recompilar, la coletilla aparece exactamente una vez.
+  const md2 = compileFlow({ ...flow, steps: back.steps })
+  assert.equal((md2.match(/Consulta `style-guide`/g) ?? []).length, 1)
+})

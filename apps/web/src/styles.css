@@ -1,0 +1,287 @@
+/*
+ * Interfaz de ai-office.
+ *
+ * Una sola piel, oscura y cálida, con la MISMA paleta que los sprites de la Sala (maderas,
+ * papel crema, ámbar de lámpara). Antes había un tema claro y otro oscuro: junto a una escena
+ * de madera y luz de flexo, el tema claro dejaba la interfaz flotando en blanco encima del
+ * juego, sin pertenecer a él. Una interfaz que acompaña a una escena tiene que estar hecha de
+ * lo mismo que la escena.
+ */
+
+:root {
+  --noche: #16120f;
+  --madera: #241d18;
+  --madera-alta: #2f2620;
+  --linea: #42352b;
+  --linea-suave: #322921;
+  --tinta: #f0e6d4;
+  --apagado: #9b8b76;
+  --tenue: #6f6355;
+  --ambar: #d9a05b;
+  --ambar-hueco: #3a2c1d;
+  --verde: #7fb08a;
+  --rojo: #cf6a4f;
+  --papel: #f3ead9;
+
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  color-scheme: dark;
+
+  /*
+   * Alias en inglés para el Plano. `Plano.tsx` resuelve estos nombres DESDE JS
+   * (`style={{ stroke: 'var(--ink)' }}`), así que renombrar la paleta sin dejarlos habría roto
+   * el grafo entero en silencio: un `var()` que no existe no da error ni aviso, simplemente no
+   * pinta. Es el mismo fallo que ya costó una sesión de depuración en ese archivo, visto desde
+   * el otro lado. Si algún día se traducen allí, estos nueve alias se borran.
+   */
+  --bg: var(--noche);
+  --panel: var(--madera);
+  --ink: var(--tinta);
+  --muted: var(--apagado);
+  --line: var(--linea);
+  --accent: var(--ambar);
+  --proven: var(--verde);
+  --declared: var(--tenue);
+  --danger: var(--rojo);
+}
+
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; margin: 0; }
+body {
+  background: var(--noche);
+  color: var(--tinta);
+  font: 14px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+.app { display: grid; grid-template-rows: auto 1fr; height: 100%; }
+
+/* --- Barra superior: un panel de instrumentos, no una cabecera de web ------------------- */
+
+header.bar {
+  display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;
+  padding: 0 1rem; min-height: 58px;
+  background: linear-gradient(180deg, var(--madera-alta), var(--madera));
+  border-bottom: 1px solid #0d0a08;
+  /* Filete claro por dentro del borde: el truco más viejo para que una barra tenga relieve. */
+  box-shadow: inset 0 1px 0 rgba(255, 236, 200, 0.07), 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+header.bar .marca {
+  font-family: var(--mono); font-size: 14px; font-weight: 600; letter-spacing: 0.02em;
+  color: var(--papel); margin: 0;
+}
+header.bar .marca span { color: var(--ambar); }
+header.bar .grow { flex: 1; }
+
+/* Lecturas: el número manda y el rótulo lo explica debajo, en versalitas. Al revés (rótulo
+   delante, número dentro de la frase) no se puede leer de un vistazo, que es todo lo que se
+   le pide a una barra de estado. */
+.lecturas { display: flex; align-items: stretch; gap: 0; }
+.lectura {
+  display: flex; flex-direction: column; gap: 1px; justify-content: center;
+  padding: 0 0.85rem; border-left: 1px solid var(--linea-suave);
+}
+.lectura:first-child { border-left: 0; }
+.lectura b {
+  font-family: var(--mono); font-size: 15px; font-weight: 600; line-height: 1.1;
+  color: var(--tinta); font-variant-numeric: tabular-nums;
+}
+.lectura span {
+  font-size: 10px; letter-spacing: 0.09em; text-transform: uppercase; color: var(--tenue);
+  white-space: nowrap;
+}
+/* Lo que está sin estrenar se marca en rojo: es trabajo pendiente, no un adorno. */
+.lectura.alerta b { color: var(--rojo); }
+.lectura.grande b { font-size: 24px; color: var(--ambar); }
+
+/* --- Botones: bloque con relieve, estado pulsado de verdad ------------------------------ */
+
+.views { display: inline-flex; gap: 2px; padding: 2px; background: #0f0c0a; border-radius: 6px; }
+.views button, .modo, .acciones button, .chip, .anadir, .paso-acciones button, .legend button {
+  font: inherit; cursor: pointer;
+  background: var(--madera-alta); color: var(--apagado);
+  border: 1px solid var(--linea); border-radius: 5px;
+  transition: background 90ms ease, color 90ms ease, border-color 90ms ease;
+}
+.views button { font-size: 12px; padding: 0.24rem 0.75rem; border: 0; background: transparent; }
+.views button:hover { color: var(--tinta); }
+.views button[data-on="true"] {
+  background: var(--ambar); color: #241a10; font-weight: 600;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+.modo { font-size: 12px; padding: 0.3rem 0.7rem; }
+.modo:hover, .chip:hover, .anadir:hover { color: var(--tinta); border-color: var(--apagado); }
+.modo[data-on="true"] {
+  background: var(--ambar); color: #241a10; border-color: var(--ambar); font-weight: 600;
+}
+
+.stat.live { display: inline-flex; align-items: center; gap: 0.45rem; font-size: 12px; color: var(--verde); }
+.stat.live .dot {
+  width: 7px; height: 7px; border-radius: 50%; background: var(--verde);
+  box-shadow: 0 0 6px var(--verde); animation: latido 1.8s ease-in-out infinite;
+}
+@keyframes latido { 0%, 100% { opacity: 1 } 50% { opacity: 0.3 } }
+
+/* --- Escenario -------------------------------------------------------------------------- */
+
+.layout { display: grid; grid-template-columns: 1fr 342px; min-height: 0; }
+@media (max-width: 900px) { .layout { grid-template-columns: 1fr; } }
+
+.canvas { position: relative; overflow: hidden; background: var(--noche); }
+.canvas svg { width: 100%; height: 100%; display: block; cursor: grab; }
+.canvas svg:active { cursor: grabbing; }
+
+/* El lienzo se renderiza a resolución 1 y lo amplía el navegador. Sin `pixelated` lo interpola
+   con suavizado y el pixel art se vuelve una acuarela: es la única línea de CSS de la que
+   depende todo el aspecto de la Sala. */
+.canvas canvas {
+  display: block;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  cursor: grab;
+}
+.canvas canvas:active { cursor: grabbing; }
+
+/* --- Ficha lateral ---------------------------------------------------------------------- */
+
+aside.side {
+  border-left: 1px solid #0d0a08; background: var(--madera);
+  box-shadow: inset 1px 0 0 rgba(255, 236, 200, 0.05);
+  overflow-y: auto; padding: 1.1rem 1.15rem;
+}
+aside.side h2 { font-size: 16px; margin: 0 0 0.1rem; color: var(--papel); font-family: var(--mono); }
+aside.side .kind {
+  color: var(--ambar); font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em;
+  font-family: var(--mono);
+}
+aside.side p.desc { color: var(--apagado); font-size: 13px; }
+aside.side section { margin-top: 1.3rem; }
+aside.side h3 {
+  font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--tenue);
+  margin: 0 0 0.5rem; font-family: var(--mono); font-weight: 600;
+  padding-bottom: 0.35rem; border-bottom: 1px solid var(--linea-suave);
+}
+aside.side .nota { font-size: 12px; color: var(--tenue); margin: 0.45rem 0 0; }
+aside.side .nota code { font-size: 11px; }
+
+.row {
+  display: flex; justify-content: space-between; gap: 0.5rem;
+  padding: 0.26rem 0; font-size: 13px; border-bottom: 1px solid rgba(66, 53, 43, 0.4);
+}
+.row:last-child { border-bottom: 0; }
+.row span:last-child { color: var(--apagado); font-variant-numeric: tabular-nums; font-family: var(--mono); font-size: 12px; }
+
+/* Toda cifra cita su fuente: la evidencia es parte del producto, así que se ve como una cita
+   de verdad y no como una nota al pie escondida. */
+.evidence {
+  font-size: 12px; border-left: 2px solid var(--ambar-hueco); background: rgba(0, 0, 0, 0.22);
+  padding: 0.4rem 0.55rem; margin: 0.4rem 0; border-radius: 0 4px 4px 0;
+}
+.evidence code { color: var(--tenue); font-size: 11px; word-break: break-all; font-family: var(--mono); }
+.evidence .quote { color: var(--tinta); }
+
+.legend { display: flex; gap: 0.9rem; align-items: center; flex-wrap: wrap; font-size: 12px; color: var(--apagado); }
+.legend button { padding: 0.2rem 0.6rem; border-radius: 999px; display: inline-flex; gap: 0.4rem; align-items: center; font-size: 12px; }
+.legend button[data-on="true"] { color: var(--tinta); border-color: var(--apagado); }
+.legend .swatch { width: 18px; height: 0; border-top-width: 2px; border-top-style: solid; display: inline-block; }
+
+.badge {
+  display: inline-block; padding: 0.08rem 0.45rem; border-radius: 3px; font-size: 10px;
+  border: 1px solid var(--linea); color: var(--apagado); font-family: var(--mono);
+  text-transform: uppercase; letter-spacing: 0.06em;
+}
+.badge.unused { border-color: var(--rojo); color: var(--rojo); }
+.badge.certified { border-color: var(--verde); color: var(--verde); }
+
+.empty { color: var(--tenue); font-size: 13px; }
+.loading { display: grid; place-items: center; height: 100%; color: var(--tenue); font-family: var(--mono); }
+
+/* --- Diálogos --------------------------------------------------------------------------- */
+
+.modal-fondo {
+  position: fixed; inset: 0; background: rgba(8, 6, 5, 0.72); backdrop-filter: blur(2px);
+  display: grid; place-items: center; padding: 1.5rem; z-index: 20;
+}
+.modal {
+  background: var(--madera); border: 1px solid var(--linea); border-radius: 8px;
+  padding: 1.15rem 1.3rem; max-width: 720px; width: 100%; max-height: 82vh; overflow-y: auto;
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 236, 200, 0.07);
+}
+.modal h3 { margin: 0 0 0.2rem; font-size: 15px; color: var(--papel); }
+.modal .ruta { font-size: 11px; color: var(--tenue); word-break: break-all; font-family: var(--mono); }
+.modal .aviso {
+  font-size: 13px; background: rgba(217, 160, 91, 0.12);
+  border-left: 3px solid var(--ambar); padding: 0.55rem 0.75rem; margin: 0.65rem 0;
+  border-radius: 0 4px 4px 0;
+}
+.modal .aviso.error { border-color: var(--rojo); color: var(--rojo); background: rgba(207, 106, 79, 0.1); }
+.modal.ancho { max-width: 1020px; }
+
+.diff {
+  font: 12px/1.55 var(--mono); background: #100d0b; border: 1px solid var(--linea);
+  border-radius: 5px; padding: 0.65rem 0.75rem; overflow-x: auto; margin: 0.75rem 0 0.4rem;
+  white-space: pre; color: var(--apagado);
+}
+.diff .mas { background: rgba(127, 176, 138, 0.16); color: var(--tinta); display: block; }
+.diff .menos { background: rgba(207, 106, 79, 0.15); color: var(--tinta); display: block; }
+
+.acciones { display: flex; gap: 0.5rem; justify-content: flex-end; margin-top: 0.75rem; }
+.acciones button { font-size: 13px; padding: 0.4rem 0.9rem; }
+.acciones button:hover { color: var(--tinta); border-color: var(--apagado); }
+.acciones button.primario {
+  background: var(--ambar); color: #241a10; border-color: var(--ambar); font-weight: 600;
+}
+.acciones button.primario:hover { background: #e8b070; }
+.acciones button:disabled { opacity: 0.45; cursor: default; }
+
+.aviso-flotante {
+  position: fixed; bottom: 1.2rem; left: 50%; transform: translateX(-50%);
+  background: var(--rojo); color: #1a0f0b; padding: 0.5rem 0.95rem; font-weight: 500;
+  border-radius: 6px; font-size: 13px; cursor: pointer; z-index: 30;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+
+/* --- Editor de flujos ------------------------------------------------------------------- */
+
+.campos { display: flex; gap: 0.8rem; margin: 0.75rem 0 0; }
+.campos label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 11px; color: var(--tenue); text-transform: uppercase; letter-spacing: 0.07em; }
+.campos label.crece { flex: 1; }
+.campos input, .paso input, .paso select, .editor select {
+  font: inherit; font-size: 13px; padding: 0.32rem 0.55rem; border-radius: 4px;
+  border: 1px solid var(--linea); background: #100d0b; color: var(--tinta);
+  text-transform: none; letter-spacing: 0;
+}
+.campos input:focus, .paso input:focus, .paso select:focus, .editor select:focus {
+  outline: none; border-color: var(--ambar);
+}
+.lienzo { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 0.95rem; }
+@media (max-width: 820px) { .lienzo { grid-template-columns: 1fr; } }
+.pasos { display: flex; flex-direction: column; gap: 0.5rem; max-height: 46vh; overflow-y: auto; padding-right: 0.25rem; }
+.paso {
+  border: 1px solid var(--linea); border-radius: 6px; padding: 0.55rem 0.65rem;
+  display: flex; flex-direction: column; gap: 0.4rem; background: var(--madera-alta);
+}
+.paso-cabecera { display: flex; justify-content: space-between; align-items: center; }
+.paso .fase { font-size: 10px; text-transform: uppercase; letter-spacing: 0.09em; color: var(--ambar); font-family: var(--mono); }
+.paso-acciones { display: flex; gap: 0.25rem; }
+.paso-acciones button { font-size: 12px; line-height: 1; padding: 0.2rem 0.42rem; }
+.paso-acciones button:disabled { opacity: 0.3; cursor: default; }
+.chips { display: flex; flex-wrap: wrap; gap: 0.28rem; }
+.chip { font-size: 11px; padding: 0.12rem 0.45rem; border-radius: 999px; }
+.anadir { font-size: 13px; padding: 0.45rem; border-style: dashed; background: none; }
+.vista-previa h4 {
+  margin: 0 0 0.4rem; font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em;
+  color: var(--tenue); font-weight: 600; font-family: var(--mono);
+}
+.vista-previa pre {
+  font: 12px/1.6 var(--mono); margin: 0; background: #100d0b; border: 1px solid var(--linea);
+  border-radius: 6px; padding: 0.65rem 0.75rem; max-height: 46vh; overflow: auto;
+  white-space: pre-wrap; color: var(--apagado);
+}
+.editor { display: flex; gap: 0.6rem; margin-bottom: 0.5rem; }
+.editor label { display: flex; flex-direction: column; gap: 0.2rem; font-size: 11px; color: var(--tenue); flex: 1; text-transform: uppercase; letter-spacing: 0.07em; }
+
+/* Barras de desplazamiento discretas: una barra clara del sistema sobre un panel oscuro es
+   lo que más delata que una interfaz no se ha terminado de vestir. */
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb { background: var(--linea); border-radius: 5px; border: 3px solid var(--madera); }
+*::-webkit-scrollbar-thumb:hover { background: var(--tenue); }

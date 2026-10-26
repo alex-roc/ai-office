@@ -1,0 +1,140 @@
+# Arquitectura
+
+## Fuentes de datos, por fiabilidad
+
+| Fuente | Qué da | Estabilidad |
+|---|---|---|
+| `~/.claude/agents/*.md`, `commands/*.md`, `skills/*/SKILL.md` | catálogo y **grafo declarado** | formato documentado |
+| `~/.claude/history.jsonl` | prompts tecleados, uso real de slash commands | estable de facto |
+| `~/.claude/projects/**/*.jsonl` | **grafo acreditado** | **interno, sin contrato** |
+| `claude agents --json` | sesiones vivas | CLI público |
+| `~/.claude.json` | contadores propios del CLI | interno |
+
+## Reglas que no se negocian
+
+**Escribir siempre al `realPath`.** `~/.claude/skills` suele ser una proyección por symlinks de
+otro store (p. ej. `~/.agents/skills`, compartido con otros agentes). Escribir sobre el enlace lo
+reemplazaría por un archivo regular y rompería la proyección. El escáner agrupa por destino real y
+guarda todas las rutas desde las que una entidad es visible.
+
+**El historial es opcional.** Todo el parseo de transcripts vive tras `transcripts.ts`, es
+defensivo y no falla el arranque. Los subagentes ya se mudaron de un campo del archivo principal a
+archivos propios entre versiones recientes: esa fragilidad es la norma, no la excepción.
+
+**Atribución de subagentes.** Cada subagente tiene su transcript en
+`projects/<proyecto>/<sesión>/subagents/agent-<id>.jsonl` y un `agent-<id>.meta.json` hermano con
+`{agentType, description, toolUseId, spawnDepth}`. Emparejar ambos da la atribución sin recorrer la
+cadena `tool_use` → `tool_result`.
+
+**Prefiltro antes de parsear.** Solo se hace `JSON.parse` de las líneas que contienen
+`"name":"Skill"` o `"name":"Agent"`. Sobre 1,2 GB y 692 archivos el escaneo completo tarda ~3,5 s.
+
+## Modelo
+
+```
+Catalog { agents, skills, commands, mcpServers, projects }
+Edge { from, to, kind, layer: declared|preloaded|proven, evidence[], uses?, sessions?, projects? }
+Grade = unused | tried | practicing | certified      (saturante, caduca a 90 días)
+```
+
+`packages/core` no importa nada de `packages/providers`: el dominio no sabe qué es un hook ni un
+`.md`. Esa separación es lo que permitirá añadir otros proveedores sin refactor.
+
+
+## Interfaz
+
+Dos vistas sobre el mismo snapshot, alternables sin perder la selección:
+
+- **Sala** (`apps/web/src/sala/`): PixiJS 8 **imperativo**, sin `@pixi/react`. Proyección
+  isométrica 2:1 y pixel art. `Sala.tsx` es un envoltorio tonto: monta la escena, le pasa el
+  snapshot y recibe la selección; todo lo que ocurre a 60 fps vive en `escena.ts` y no toca React
+  ni una vez. El layout (`layout.ts`) es puro y razona en coordenadas de BALDOSA, no de pantalla:
+  dado un snapshot devuelve en qué casilla va cada cosa, y solo `iso.ts` sabe traducir eso a
+  píxeles.
+
+  **El reparto en despachos no se decide en la interfaz.** Lo calcula `agruparEnSalas`
+  (`packages/core/src/graph/salas.ts`) sobre el grafo DECLARADO, y viaja en el snapshot. Está en
+  `core` y no aquí por dos motivos: es un dato derivado, no geometría, y así se prueba en Node
+  sin levantar un canvas. `layout.ts` solo decide dónde cae cada despacho en el suelo.
+
+  El arte se reparte en dos por una regla clara:
+
+  - **Generado** (`atlas.ts` + `public/sprites/`): personas y muebles, veinte PNG recortados de
+    dos hojas hechas con `codex-image-gen`. Son volúmenes orgánicos que no dependen del dato.
+  - **Procedural** (`texturas.ts` sobre `lienzo.ts`): suelo, paredes, baldas, lomos de skill y
+    tarjetas de comando. Todo lo que tiene que TESELAR sin costura o CAMBIAR con el dato. Una
+    baldosa generada no casaría con su vecina, y el lomo de una skill cambia de alto y de color
+    según su grado y su dueño.
+
+  `lienzo.ts` es un búfer RGBA crudo, sin canvas de por medio: cada píxel se decide a mano, así
+  que los bordes son exactos y se puede afirmar sobre ellos en un test de Node sin WebGL.
+
+  La cámara escala por **enteros** hacia arriba (nada de 1,37: interpolaría el píxel) más un
+  único paso de alejamiento a 0,5, porque con pasillos la planta no cabe entera ni maximizada.
+  Al cruzar el 1x se cambia el filtrado de todas las texturas de `nearest` a `linear`: ampliar
+  con `linear` emborrona, pero reducir con `nearest` va tirando uno de cada dos píxeles y deja la
+  imagen comida. El **minimapa** usa la misma proyección reducida, no una vista cenital, y por
+  eso el recuadro de "lo que estás viendo" es un rectángulo de verdad y no un rombo deformado.
+- **Plano** (`apps/web/src/Plano.tsx`): SVG con d3-force. El layout se calcula **una sola vez** y
+  se congela (ver el gotcha en `CLAUDE.md`); el pan y el zoom son lo único interactivo.
+
+La ficha lateral (`Ficha.tsx`) es común a las dos y siempre cita el archivo del que sale cada dato.
+
+## Cómo se agrupan los despachos
+
+Agrupar por tema ("jurídico", "datos") sería una lista de palabras escrita a mano, y un tema
+inventado no puede citar su fuente — que es la regla que sostiene el producto. En vez de eso una
+sala sale de dos hechos ya escritos en los archivos del usuario: **qué skills cita cada agente**
+en el cuerpo de su prompt y **qué comandos lo convocan** (los slash commands son repartos hechos
+a mano, o sea el organigrama que el usuario ya dibujó sin darse cuenta).
+
+Los dos rasgos se descuentan por IDF antes de comparar, y ese descuento no es un adorno
+estadístico: sin él no funciona. En una instalación real media plantilla cita las mismas cuatro
+skills de contexto y un comando de revisión convoca a ocho, así que la similitud sin pesar mete a nueve
+agentes en un único despacho gigante y la planta deja de existir. Lo que identifica a alguien es
+lo que comparte con POCOS, no lo que comparte con todos.
+
+El agrupamiento es aglomerativo por enlace medio, con umbral calibrado sobre una instalación real
+de 19 agentes. Cada sala se nombra con su rasgo más característico —una skill o un comando que
+existen— y guarda el motivo, que es lo que la placa de la puerta enseña al señalarla.
+
+Dos sitios del vestíbulo recogen lo que no es de ningún despacho, y están separados a propósito
+porque significan lo contrario: el **archivo común** (skills que cita media planta) y el
+**depósito** (skills que no cita nadie). Juntarlos borraría la distinción que da sentido a todo.
+
+## Compilador de flujos
+
+`compile.ts` traduce entre un flujo (`{name, description, steps[]}`) y un slash command en
+Markdown. El archivo generado debe ser indistinguible de uno escrito a mano: no se inventa un
+formato propio. `importFlow` recupera los pasos de los comandos existentes —incluidos los escritos
+a mano— buscando nombres de agentes conocidos; sobre una instalación real recupera pasos de 21 de
+27 comandos, que son exactamente los que nombran agentes.
+
+## Distribución
+
+`.claude-plugin/plugin.json` declara el plugin; `hooks/hooks.json` sus hooks, todos con
+`"async": true` para no entrar nunca en el camino crítico de una sesión; `bin/ai-office` entra en
+el PATH de la herramienta Bash. `claude plugin validate .` debe pasar antes de publicar.
+
+
+## Escritura
+
+Todas las mutaciones pasan por un motor común (`mutations.ts`) en dos tiempos: `plan*` es puro y
+devuelve el diff sin tocar nada, `apply*` comprueba el etag, guarda backup, escribe de forma
+atómica en el `realPath` y registra la operación en `~/.claude/ai-office/logs/audit.ndjson`.
+
+Crear un archivo nuevo (un comando compilado desde el lienzo) va por `applyCreateFile`, aparte del
+motor: ese exige leer el estado previo para comparar etags y aquí no hay estado previo que
+preservar. Comparte validación de raíces, escritura atómica y auditoría, para que crear no sea un
+agujero por el que se escriba sin dejar rastro.
+
+## Probar sin tocar la configuración real
+
+`paths()` respeta la variable `CLAUDE_HOME`, así que se puede levantar el daemon contra una copia:
+
+```bash
+CLAUDE_HOME=/tmp/mi-copia node packages/cli/src/index.ts start
+```
+
+Es como se prueban las escrituras de verdad —crear un comando, dar color a un agente, jubilar una
+skill— sin riesgo para la instalación del usuario.

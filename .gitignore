@@ -1,0 +1,14 @@
+node_modules/
+dist/
+*.tsbuildinfo
+.DS_Store
+codex-image-gen-output/
+.codex-image-gen-tmp/
+
+# Copias de build para publicar en npm (ver scripts/build.sh y docs/PUBLICAR.md)
+packages/cli/README.md
+packages/cli/LICENSE
+
+# Notas locales del agente (proyecto público): los gotchas compartidos viven en docs/GOTCHAS.md
+CLAUDE.md
+AGENTS.md
