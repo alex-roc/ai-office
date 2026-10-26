@@ -9,6 +9,13 @@
 | `~/.claude/projects/**/*.jsonl` | **grafo acreditado** | **interno, sin contrato** |
 | `claude agents --json` | sesiones vivas | CLI público |
 | `~/.claude.json` | contadores propios del CLI | interno |
+| `~/.claude/settings.json` (`cleanupPeriodDays`) | cuánto historial conserva Claude Code | estable |
+
+**El directorio de Claude Code no siempre es `~/.claude`.** `paths()` resuelve, por este orden,
+`CLAUDE_HOME` (la nuestra, para probar), `CLAUDE_CONFIG_DIR` (la oficial de Claude Code: varias
+cuentas, contenedores) y `~/.claude`. Con cualquiera de las dos variables, `.claude.json` vive
+DENTRO de ese directorio y no en `~/`. El relay de hooks aplica la misma regla: si el daemon mira
+un directorio y el relay escribe en otro, los eventos no llegan nunca y nada avisa.
 
 ## Reglas que no se negocian
 
@@ -27,7 +34,22 @@ archivos propios entre versiones recientes: esa fragilidad es la norma, no la ex
 cadena `tool_use` → `tool_result`.
 
 **Prefiltro antes de parsear.** Solo se hace `JSON.parse` de las líneas que contienen
-`"name":"Skill"` o `"name":"Agent"`. Sobre 1,2 GB y 692 archivos el escaneo completo tarda ~3,5 s.
+`"name":"Skill"`, `"name":"Agent"` o `"name":"Task"` (el nombre antiguo de la herramienta de
+subagentes: los historiales viejos siguen en disco). Sobre 1,2 GB y 692 archivos el escaneo
+completo tarda ~3,5 s. Cada `tool_use` se cuenta una sola vez aunque aparezca en varias líneas
+(sesiones reanudadas o bifurcadas): se deduplica por su id.
+
+**La ventana del historial es finita.** Claude Code borra los transcripts a los
+`cleanupPeriodDays` días (30 por defecto). `stats.historyWindowDays` la expone y el censo y el cartel
+dicen «en los últimos N días» donde antes decían «nunca»: «sin uso» solo vale dentro de esa ventana.
+
+**Actividad de los comandos.** Un slash command no deja rastro como herramienta cuando lo teclea el
+usuario: se cuenta desde `history.jsonl` (con sus sesiones y proyectos). Y en versiones recientes el
+modelo también los invoca por la herramienta `Skill`, con el nombre del comando en
+`tool_input.skill`: si ese nombre no es una skill pero sí un comando, la invocación es del comando.
+Los dos orígenes se suman en `activityByTarget`, que devuelve la misma forma (`EntityActivity`) para
+skills, agentes y comandos. Las sesiones y los proyectos son CONJUNTOS: tres agentes que usan una
+skill en la misma sesión son una sesión, no tres.
 
 ## Modelo
 
@@ -36,6 +58,21 @@ Catalog { agents, skills, commands, mcpServers, projects }
 Edge { from, to, kind, layer: declared|preloaded|proven, evidence[], uses?, sessions?, projects? }
 Grade = unused | tried | practicing | certified      (saturante, caduca a 90 días)
 ```
+
+**Ratio activo.** `activas / vivas`, donde las vivas son las skills que el modelo puede elegir. Una
+skill jubilada (`disable-model-invocation: true`) sale del denominador —y de las cifras de coste—
+porque su description ya no se carga en cada sesión: jubilar lo que no usas SÍ sube el ratio, que es
+lo que promete el README. Se calcula en `providers/claude-code/stats.ts` y lo comparten el snapshot
+y el censo, para que no puedan discrepar. `stats.skillsRetired` dice cuántas hay.
+
+**Agentes archivados.** `agent.archive` mueve el `.md` a `agents/.archivo/`; `scanAgents` los lista
+con `archived: true` (y un id propio, `…/user/.archivo/<nombre>`, para que no choquen con uno activo
+del mismo nombre) y la mutación `agent.unarchive` los restaura. Viajan en `catalog.agents` para que
+la interfaz pueda ofrecer «restaurar», pero no cuentan en las estadísticas, ni entran en el grafo
+declarado, ni en el reparto de despachos.
+
+**Lo que no se pudo leer.** Un symlink roto o un `.md` ilegible no tumba el escaneo: se acumula en
+`snapshot.scanErrors` (`ruta: motivo`) y la interfaz lo puede enseñar.
 
 `packages/core` no importa nada de `packages/providers`: el dominio no sabe qué es un hook ni un
 `.md`. Esa separación es lo que permitirá añadir otros proveedores sin refactor.
@@ -80,6 +117,22 @@ Dos vistas sobre el mismo snapshot, alternables sin perder la selección:
 
 La ficha lateral (`Ficha.tsx`) es común a las dos y siempre cita el archivo del que sale cada dato.
 
+**Red en un solo módulo.** Toda llamada al daemon pasa por `api.ts` (`apiGet`, `apiPost`,
+`abrirSocketVivo`); `flows.ts`, `mutations.ts` y `live.ts` no tocan `fetch` ni `WebSocket`. Ahí se
+enchufará un modo demo estático (`import.meta.env.VITE_DEMO`). Los errores se traducen a español en
+`errores.ts`.
+
+**Estado en vivo fuera de React.** `live.ts` es un almacén con suscripción por selector: un evento
+no re-renderiza `App`, solo el indicador de conexión; la Sala recibe los destellos por `onEvento`.
+
+**Las dos vistas viven montadas a la vez.** `App` alterna su visibilidad; ambas exponen la misma
+interfaz (`ControlVista`: encuadrar, zoom, centrarEn) que usan los atajos y el buscador. La cámara
+solo se reencuadra al cambiar el conjunto de entidades (`claveDeConjunto`), no en cada snapshot.
+
+**Fases de un flujo** (`fases.ts`, puro y con tests): un grupo "a la vez" es una racha de pasos con
+el mismo número de fase; todas las operaciones (mover, unir, separar) trabajan por bloques y
+renumeran a 1..n.
+
 ## Cómo se agrupan los despachos
 
 Agrupar por tema ("jurídico", "datos") sería una lista de palabras escrita a mano, y un tema
@@ -110,11 +163,55 @@ formato propio. `importFlow` recupera los pasos de los comandos existentes —in
 a mano— buscando nombres de agentes conocidos; sobre una instalación real recupera pasos de 21 de
 27 comandos, que son exactamente los que nombran agentes.
 
+## El daemon
+
+**Guard de autenticación.** Decide con la ruta NORMALIZADA (percent-decoding, también el doble,
+`//`, `..`, mayúsculas) y con la ruta que el router resolvió, y lo público es una lista blanca
+exacta (`/api/health`, `/api/live` y los estáticos). Todo lo demás bajo `/api` exige token y, si no
+es GET, la cabecera `X-AI-Office`. Ver el gotcha en `docs/GOTCHAS.md`.
+
+**Arranque.** El token solo se escribe a disco cuando el servidor ya escucha: un segundo arranque
+con el puerto ocupado no invalida el del primero. Si el puerto lo ocupa otro ai-office lo dice (sonda
+a `/api/health`), antes de tocar el socket de ingesta o el spool.
+
+**Snapshot en dos cachés.** El historial (transcripts, `history.jsonl`, ajustes: segundos) y el
+catálogo (milisegundos) tienen ciclos de vida distintos. Una mutación reescanea solo el catálogo y
+reutiliza el historial; `/api/refresh` recalcula ambos. Una construcción que empezó antes de una
+mutación termina con un catálogo anterior al cambio, así que se devuelve pero NO se cachea (contador
+`generation`). La promesa en curso se limpia en `finally`: si fallase y se quedara guardada, todas
+las peticiones siguientes recibirían el mismo error para siempre.
+
+**Spool.** El relay escribe `AAAA-MM-DD.ndjson`; el daemon lo renombra a `.draining` ANTES de leerlo
+(leer y borrar perdía las líneas añadidas entre una cosa y otra). `fs.watch` no es fiable en macOS
+(descarta lo que ocurre justo tras crearse), así que además se revisa cada segundo. El relay no deja
+crecer el spool más de 5 MB: descarta lo nuevo y lo anota una vez (`.lleno`).
+
+**Presencia.** Las sesiones terminadas se olvidan a los 10 minutos; antes el mapa solo crecía. Un
+WebSocket que no manda su primer frame (el del token) en 5 s se cierra.
+
 ## Distribución
 
 `.claude-plugin/plugin.json` declara el plugin; `hooks/hooks.json` sus hooks, todos con
 `"async": true` para no entrar nunca en el camino crítico de una sesión; `bin/ai-office` entra en
 el PATH de la herramienta Bash. `claude plugin validate .` debe pasar antes de publicar.
+
+`bin/ai-office` comprueba que el plugin tenga sus dependencias (se clona sin `node_modules`) y, si
+faltan, dice el comando exacto (`pnpm install --prod` en el directorio del plugin) en vez de un
+`ERR_MODULE_NOT_FOUND`. Las dos opciones de `userConfig` llegan por la convención de Claude Code,
+`CLAUDE_PLUGIN_OPTION_<CLAVE>`: `port` lo lee la CLI (`packages/cli/src/env.ts`) y `telemetry` el
+relay. Fuera del plugin valen `AI_OFFICE_PORT` y `AI_OFFICE_TELEMETRY=0`.
+
+**Hooks por settings.json.** `hooks install` copia el relay a `~/.claude/ai-office/bin/` y registra
+esa ruta: la del paquete puede vivir en la caché de `npx`, que se purga, y Claude Code ignora en
+silencio un hook cuyo archivo no existe. Crea `settings.json` si no existe, escribe en el destino
+real si es un symlink (conservando permisos) y su lista de eventos debe coincidir con
+`hooks/hooks.json` (lo comprueba un test). Si el plugin y los hooks de settings.json están activos a
+la vez, cada evento llega dos veces: `doctor` lo advierte.
+
+**Privacidad del relay.** `tool_input` de `Write`, `Edit`, `MultiEdit`, `NotebookEdit` y `Bash` es
+contenido del usuario (texto de archivos, comandos con tokens). El relay no lo reenvía ni lo guarda
+en el spool, que queda en disco días: de esas herramientas solo salen el nombre del archivo y los
+bytes; tampoco su salida. Con `telemetry` desactivada no escribe nada.
 
 
 ## Escritura
@@ -136,5 +233,6 @@ agujero por el que se escriba sin dejar rastro.
 CLAUDE_HOME=/tmp/mi-copia node packages/cli/src/index.ts start
 ```
 
-Es como se prueban las escrituras de verdad —crear un comando, dar color a un agente, jubilar una
+También respeta `CLAUDE_CONFIG_DIR`, la variable oficial de Claude Code (con `CLAUDE_HOME` por
+delante cuando están las dos). Es como se prueban las escrituras de verdad —crear un comando, dar color a un agente, jubilar una
 skill— sin riesgo para la instalación del usuario.

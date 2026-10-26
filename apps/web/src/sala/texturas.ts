@@ -21,7 +21,37 @@ import { P } from './paleta.ts'
  * comida y parpadeante, mientras que `linear` promedia y da una miniatura limpia. Como la vista
  * general de la planta necesita alejarse, hacen falta los dos modos y hay que poder cambiarlos.
  */
-const registradas: Texture[] = []
+const registradas = new Set<Texture>()
+
+/**
+ * Ámbito de texturas: lo que se crea mientras hay uno abierto (el suelo, las paredes y las
+ * mamparas de UN snapshot) se libera de golpe al construir el siguiente. Sin esto cada recarga
+ * dejaba en GPU y en `registradas` las texturas del snapshot anterior, para siempre.
+ *
+ * Lo que va por `cacheada` (lomos, tarjetas, sombras) queda fuera a propósito: se reutiliza
+ * entre snapshots y su número está acotado por las combinaciones de grado y color.
+ */
+let ambito: Texture[] | null = null
+
+/** Empieza a anotar las texturas que se creen a partir de ahora. */
+export const abrirAmbito = (): void => {
+  ambito = []
+}
+
+/** Deja de anotar y devuelve lo anotado, para que su dueño lo libere con `liberar`. */
+export const cerrarAmbito = (): Texture[] => {
+  const hechas = ambito ?? []
+  ambito = null
+  return hechas
+}
+
+/** Destruye texturas (y su fuente en GPU) y las saca del registro de filtrado. */
+export const liberar = (texturas: Texture[]): void => {
+  for (const t of texturas) {
+    registradas.delete(t)
+    t.destroy(true)
+  }
+}
 
 /** Cambia el filtrado de todo lo dibujado. Se llama solo al cruzar el 1x, no en cada cuadro. */
 export const filtrarTodo = (modo: 'nearest' | 'linear'): void => {
@@ -31,7 +61,8 @@ export const filtrarTodo = (modo: 'nearest' | 'linear'): void => {
 /** Apunta una textura al registro y le deja el filtro de píxel duro por defecto. */
 export const registrar = (tex: Texture): Texture => {
   tex.source.scaleMode = 'nearest'
-  registradas.push(tex)
+  registradas.add(tex)
+  ambito?.push(tex)
   return tex
 }
 
@@ -240,7 +271,11 @@ const cache = new Map<string, Texture>()
 export const cacheada = (clave: string, construir: () => Lienzo): Texture => {
   const previa = cache.get(clave)
   if (previa) return previa
+  // Fuera del ámbito del snapshot: esta textura sobrevive a la recarga que la creó.
+  const enCurso = ambito
+  ambito = null
   const tex = aTextura(construir())
+  ambito = enCurso
   cache.set(clave, tex)
   return tex
 }

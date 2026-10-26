@@ -1,39 +1,33 @@
+import { memo, type ReactNode } from 'react'
+import { agentesArchivados, estaArchivado } from './derivados.ts'
 import type { MutationRequest } from './mutations.ts'
+import { gradoEtiqueta, NOMBRE_HILO, relDate, shortPath } from './texto.ts'
 import type { Agent, Command, Edge, Skill, Snapshot } from './types.ts'
 
-const COLORES = ['red', 'blue', 'green', 'yellow', 'purple', 'orange', 'pink', 'cyan'] as const
-const MODELOS = ['inherit', 'haiku', 'sonnet', 'opus'] as const
+const COLORES = ['red', 'blue', 'green', 'yellow', 'purple', 'orange', 'pink', 'cyan']
+const MODELOS = ['haiku', 'sonnet', 'opus']
 
 /** Panel lateral: qué es esto, qué dice de sí mismo, y qué ha hecho de verdad. */
 
-const GRADE_LABEL: Record<string, string> = {
-  unused: 'sin estrenar',
-  tried: 'estrenada',
-  practicing: 'en práctica',
-  certified: 'acreditada',
-}
+export type Vista = 'sala' | 'plano'
 
-const relDate = (ts: number | null | undefined): string => {
-  if (!ts) return 'nunca'
-  const days = Math.floor((Date.now() - ts) / 86400000)
-  if (days <= 0) return 'hoy'
-  if (days === 1) return 'ayer'
-  if (days < 30) return `hace ${days} días`
-  if (days < 365) return `hace ${Math.round(days / 30)} meses`
-  return `hace ${Math.round(days / 365)} años`
-}
+/**
+ * Las opciones de un selector más el valor actual si no está en la lista. Un modelo como
+ * `opus[1m]` o un color que el archivo ya tenía no deben desaparecer ni mostrarse como "heredado":
+ * el selector mentiría sobre lo que hay escrito en el archivo.
+ */
+const opcionesCon = (lista: string[], actual: string | null): string[] =>
+  actual && !lista.includes(actual) ? [...lista, actual] : lista
 
-const shortPath = (p: string): string => p.replace(/^\/Users\/[^/]+/, '~')
-
-const Evidence = ({ edges, title }: { edges: Edge[]; title: string }) => {
+const Evidence = ({ edges, title }: { edges: Edge[]; title: ReactNode }) => {
   if (edges.length === 0) return null
   return (
     <section>
       <h3>{title}</h3>
-      {edges.slice(0, 12).map((e, i) => {
+      {edges.slice(0, 12).map((e) => {
         const ev = e.evidence[0]
         return (
-          <div className="evidence" key={`${e.from}-${e.to}-${i}`}>
+          <div className="evidence" key={`${e.from}-${e.to}-${e.kind}-${e.layer}`}>
             <div>{e.to.split('/').pop() ?? e.to}</div>
             {ev?.excerpt && <div className="quote">“{ev.excerpt}”</div>}
             {ev && (
@@ -50,35 +44,92 @@ const Evidence = ({ edges, title }: { edges: Edge[]; title: string }) => {
   )
 }
 
-export const Ficha = ({
+/** Qué se está viendo y cómo leerlo, según la vista ACTUAL: no se explican las líneas del Plano estando en la Sala. */
+const Explicacion = ({ vista }: { vista: Vista }) =>
+  vista === 'sala' ? (
+    <p className="empty">
+      Cada figura, lomo y tarjeta de la Sala sale de un archivo tuyo. Una persona en gris es un
+      agente al que nunca has delegado; el alto de un lomo es el grado de la skill y un lomo sin
+      tejuelo dorado es una skill que nunca se ha usado. Pulsa cualquier cosa para ver su ficha.
+    </p>
+  ) : (
+    <p className="empty">
+      Cada línea del plano sale de un archivo tuyo. Las punteadas son lo que tus prompts dicen que
+      debería pasar; las sólidas, lo que los transcripts demuestran que pasó.
+    </p>
+  )
+
+const FichaVacia = ({
+  snapshot,
+  vista,
+  onMutate,
+  onSelect,
+}: {
+  snapshot: Snapshot
+  vista: Vista
+  onMutate?: (req: MutationRequest, title: string) => void
+  onSelect?: (id: string) => void
+}) => {
+  const archivados = agentesArchivados(snapshot)
+  return (
+    <aside className="side" aria-label="Ficha">
+      <Explicacion vista={vista} />
+      <section>
+        <h3>lo que se lee</h3>
+        {snapshot.catalog.roots.map((r) => (
+          <div className="evidence" key={r}>
+            <code>{shortPath(r)}</code>
+          </div>
+        ))}
+      </section>
+      {archivados.length > 0 && (
+        <section>
+          <h3>archivados ({archivados.length})</h3>
+          {archivados.map((a) => (
+            <div className="fila-archivado" key={a.id}>
+              <button type="button" className="enlace" onClick={() => onSelect?.(a.id)}>
+                {a.name}
+              </button>
+              {onMutate && (
+                <button
+                  type="button"
+                  className="chip"
+                  onClick={() =>
+                    onMutate({ kind: 'agent.unarchive', entityId: a.id }, `restaurar ${a.name}`)
+                  }
+                >
+                  restaurar
+                </button>
+              )}
+            </div>
+          ))}
+          <p className="nota">
+            Viven en <code>agents/.archivo/</code> y no se dibujan en la Sala ni en el Plano.
+          </p>
+        </section>
+      )}
+    </aside>
+  )
+}
+
+const FichaImpl = ({
   snapshot,
   id,
+  vista,
   onEditFlow,
   onMutate,
+  onSelect,
 }: {
   snapshot: Snapshot
   id: string | null
+  vista: Vista
   onEditFlow?: (commandId: string) => void
   /** Toda edición sale de aquí y pasa por el diálogo de diff antes de tocar el disco. */
   onMutate?: (req: MutationRequest, title: string) => void
+  onSelect?: (id: string) => void
 }) => {
   if (!id) {
-    return (
-      <aside className="side">
-        <p className="empty">
-          Cada línea del plano sale de un archivo tuyo. Las punteadas son lo que tus prompts dicen
-          que debería pasar; las sólidas, lo que los transcripts demuestran que pasó.
-        </p>
-        <section>
-          <h3>lo que se lee</h3>
-          {snapshot.catalog.roots.map((r) => (
-            <div className="evidence" key={r}>
-              <code>{shortPath(r)}</code>
-            </div>
-          ))}
-        </section>
-      </aside>
-    )
+    return <FichaVacia snapshot={snapshot} vista={vista} onMutate={onMutate} onSelect={onSelect} />
   }
 
   const entity: Agent | Skill | Command | undefined =
@@ -93,18 +144,23 @@ export const Ficha = ({
 
   if (!entity && !isMain) {
     return (
-      <aside className="side">
+      <aside className="side" aria-label="Ficha">
         <p className="empty">Esta entidad aparece en el historial pero ya no existe en disco.</p>
       </aside>
     )
   }
 
-  const name = isMain ? 'hilo principal' : (entity?.name ?? id)
-  const kind = isMain ? 'tú, en directo' : (entity?.kind ?? '')
+  const name = isMain ? NOMBRE_HILO : (entity?.name ?? id)
+  const kind = isMain ? 'en directo' : (entity?.kind ?? '')
+  const agente = entity?.kind === 'agent' ? (entity as Agent) : null
+  const archivado = agente ? estaArchivado(agente) : false
 
   return (
-    <aside className="side">
-      <div className="kind">{kind}</div>
+    <aside className="side" aria-label={`Ficha de ${name}`}>
+      <div className="kind">
+        {kind}
+        {archivado ? ' · archivado' : ''}
+      </div>
       <h2>{name}</h2>
       {entity?.description && <p className="desc">{entity.description.slice(0, 400)}</p>}
 
@@ -135,7 +191,7 @@ export const Ficha = ({
               <span>grado</span>
               <span>
                 <span className={`badge ${act?.grade ?? 'unused'}`}>
-                  {GRADE_LABEL[act?.grade ?? 'unused']}
+                  {gradoEtiqueta(act?.grade)}
                 </span>
               </span>
             </div>
@@ -143,23 +199,23 @@ export const Ficha = ({
         )}
       </section>
 
-      {entity?.kind === 'agent' && onMutate && (
+      {agente && onMutate && !archivado && (
         <section>
           <h3>editar</h3>
           <div className="editor">
             <label>
               color
               <select
-                value={(entity as Agent).color ?? ''}
+                value={agente.color ?? ''}
                 onChange={(e) =>
                   onMutate(
-                    { kind: 'agent.color', entityId: entity.id, value: e.target.value || null },
-                    `color de ${entity.name}`,
+                    { kind: 'agent.color', entityId: agente.id, value: e.target.value || null },
+                    `color de ${agente.name}`,
                   )
                 }
               >
                 <option value="">sin asignar</option>
-                {COLORES.map((c) => (
+                {opcionesCon(COLORES, agente.color).map((c) => (
                   <option key={c} value={c}>
                     {c}
                   </option>
@@ -169,16 +225,17 @@ export const Ficha = ({
             <label>
               modelo
               <select
-                value={(entity as Agent).model ?? ''}
+                // `inherit` es otra forma de escribir "heredado": las dos van a la misma opción.
+                value={agente.model === 'inherit' ? '' : (agente.model ?? '')}
                 onChange={(e) =>
                   onMutate(
-                    { kind: 'agent.model', entityId: entity.id, value: e.target.value || null },
-                    `modelo de ${entity.name}`,
+                    { kind: 'agent.model', entityId: agente.id, value: e.target.value || null },
+                    `modelo de ${agente.name}`,
                   )
                 }
               >
                 <option value="">heredado</option>
-                {MODELOS.map((m) => (
+                {opcionesCon(MODELOS, agente.model === 'inherit' ? null : agente.model).map((m) => (
                   <option key={m} value={m}>
                     {m}
                   </option>
@@ -190,13 +247,31 @@ export const Ficha = ({
             type="button"
             className="anadir"
             onClick={() =>
-              onMutate({ kind: 'agent.archive', entityId: entity.id }, `archivar ${entity.name}`)
+              onMutate({ kind: 'agent.archive', entityId: agente.id }, `archivar ${agente.name}`)
             }
           >
             archivar este agente
           </button>
           <p className="nota">
             Archivar lo mueve a <code>agents/.archivo/</code>. No se borra nada y se puede deshacer.
+          </p>
+        </section>
+      )}
+
+      {agente && onMutate && archivado && (
+        <section>
+          <h3>archivado</h3>
+          <button
+            type="button"
+            className="anadir"
+            onClick={() =>
+              onMutate({ kind: 'agent.unarchive', entityId: agente.id }, `restaurar ${agente.name}`)
+            }
+          >
+            restaurar este agente
+          </button>
+          <p className="nota">
+            Lo devuelve a <code>agents/</code>. Mientras esté archivado no aparece en la Sala.
           </p>
         </section>
       )}
@@ -226,28 +301,28 @@ export const Ficha = ({
         </section>
       )}
 
-      {entity?.kind === 'agent' && (
+      {agente && (
         <section>
           <h3>definición</h3>
           <div className="row">
             <span>modelo</span>
-            <span>{(entity as Agent).model ?? 'heredado'}</span>
+            <span>{agente.model ?? 'heredado'}</span>
           </div>
           <div className="row">
             <span>color</span>
-            <span>{(entity as Agent).color ?? 'sin asignar'}</span>
+            <span>{agente.color ?? 'sin asignar'}</span>
           </div>
           <div className="row">
             <span>tools</span>
-            <span>{(entity as Agent).tools?.length ?? 'todas'}</span>
+            <span>{agente.tools?.length ?? 'todas'}</span>
           </div>
           <div className="row">
             <span>skills precargadas</span>
-            <span>{(entity as Agent).preloadedSkills.length}</span>
+            <span>{agente.preloadedSkills.length}</span>
           </div>
           <div className="row">
             <span>tamaño del prompt</span>
-            <span>~{(entity as Agent).bodyTokens.toLocaleString('es')} tokens</span>
+            <span>~{agente.bodyTokens.toLocaleString('es')} tokens</span>
           </div>
         </section>
       )}
@@ -269,10 +344,8 @@ export const Ficha = ({
           </div>
           {snapshot.vocabularyGaps[id]?.length ? (
             <>
-              <h3 style={{ marginTop: '.8rem' }}>palabras que nunca has escrito</h3>
-              <p className="desc" style={{ fontSize: 12 }}>
-                {snapshot.vocabularyGaps[id]?.join(', ')}
-              </p>
+              <h3 className="subtitulo">palabras que nunca has escrito</h3>
+              <p className="desc chico">{snapshot.vocabularyGaps[id]?.join(', ')}</p>
             </>
           ) : null}
         </section>
@@ -289,7 +362,11 @@ export const Ficha = ({
       <Evidence edges={out.filter((e) => e.layer === 'proven')} title="lo que ha hecho" />
       <Evidence
         edges={out.filter((e) => e.layer === 'preloaded')}
-        title="precargadas en `skills:`"
+        title={
+          <>
+            precargadas en <code>skills:</code>
+          </>
+        }
       />
       <Evidence
         edges={out.filter((e) => e.layer === 'declared' && e.kind === 'agent-uses-skill')}
@@ -310,9 +387,7 @@ export const Ficha = ({
           <div className="evidence">
             <code>{shortPath(entity.source.realPath)}</code>
             {entity.source.symlink && (
-              <div className="quote" style={{ fontSize: 12 }}>
-                visible como {shortPath(entity.source.path)}
-              </div>
+              <div className="quote chico">visible como {shortPath(entity.source.path)}</div>
             )}
           </div>
         </section>
@@ -320,3 +395,5 @@ export const Ficha = ({
     </aside>
   )
 }
+
+export const Ficha = memo(FichaImpl)

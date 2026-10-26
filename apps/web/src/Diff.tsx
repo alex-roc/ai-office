@@ -1,4 +1,7 @@
+import { Dialogo } from './Dialogo.tsx'
 import type { MutationPlan } from './mutations.ts'
+import { conCodigo } from './Rico.tsx'
+import { shortPath } from './texto.ts'
 
 /** Muestra el diff antes de escribir. Es la única puerta por la que pasa toda escritura. */
 export const DiffDialog = ({
@@ -15,42 +18,53 @@ export const DiffDialog = ({
   error: string | null
   onCancel: () => void
   onConfirm: () => void
-}) => (
-  <div className="modal-fondo" onClick={onCancel} role="presentation">
-    <div className="modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
-      <h3>{title}</h3>
-      <code className="ruta">{plan.path.replace(/^\/Users\/[^/]+/, '~')}</code>
+}) => {
+  // El diff es texto plano y sus líneas pueden repetirse: el número de línea es su identidad.
+  const lineas = plan.diff.split('\n').map((texto, n) => ({ n, texto }))
+  return (
+    <Dialogo titulo={title} onCerrar={onCancel} inicial="[data-cancelar]">
+      <code className="ruta">{shortPath(plan.path)}</code>
       {plan.warnings.map((w) => (
-        <p className="aviso" key={w}>
+        <p className="aviso" key={w} role="status">
           {w}
         </p>
       ))}
       <pre className="diff">
-        {plan.diff.split('\n').map((line, i) => (
+        {lineas.map((l) => (
           <span
-            // El diff es texto plano y sus líneas pueden repetirse: el índice es la única clave estable.
-            key={`${i}-${line}`}
-            className={line.startsWith('+') ? 'mas' : line.startsWith('-') ? 'menos' : ''}
+            key={l.n}
+            className={l.texto.startsWith('+') ? 'mas' : l.texto.startsWith('-') ? 'menos' : ''}
           >
-            {line}
+            {l.texto}
             {'\n'}
           </span>
         ))}
       </pre>
-      {error && <p className="aviso error">{error}</p>}
+      {error && (
+        <p className="aviso error" role="alert">
+          {conCodigo(error)}
+        </p>
+      )}
+      {!plan.changed && (
+        <p className="aviso" role="status">
+          Este cambio no modifica el archivo: el contenido que se escribiría es idéntico al que ya
+          hay, así que no hay nada que guardar.
+        </p>
+      )}
       <div className="acciones">
-        <button type="button" onClick={onCancel}>
+        <button type="button" data-cancelar onClick={onCancel}>
           Cancelar
         </button>
         <button
           type="button"
           className="primario"
+          data-confirmar
           disabled={busy || !plan.changed}
           onClick={onConfirm}
         >
           {busy ? 'Guardando…' : 'Guardar en el archivo'}
         </button>
       </div>
-    </div>
-  </div>
-)
+    </Dialogo>
+  )
+}

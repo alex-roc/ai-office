@@ -1,4 +1,6 @@
-import { Application, Container, Graphics, Sprite, Text } from 'pixi.js'
+import { Application, Container, Graphics, Sprite, Text, type Texture } from 'pixi.js'
+import { claveDeConjunto } from '../derivados.ts'
+import { gradoEtiqueta, NOMBRE_HILO, plural } from '../texto.ts'
 import type { Snapshot } from '../types.ts'
 import { type Atlas, cargarAtlas } from './atlas.ts'
 import {
@@ -13,12 +15,15 @@ import {
   WALL_H,
 } from './iso.ts'
 import { type Bahia, buildLayout, type Lomo, type RoomLayout, type Seat } from './layout.ts'
-import { COLOR_AGENTE, P, SIN_COLOR } from './paleta.ts'
+import { COLOR_AGENTE, P, SIN_COLOR, UI } from './paleta.ts'
 import {
+  abrirAmbito,
   aTextura,
   balda,
   cacheada,
+  cerrarAmbito,
   filtrarTodo,
+  liberar,
   lomo,
   mampara,
   paredLarga,
@@ -50,6 +55,9 @@ import {
  * cruzar el 1x se cambia el filtrado a `linear` para que la miniatura no salga comida.
  */
 const ESCALAS = [0.5, 1, 2, 3, 4]
+
+/** Grado numérico del lomo (1 a 4) → clave de grado, para citarlo en el tooltip en español. */
+const GRADO_DE = ['unused', 'unused', 'tried', 'practicing', 'certified']
 
 /** Cuánto dura encendida una figura tras un evento en vivo. */
 const MS_DESTELLO = 2600
@@ -122,9 +130,12 @@ export class Escena {
   private anillo = new Graphics()
   private tooltip = new Text({
     text: '',
-    style: { fontFamily: 'ui-monospace, monospace', fontSize: 12, fill: 0xf3ead9 },
+    style: { fontFamily: 'ui-monospace, monospace', fontSize: 12, fill: P.papel },
   })
   private fondoTooltip = new Graphics()
+
+  /** Aro sobre el lomo o la tarjeta seleccionados. Va en la capa de luz, por ENCIMA de los lomos. */
+  private resalte = new Graphics()
 
   private seleccion: string | null = null
   private hover: string | null = null
@@ -137,6 +148,28 @@ export class Escena {
   private objetivo = { x: 0, y: 0, escala: 1 }
   private tiempo = 0
 
+  /**
+   * Ciclo de vida. `destruir()` puede llegar mientras `iniciar()` sigue esperando a Pixi o a las
+   * texturas (cambiar de vista a mitad de carga): destruir una `Application` a medio inicializar
+   * lanza, y destruirla dos veces también. Con este estado `destruir` es idempotente y `iniciar`
+   * se retira solo si le han quitado el suelo.
+   */
+  private estado: 'nueva' | 'iniciando' | 'lista' | 'destruida' = 'nueva'
+  private appIniciada = false
+  /** Factor de densidad con el que se crea el lienzo: el del dispositivo si es entero, o 1. */
+  private dpr = Number.isInteger(window.devicePixelRatio) ? Math.max(1, window.devicePixelRatio) : 1
+  private observador: ResizeObserver | null = null
+
+  /** Texturas creadas para el snapshot actual (suelo, paredes, mamparas): se liberan al siguiente. */
+  private texturasDelSnapshot: Texture[] = []
+  /** Conjunto de entidades del último snapshot: reencuadrar solo si cambia. */
+  private claveConjunto = ''
+
+  /** Acumulador de la rueda: un gesto de trackpad es un aluvión de eventos, no un clic. */
+  private ruedaAcumulada = 0
+  private ruedaUltima = 0
+  private ruedaPasoDado = false
+
   constructor(opciones: OpcionesEscena) {
     this.opciones = opciones
   }
@@ -145,19 +178,46 @@ export class Escena {
     return this.app.canvas
   }
 
+  /** `destruir()` puede cambiar el estado durante un `await`: TypeScript no lo ve y estrecha el tipo. */
+  private fueDestruida(): boolean {
+    return this.estado === 'destruida'
+  }
+
   async iniciar(host: HTMLElement): Promise<void> {
+    if (this.estado !== 'nueva') return
+    this.estado = 'iniciando'
     await this.app.init({
-      background: 0x16120f,
+      background: UI.noche,
       antialias: false,
       // Resolución 1 y `image-rendering: pixelated` en CSS: el navegador amplía el lienzo con
-      // vecino más cercano. Poner aquí el devicePixelRatio suavizaría el píxel al escalar.
-      resolution: 1,
-      autoDensity: false,
+      // vecino más cercano. Poner aquí un devicePixelRatio cualquiera suavizaría el píxel al
+      // escalar. La ÚNICA excepción es un ratio ENTERO (2, 3): cada píxel de arte pasa a ser un
+      // bloque exacto de 2x2 o 3x3 píxeles físicos, idéntico a lo que hacía el navegador, y a
+      // cambio los rótulos de texto salen nítidos en pantallas Retina en vez de pixelados. Con
+      // 1,25 o 1,5 sale un reparto desigual de píxeles: ahí se queda en 1.
+      resolution: this.dpr,
+      autoDensity: this.dpr > 1,
       roundPixels: true,
       resizeTo: host,
     })
+    this.appIniciada = true
+    if (this.fueDestruida()) {
+      // Se destruyó mientras Pixi arrancaba: ahora que la app existe, se desmonta aquí.
+      this.app.destroy(true, { children: true })
+      return
+    }
     host.appendChild(this.app.canvas)
+    // `resizeTo` solo escucha el `resize` de la VENTANA. Si el lienzo cambia de tamaño por otra
+    // razón (la banda de bienvenida se descarta, un aviso aparece sobre la cabecera, la ficha
+    // pasa debajo en una ventana estrecha), el canvas se quedaba con el tamaño viejo y dejaba
+    // una franja negra. Se observa el propio contenedor.
+    this.observador = new ResizeObserver(() => {
+      if (this.estado === 'lista') this.app.resize()
+    })
+    this.observador.observe(host)
     this.atlas = await cargarAtlas()
+    // Si `destruir()` llegó durante la carga, ya desmontó la app (existía): no se vuelve a hacer.
+    if (this.fueDestruida()) return
 
     this.capaObjetos.sortableChildren = true
     this.mundo.addChild(this.capaSuelo, this.capaSombras, this.capaObjetos, this.capaLuz)
@@ -203,21 +263,45 @@ export class Escena {
     })
 
     this.app.ticker.add((t) => this.tick(t.deltaMS))
+    this.estado = 'lista'
   }
 
   // --- Construcción -------------------------------------------------------------------------
 
-  aplicar(snapshot: Snapshot): void {
-    if (!this.atlas) return
+  /**
+   * Destruye los hijos de un contenedor salvo los que se conservan. `removeChildren()` a secas
+   * los suelta pero no los destruye: cada recarga dejaba sprites, textos y gráficos huérfanos en
+   * memoria. Las texturas compartidas (atlas, lomos cacheados) NO se destruyen con el sprite.
+   */
+  private vaciar(c: Container, conservar: Container[] = []): void {
+    for (const hijo of [...c.children]) {
+      if (conservar.includes(hijo as Container)) continue
+      c.removeChild(hijo)
+      hijo.destroy({ children: true })
+    }
+  }
+
+  /**
+   * Reconstruye la planta con un snapshot nuevo. Devuelve `true` si cambió el CONJUNTO de
+   * entidades (apareció o desapareció algo) y `false` si solo cambiaron los números: el llamador
+   * reencuadra la cámara únicamente en el primer caso, para no mover la vista bajo el ratón.
+   */
+  aplicar(snapshot: Snapshot): boolean {
+    if (!this.atlas || this.estado === 'destruida') return false
     this.layout = buildLayout(snapshot)
     this.idPrincipal = snapshot.mainThreadId
 
-    for (const c of [this.capaSuelo, this.capaSombras, this.capaObjetos, this.capaLuz]) {
-      c.removeChildren()
-    }
-    this.hud.removeChildren()
-    this.hud.addChild(this.fondoTooltip, this.tooltip)
-    this.capaSombras.addChild(this.anillo)
+    this.vaciar(this.capaSuelo)
+    this.vaciar(this.capaSombras, [this.anillo])
+    this.vaciar(this.capaObjetos)
+    this.vaciar(this.capaLuz, [this.resalte])
+    this.vaciar(this.hud, [this.fondoTooltip, this.tooltip])
+    if (!this.anillo.parent) this.capaSombras.addChild(this.anillo)
+    if (!this.resalte.parent) this.capaLuz.addChild(this.resalte)
+    // El tooltip y el estado de "señalado" apuntaban a objetos que acaban de destruirse.
+    this.ocultarTooltip()
+    liberar(this.texturasDelSnapshot)
+    abrirAmbito()
     this.figuras = []
     this.lomos = []
     this.tarjetas = []
@@ -232,6 +316,12 @@ export class Escena {
     for (const b of this.layout.bahias) this.bahia(b)
     this.puestoPrincipal(snapshot)
     this.dibujarMinimapa(this.layout)
+    this.texturasDelSnapshot = cerrarAmbito()
+
+    const clave = claveDeConjunto(snapshot)
+    const cambio = clave !== this.claveConjunto
+    this.claveConjunto = clave
+    return cambio
   }
 
   /** Parqué en toda la planta y moqueta dentro de cada despacho. */
@@ -378,10 +468,10 @@ export class Escena {
       style: {
         fontFamily: 'ui-monospace, monospace',
         fontSize: 11,
-        fill: esHub ? 0xf3ead9 : 0xd9a05b,
+        fill: esHub ? P.papel : UI.ambar,
         letterSpacing: 1,
         fontWeight: 'bold',
-        stroke: { color: 0x16120f, width: 4 },
+        stroke: { color: UI.noche, width: 4 },
       },
     }) as Placa
     t.anchor.set(0.5, 1)
@@ -466,7 +556,7 @@ export class Escena {
       this.mostrarTooltip(
         seat.unused
           ? `${seat.name} · nunca delegado`
-          : `${seat.name} · ${seat.uses} delegacion${seat.uses === 1 ? '' : 'es'} · ${seat.grade}`,
+          : `${seat.name} · ${plural(seat.uses, 'delegación', 'delegaciones')} · ${gradoEtiqueta(seat.grade)}`,
       )
     })
     cuerpo.on('pointerout', () => {
@@ -478,8 +568,8 @@ export class Escena {
       style: {
         fontFamily: 'ui-monospace, SFMono-Regular, monospace',
         fontSize: 11,
-        fill: seat.unused ? 0x9a9287 : 0xe8dcc6,
-        stroke: { color: 0x16120f, width: 3 },
+        fill: seat.unused ? P.grisApagado : P.yeso,
+        stroke: { color: UI.noche, width: 3 },
       },
     })
     rotulo.anchor.set(0.5, 0)
@@ -515,7 +605,7 @@ export class Escena {
       this.mostrarTooltip(
         l.unused
           ? `${l.name} · nunca usada`
-          : `${l.name} · ${l.uses} usos${l.duenio ? ` · sobre todo ${l.duenio}` : ''}`,
+          : `${l.name} · ${plural(l.uses, 'uso', 'usos')} · ${gradoEtiqueta(GRADO_DE[l.grado])}${l.duenio ? ` · sobre todo ${l.duenio}` : ''}`,
       )
     })
     s.on('pointerout', () => {
@@ -566,7 +656,7 @@ export class Escena {
     this.figura(
       {
         id: snapshot.mainThreadId,
-        name: 'tú',
+        name: NOMBRE_HILO,
         col: c.col,
         row: c.row,
         figura: 'ingeniero',
@@ -578,7 +668,7 @@ export class Escena {
         fase: 0,
       },
       'hub',
-      `tú · ${snapshot.stats.mainThreadSkills} skills`,
+      `${NOMBRE_HILO} · ${plural(snapshot.stats.mainThreadSkills, 'skill', 'skills')}`,
     )
 
     const foco = new Graphics()
@@ -622,15 +712,15 @@ export class Escena {
     this.minimapaFondo
       .clear()
       .roundRect(-6, -6, ANCHO + 12, this.mini.h + 12, 4)
-      .fill({ color: 0x16120f, alpha: 0.82 })
-      .stroke({ color: 0x42352b, width: 1 })
+      .fill({ color: UI.noche, alpha: 0.82 })
+      .stroke({ color: UI.linea, width: 1 })
 
     this.minimapaSalas.clear()
     // El suelo entero, para que se vea la forma de la planta y dónde están los pasillos.
-    this.minimapaSalas.poly(this.rombo(0, 0, l.cols, l.filas)).fill({ color: 0x2f2620 })
+    this.minimapaSalas.poly(this.rombo(0, 0, l.cols, l.filas)).fill({ color: UI.maderaAlta })
     for (const b of l.bahias) {
       const color =
-        b.tipo === 'hub' ? 0xd9a05b : (COLOR_AGENTE[b.tono % COLOR_AGENTE.length] ?? P.roble)
+        b.tipo === 'hub' ? UI.ambar : (COLOR_AGENTE[b.tono % COLOR_AGENTE.length] ?? P.roble)
       this.minimapaSalas
         .poly(this.rombo(b.col0, b.row0, b.col1, b.row1))
         .fill({ color, alpha: b.tipo === 'hub' ? 0.95 : 0.6 })
@@ -659,7 +749,7 @@ export class Escena {
     if (cx1 - cx0 < this.mini.w - 1 || cy1 - cy0 < this.mini.h - 1) {
       this.minimapaVista
         .rect(cx0, cy0, cx1 - cx0, cy1 - cy0)
-        .stroke({ color: 0xf3ead9, width: 1, alpha: 0.9 })
+        .stroke({ color: P.papel, width: 1, alpha: 0.9 })
     }
     // Colocado abajo a la izquierda, sobre el lienzo y fuera del paso de la ficha lateral.
     this.minimapa.position.set(18, this.app.renderer.height - this.mini.h - 18)
@@ -669,6 +759,42 @@ export class Escena {
 
   seleccionar(id: string | null): void {
     this.seleccion = id
+  }
+
+  /** Dónde está una entidad en el mundo (sin el desplazamiento del origen), o null si la Sala no la dibuja. */
+  private posicionDe(id: string): { x: number; y: number } | null {
+    const f = this.figuras.find((x) => x.seat.id === id)
+    if (f) return { x: f.raiz.x, y: f.baseY - 20 }
+    for (const lista of [this.lomos, this.tarjetas]) {
+      const p = lista.find((x) => x.id === id)
+      if (p)
+        return {
+          x: p.sprite.x,
+          y: p.sprite.y - (p.sprite.anchor.y === 1 ? p.sprite.height / 2 : 0),
+        }
+    }
+    return null
+  }
+
+  /** ¿La Sala dibuja esta entidad? Skills y comandos del Plano que no tienen puesto aquí devuelven false. */
+  tiene(id: string): boolean {
+    return this.posicionDe(id) !== null
+  }
+
+  /** Centra la cámara en una entidad, sin cambiar el zoom. Devuelve false si la Sala no la dibuja. */
+  centrarEn(id: string): boolean {
+    const p = this.posicionDe(id)
+    if (!p) return false
+    const ox = this.layout ? origenX(this.layout.filas) : 0
+    this.objetivo.x = this.app.renderer.width / 2 - (p.x + ox) * this.objetivo.escala
+    this.objetivo.y = this.app.renderer.height / 2 - p.y * this.objetivo.escala
+    return true
+  }
+
+  /** ¿Está el punto (coordenadas del lienzo) sobre el minimapa? Para que arrastrarlo no mueva la cámara. */
+  enMinimapa(x: number, y: number): boolean {
+    const m = this.minimapa.position
+    return x >= m.x - 6 && x <= m.x + this.mini.w + 6 && y >= m.y - 6 && y <= m.y + this.mini.h + 6
   }
 
   /** Un evento en vivo: la figura o el lomo se enciende unos segundos. */
@@ -682,10 +808,48 @@ export class Escena {
     }
   }
 
-  zoom(delta: number): void {
+  /**
+   * Un paso de zoom (`1` acerca, `-1` aleja) anclado a un punto del lienzo: lo que está bajo el
+   * cursor sigue bajo el cursor. Sin punto, se ancla al centro. La escala sigue siendo una de
+   * `ESCALAS` —enteras al ampliar, un único 0,5 al alejar—, así que el píxel no se interpola.
+   */
+  zoomPaso(
+    direccion: 1 | -1,
+    x = this.app.renderer.width / 2,
+    y = this.app.renderer.height / 2,
+  ): void {
     const i = ESCALAS.indexOf(this.objetivo.escala)
-    const j = Math.max(0, Math.min(ESCALAS.length - 1, i + (delta > 0 ? -1 : 1)))
-    this.objetivo.escala = ESCALAS[j] ?? 1
+    const j = Math.max(0, Math.min(ESCALAS.length - 1, (i < 0 ? 1 : i) + direccion))
+    const nueva = ESCALAS[j] ?? 1
+    if (nueva === this.objetivo.escala) return
+    // Punto del mundo bajo el cursor (con el origen incluido), antes y después del cambio.
+    const u = (x - this.objetivo.x) / this.objetivo.escala
+    const v = (y - this.objetivo.y) / this.objetivo.escala
+    this.objetivo.escala = nueva
+    this.objetivo.x = x - u * nueva
+    this.objetivo.y = y - v * nueva
+  }
+
+  /**
+   * La rueda llega como un aluvión de eventos, y un gesto de trackpad suma cientos de píxeles:
+   * con un paso por evento, medio gesto llevaba de 0,5x a 4x. Se acumula hasta un umbral y se da
+   * UN paso por gesto; el gesto termina tras un silencio. Para más, están +/- del teclado.
+   */
+  rueda(deltaY: number, modo: number, x: number, y: number): void {
+    const GAP_GESTO = 140
+    const UMBRAL = 40
+    const ahora = performance.now()
+    if (ahora - this.ruedaUltima > GAP_GESTO) {
+      this.ruedaAcumulada = 0
+      this.ruedaPasoDado = false
+    }
+    this.ruedaUltima = ahora
+    if (this.ruedaPasoDado) return
+    this.ruedaAcumulada += deltaY * (modo === 1 ? 16 : modo === 2 ? 100 : 1)
+    if (Math.abs(this.ruedaAcumulada) < UMBRAL) return
+    this.zoomPaso(this.ruedaAcumulada < 0 ? 1 : -1, x, y)
+    this.ruedaPasoDado = true
+    this.ruedaAcumulada = 0
   }
 
   desplazar(dx: number, dy: number): void {
@@ -717,10 +881,15 @@ export class Escena {
     // marea, y al redondear la posición el píxel no vibra.
     const antes = this.camara.escala
     this.camara.escala += (this.objetivo.escala - this.camara.escala) * 0.14
+    // La persecución exponencial nunca llega del todo: dejaría la escala en 0,9999 para siempre
+    // y el pixel art sin ser exactamente entero. Al estar a una milésima, se clava.
+    if (Math.abs(this.objetivo.escala - this.camara.escala) < 0.001) {
+      this.camara.escala = this.objetivo.escala
+    }
     // El filtro solo cambia al cruzar el 1x, no en cada cuadro: recorrer todas las texturas es
     // barato pero no gratis, y hacerlo sesenta veces por segundo sería absurdo.
-    if (antes >= 1 !== this.camara.escala >= 1) {
-      filtrarTodo(this.camara.escala >= 1 ? 'nearest' : 'linear')
+    if (antes * this.dpr >= 1 !== this.camara.escala * this.dpr >= 1) {
+      filtrarTodo(this.camara.escala * this.dpr >= 1 ? 'nearest' : 'linear')
     }
     this.camara.x += (this.objetivo.x - this.camara.x) * 0.18
     this.camara.y += (this.objetivo.y - this.camara.y) * 0.18
@@ -733,7 +902,7 @@ export class Escena {
       const amp = vivo ? 2 : 1
       f.raiz.y =
         f.baseY - Math.round((Math.sin(t * vel + f.seat.fase * Math.PI * 2) + 1) * 0.5 * amp)
-      f.cuerpo.tint = vivo ? 0xfff0d0 : 0xffffff
+      f.cuerpo.tint = vivo ? UI.destello : 0xffffff
       const sel = this.seleccion === f.seat.id
       // Diecinueve nombres sobre una planta entera son ilegibles a cualquier tamaño, y el
       // reparto de rótulos no puede arreglar lo que sencillamente no cabe. Así que a vista de
@@ -745,7 +914,7 @@ export class Escena {
         sel ||
         this.hoverBahia === f.bahiaId ||
         f.destelloHasta > ahora
-      f.rotulo.style.fill = sel ? 0xffd9a0 : f.seat.unused ? 0x9a9287 : 0xe8dcc6
+      f.rotulo.style.fill = sel ? UI.resalte : f.seat.unused ? P.grisApagado : P.yeso
       const p = this.aPantalla(f.raiz.x, f.baseY)
       f.rotulo.position.set(Math.round(p.x), Math.round(p.y + 6))
     }
@@ -753,10 +922,10 @@ export class Escena {
     for (const l of this.lomos) {
       const vivo = l.destelloHasta > ahora
       l.sprite.y = vivo ? l.baseY - 3 : l.baseY
-      l.sprite.tint = vivo ? 0xfff0d0 : 0xffffff
+      l.sprite.tint = vivo ? UI.destello : 0xffffff
     }
     for (const c of this.tarjetas) {
-      c.sprite.tint = c.destelloHasta > ahora ? 0xfff0d0 : 0xffffff
+      c.sprite.tint = c.destelloHasta > ahora ? UI.destello : 0xffffff
     }
     for (const z of this.placas) {
       const p = this.aPantalla(z.mundoX, z.mundoY)
@@ -821,6 +990,7 @@ export class Escena {
   /** Anillo bajo la figura seleccionada: late, para que no se pierda entre veinte. */
   private dibujarAnillo(t: number): void {
     this.anillo.clear()
+    this.resalte.clear()
     if (!this.seleccion || !this.layout) return
     const todas = this.layout.bahias.flatMap((b) => b.agentes)
     const s = todas.find((x) => x.id === this.seleccion)
@@ -829,11 +999,26 @@ export class Escena {
       : this.seleccion === this.idPrincipal
         ? toScreen(this.layout.main.col, this.layout.main.row)
         : null
-    if (!pos) return
     const pulso = (Math.sin(t * 3) + 1) * 0.5
+    if (!pos) {
+      this.dibujarResalte(pulso)
+      return
+    }
     this.anillo
       .ellipse(pos.x, pos.y + TILE.h / 2, 18 + pulso * 4, 9 + pulso * 2)
-      .stroke({ color: 0xffd9a0, width: 2, alpha: 0.5 + pulso * 0.35 })
+      .stroke({ color: UI.resalte, width: 2, alpha: 0.5 + pulso * 0.35 })
+  }
+
+  /** Marco pulsante alrededor del lomo o la tarjeta seleccionados (las figuras llevan anillo). */
+  private dibujarResalte(pulso: number): void {
+    const pieza = [...this.lomos, ...this.tarjetas].find((x) => x.id === this.seleccion)
+    if (!pieza) return
+    const s = pieza.sprite
+    const x0 = s.x - s.width * s.anchor.x - 2
+    const y0 = s.y - s.height * s.anchor.y - 2
+    this.resalte
+      .rect(x0, y0, s.width + 4, s.height + 4)
+      .stroke({ color: UI.resalte, width: 2, alpha: 0.55 + pulso * 0.35 })
   }
 
   /**
@@ -881,7 +1066,7 @@ export class Escena {
         this.tooltip.height + 8,
         3,
       )
-      .fill({ color: 0x16120f, alpha: 0.92 })
+      .fill({ color: UI.noche, alpha: 0.92 })
   }
 
   /** Mundo → pantalla, para colocar los rótulos del HUD (que no escala). */
@@ -907,14 +1092,28 @@ export class Escena {
     const escala = ESCALAS.filter((e) => e <= cabe).pop() ?? ESCALAS[0] ?? 1
     this.objetivo.escala = escala
     this.camara.escala = escala
-    filtrarTodo(escala >= 1 ? 'nearest' : 'linear')
+    filtrarTodo(escala * this.dpr >= 1 ? 'nearest' : 'linear')
     this.objetivo.x = (w - ancho * escala) / 2 - izquierda * escala
     this.objetivo.y = (h - alto * escala) / 2 + WALL_H * escala
     this.camara.x = this.objetivo.x
     this.camara.y = this.objetivo.y
   }
 
+  /** Pausa el bucle mientras la Sala está oculta: nadie ve 60 fps de una vista tapada. */
+  activar(activa: boolean): void {
+    if (this.estado !== 'lista') return
+    if (activa) this.app.ticker.start()
+    else this.app.ticker.stop()
+  }
+
   destruir(): void {
-    this.app.destroy(true, { children: true })
+    if (this.fueDestruida()) return
+    const habiaIniciado = this.appIniciada
+    this.estado = 'destruida'
+    this.observador?.disconnect()
+    // Si Pixi aún está arrancando, `iniciar()` desmonta la app al volver (ver arriba).
+    if (habiaIniciado) this.app.destroy(true, { children: true })
+    liberar(this.texturasDelSnapshot)
+    this.texturasDelSnapshot = []
   }
 }

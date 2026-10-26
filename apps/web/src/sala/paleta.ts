@@ -80,3 +80,18 @@ export const COLOR_AGENTE_OSCURO = [
 /** Un agente sin `color:` no está "triste": está literalmente sin colorear. */
 export const SIN_COLOR = P.grisApagado
 export const SIN_COLOR_OSCURO = 0x6f6961
+
+/**
+ * Los colores de la INTERFAZ (`styles.css`) que la escena necesita también, porque Pixi no lee
+ * variables CSS. Son los mismos valores que `--noche`, `--madera-alta`, `--linea` y `--ambar`: si
+ * se cambian allí, hay que cambiarlos aquí. `resalte` y `destello` son de la propia escena:
+ * el aro de lo seleccionado y el tinte de "esto acaba de usarse".
+ */
+export const UI = {
+  noche: 0x16120f,
+  maderaAlta: 0x2f2620,
+  linea: 0x42352b,
+  ambar: 0xd9a05b,
+  resalte: 0xffd9a0,
+  destello: 0xfff0d0,
+} as const

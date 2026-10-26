@@ -22,6 +22,19 @@ en `127.0.0.1`; el daemon solo en `127.0.0.1` a propósito. El proxy de Vite los
 **`ws: true`** o el upgrade del WebSocket no se reenvía: la interfaz se queda sin eventos en vivo
 en silencio, sin ningún error.
 
+**El guard de Fastify se salta con una ruta codificada.** Decidir con `req.url` a pelo
+(`startsWith('/api/')`) deja pasar `POST /%61pi/mutations/apply` sin token: find-my-way decodifica
+el percent-encoding ANTES de enrutar, así que el manejador de `/api/...` se ejecuta aunque el guard
+no vea `/api`. El guard decide con la ruta normalizada (decodificada, también el doble, con `//`,
+`..` y mayúsculas resueltos) y con la que el router resolvió, y trata lo público como lista blanca
+exacta, no al revés. Lo cubre `packages/daemon/test/auth.test.ts`, incluida una petición HTTP real.
+
+**El frontmatter YAML no se escribe con plantillas.** `description: ${texto}` a pelo es una
+inyección: un `:` o un `#` lo rompen y un salto de línea seguido de `allowed-tools: Bash(*)` añade
+una clave que Claude Code obedece. `compileFlow` emite el frontmatter con la librería `yaml`, y las
+notas libres se sanean para que no puedan abrir otro bloque `---` ni falsificar los marcadores de
+flujo. Mismo cuidado con los nombres de agente al construir una `RegExp`: se escapan.
+
 **El WebSocket no puede autenticarse por cabecera.** Una petición de upgrade no lleva
 `Authorization`, así que el guard deja pasar `/api/live` y el token viaja en el primer frame. Si se
 olvida esa excepción, el socket abre y se cierra sin decir por qué.
@@ -123,3 +136,50 @@ por encima de la escena.
 un `biome check --write`, que había colapsado un encadenamiento de varias líneas en una sola: la
 sustitución no casó, no falló, y se depuró durante un rato un arreglo que nunca llegó al archivo.
 Si editas por script, **afirma que el patrón existe** antes de sustituir.
+
+**Un lienzo de Pixi no se entera de que su contenedor cambió de tamaño.** `resizeTo` solo escucha
+el `resize` de la VENTANA. Al descartar la banda de bienvenida o al aparecer una banda de error,
+el contenedor crece pero el canvas se quedaba con el tamaño viejo y dejaba una franja negra.
+`Escena` observa el host con un `ResizeObserver` y llama a `app.resize()`.
+
+**Resolución entera es la única excepción a `resolution: 1`.** Con un devicePixelRatio ENTERO (2,
+3) cada píxel de arte es un bloque exacto de 2x2 o 3x3 físicos, idéntico a lo que hacía el
+navegador al ampliar, y los rótulos de texto salen nítidos en Retina. Con 1,25 o 1,5 el reparto es
+desigual y se rompe el pixel art: ahí se queda en 1. Comprobado a ojo con `agent-browser set
+viewport 1280 700 2`.
+
+**Dos vistas montadas a la vez se ocultan con `visibility`, no con `display: none`.** Con
+`display: none` el host mide 0x0 y Pixi, que solo reacciona al `resize` de la ventana, queda con un
+lienzo de tamaño cero al volver. La Sala oculta además pausa su ticker.
+
+**Pixi no se destruye dos veces ni a medio inicializar.** Si `destruir()` llega mientras
+`iniciar()` espera a Pixi o a las texturas, `Escena` lo registra y `iniciar` se retira solo;
+`destruir()` es idempotente.
+
+**El zoom con rueda no puede dar un paso por evento.** Un gesto de trackpad son cientos de eventos
+y llevaba de 0,5x a 4x de un golpe. `Escena.rueda` acumula y da UN paso por gesto (silencio de
+140 ms entre gestos); para más, `+`/`-`.
+
+**El token se relee por `hashchange` Y se reconecta el WebSocket.** `api.ts` avisa a los
+suscriptores (`subscribeToken`): `App` recarga el snapshot y `useLiveConnection` reabre el socket
+con el token nuevo. `connected` solo pasa a true al recibir la primera respuesta: un token malo
+también abre el socket y el servidor lo cierra sin decir por qué.
+
+**El 500 vacío de Vite es "no hay daemon".** Con el daemon caído, el proxy de desarrollo contesta
+500 sin cuerpo JSON; el daemon siempre contesta sus errores con JSON. `api.ts` traduce un 5xx sin
+JSON a "no se puede hablar con el daemon".
+
+**HMR de Vite duplica `api.ts` si lo editas con la página abierta.** Quedan dos copias del módulo
+con tokens distintos y el estado parece roto sin estarlo. Recarga dura antes de depurar.
+
+**`fs.watch` pierde lo que ocurre justo después de crearse (macOS).** Un hook que escribe en el
+spool en los primeros milisegundos tras arrancar el daemon no dispara ningún evento, y no hay
+error. Se vio como un test intermitente (~5 %) de `watchSpool` que dejaba el proceso colgado.
+`watchSpool` no confía solo en el watcher: revisa el directorio cada segundo.
+
+**Leer-y-borrar el spool pierde líneas.** El relay sigue añadiendo al archivo del día mientras el
+daemon lo procesa. Se renombra a `.draining` antes de leer: el relay crea uno nuevo y nada se pisa.
+
+**Un hook registrado desde la caché de `npx` muere en silencio.** Claude Code ignora un hook cuyo
+archivo ya no existe. Por eso `hooks install` copia el relay a `~/.claude/ai-office/bin/` y registra
+esa ruta; `doctor` avisa si un hook de settings.json apunta a algo que ya no existe.

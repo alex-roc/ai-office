@@ -283,3 +283,19 @@ describe('geometría de la planta', () => {
     assert.equal(uno.bahias.length, 1)
   })
 })
+
+describe('comandos en la planta', () => {
+  it('una tarjeta sale como ejecutada solo si el comando tiene actividad', () => {
+    // Antes `used` iba fijo a false y todas las tarjetas salían con la chincheta de "nunca".
+    const a = agente('ana')
+    const hecho = comando('revisar')
+    const nuevo = comando('limpiar')
+    const planta = vacia({
+      salas: [sala('uno', [a.id], [], [hecho.id, nuevo.id])],
+    })
+    const l = buildLayout(snapshotDe([a], [], [hecho, nuevo], planta, usado(hecho.id, 4)))
+    const tarjetas = l.bahias.flatMap((b) => b.tarjetas)
+    assert.equal(tarjetas.find((t) => t.id === hecho.id)?.used, true)
+    assert.equal(tarjetas.find((t) => t.id === nuevo.id)?.used, false)
+  })
+})

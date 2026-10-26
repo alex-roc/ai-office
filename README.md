@@ -89,6 +89,21 @@ moverse por la planta.
 que los transcripts demuestran. Al seleccionar algo, la ficha lateral cita el archivo y la línea de
 cada afirmación.
 
+### Teclado y búsqueda
+
+| Tecla | Acción |
+|---|---|
+| `1` / `2` | Sala / Plano |
+| `/` | **Buscador**: escribe parte del nombre de un agente, skill o comando, elige con las flechas e Intro; lo selecciona y lleva la vista hasta ello |
+| `+` `-` `0` | acercar, alejar, encuadrar todo |
+| `Esc` | cierra el diálogo abierto o quita la selección |
+| `?` | ayuda con atajos y cómo leer cada vista |
+
+Los atajos no actúan mientras escribes en un campo ni con un diálogo abierto. La primera vez que
+abres la interfaz aparece una bienvenida breve (se descarta y no vuelve). Los agentes archivados
+salen en la ficha vacía, con un botón para restaurarlos. La cabecera cita en cada cifra el archivo
+del que sale (pasa el ratón) y muestra si hay conexión en vivo con el daemon.
+
 ## El cartel
 
 ```bash
@@ -96,7 +111,9 @@ ai-office censo --cartel mi-oficina.svg
 ```
 
 Un SVG con los tres números y una figura por cada cosa que tienes, rellena si la usas y hueca si
-no. Es texto, no necesita dependencias y se ve en GitHub.
+no. Es texto, no necesita dependencias y se ve en GitHub. Crece en altura según lo que tengas, así
+que con cientos de skills no se solapa. Los comandos salen rellenos si se han ejecutado (tecleados,
+o invocados por Claude con la herramienta Skill).
 
 ## Editar
 
@@ -118,9 +135,30 @@ eventos deja rastro permanente en las fichas — a diferencia de un visualizador
 cambia lo que las cosas son**.
 
 ```bash
-ai-office doctor          # qué hay instalado y con qué hooks tuyos convive
-ai-office hooks install   # enseña el diff; no escribe sin --yes
+ai-office doctor          # plugin, hooks, daemon vivo y eventos pendientes; con qué hooks tuyos convive
+ai-office hooks install   # enseña el diff; no escribe sin --yes (crea settings.json si no existe)
 ```
+
+`hooks install` copia el relay a `~/.claude/ai-office/bin/ai-office-hook.mjs` y registra esa ruta,
+que no depende de la caché de `npx`. Si usas el plugin **no** instales también los hooks: cada
+evento llegaría dos veces (`doctor` lo avisa).
+
+**Privacidad.** El relay no guarda el contenido de lo que haces: de `Write`, `Edit` y `Bash` solo
+salen el nombre del archivo y el tamaño, nunca el texto escrito, el comando ni su salida. El spool
+(lo que se acumula si el daemon está apagado) tiene un tope de 5 MB. Con la opción `telemetry`
+del plugin en falso, o `AI_OFFICE_TELEMETRY=0`, el relay no escribe nada.
+
+## La línea de comandos
+
+```bash
+ai-office                 # abre la interfaz en el navegador (--no-open: solo imprime el enlace)
+ai-office --version
+ai-office --help
+```
+
+El puerto sale de `AI_OFFICE_PORT` o, dentro del plugin, de su opción «Puerto»
+(`CLAUDE_PLUGIN_OPTION_PORT`). Si usas `CLAUDE_CONFIG_DIR` (varias cuentas de Claude Code),
+ai-office lee ese directorio; `CLAUDE_HOME` tiene prioridad y sirve para probar contra una copia.
 
 ## Estado
 
@@ -139,6 +177,11 @@ claude plugin install ai-office@ai-office
 
 Instalarlo como plugin es la vía recomendada: sus hooks se declaran aparte y **no se toca tu
 `settings.json`**, donde viven tus permisos y tus otros hooks. Añade el comando `/censo`.
+
+El plugin se instala sin dependencias: la primera vez corre `pnpm install --prod` en su directorio
+(`ai-office` te lo dice con el comando exacto si faltan). Sus dos opciones, **Puerto** y **Registrar
+actividad**, llegan como `CLAUDE_PLUGIN_OPTION_PORT` y `CLAUDE_PLUGIN_OPTION_TELEMETRY`; fuera del
+plugin valen `AI_OFFICE_PORT` y `AI_OFFICE_TELEMETRY=0`.
 
 ## Desarrollo
 

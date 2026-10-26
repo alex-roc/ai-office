@@ -215,7 +215,9 @@ export const buildLayout = (snapshot: Snapshot): RoomLayout => {
 
   const tarjeta = (id: string, col: number, row: number, altura: number): Tarjeta | null => {
     const c = cmdPorId.get(id)
-    return c ? { id, name: c.name, col, row, altura, used: false } : null
+    // "Ejecutado" = el daemon vio ese comando usarse (`activity[id].uses`). Antes iba fijo a
+    // `false` y todas las tarjetas salían grises con la chincheta de "nunca ejecutado".
+    return c ? { id, name: c.name, col, row, altura, used: Boolean(act(id)?.uses) } : null
   }
 
   // --- La rejilla ---------------------------------------------------------------------------

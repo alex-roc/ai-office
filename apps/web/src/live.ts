@@ -1,4 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useSyncExternalStore } from 'react'
+import { abrirSocketVivo } from './api.ts'
+import { esperaTras } from './reconexion.ts'
 
 /**
  * Cliente de eventos en vivo.
@@ -6,6 +8,12 @@ import { useEffect, useRef, useState } from 'react'
  * Reglas que hereda del contrato: cada evento trae un `seq` monotónico, así que al reconectar se
  * pide desde el último visto y no se pierde nada; si el servidor ya no tiene ese `seq` en su
  * buffer, responde que hay que recargar el snapshot entero.
+ *
+ * El estado vive FUERA de React, en un almacén con suscripción por selector. Un evento en vivo
+ * llega varias veces por segundo mientras alguien trabaja; si el estado viviera en `App`, cada
+ * uno re-renderizaría la aplicación entera. Así solo se re-renderiza quien lee lo que cambió
+ * (el contador de sesiones, el indicador de conexión) y la Sala se entera por `onEvento` sin
+ * pasar por React.
  */
 
 export interface LiveEvent {
@@ -32,17 +40,56 @@ export interface LiveSession {
 }
 
 export interface LiveState {
+  /** Solo es true tras AUTENTICAR: el servidor contesta al primer frame o cierra sin decir nada. */
   connected: boolean
   sessions: LiveSession[]
-  /** Último evento por entidad, para el destello de "esto acaba de usarse". */
-  lastTouch: Record<string, number>
-  events: LiveEvent[]
+  /** Intentos fallidos seguidos: con varios, lo más probable es un token caducado. */
+  fallos: number
 }
 
-const EMPTY: LiveState = { connected: false, sessions: [], lastTouch: {}, events: [] }
+const INICIAL: LiveState = { connected: false, sessions: [], fallos: 0 }
 
-export const useLive = (token: string, onResync: () => void): LiveState => {
-  const [state, setState] = useState<LiveState>(EMPTY)
+let state: LiveState = INICIAL
+const suscriptores = new Set<() => void>()
+const oyentesEvento = new Set<(e: LiveEvent) => void>()
+
+const poner = (cambio: Partial<LiveState>): void => {
+  const siguiente = { ...state, ...cambio }
+  if (
+    siguiente.connected === state.connected &&
+    siguiente.sessions === state.sessions &&
+    siguiente.fallos === state.fallos
+  ) {
+    return
+  }
+  state = siguiente
+  for (const f of suscriptores) f()
+}
+
+const suscribir = (f: () => void): (() => void) => {
+  suscriptores.add(f)
+  return () => {
+    suscriptores.delete(f)
+  }
+}
+
+/** Lee una porción del estado. El selector debe devolver un valor estable (primitivo o referencia). */
+export const useLiveSelector = <T>(selector: (s: LiveState) => T): T =>
+  useSyncExternalStore(suscribir, () => selector(state))
+
+/** Cada evento recibido, sin pasar por React: así es como la Sala enciende una figura. */
+export const onEvento = (f: (e: LiveEvent) => void): (() => void) => {
+  oyentesEvento.add(f)
+  return () => {
+    oyentesEvento.delete(f)
+  }
+}
+
+/**
+ * Mantiene la conexión mientras el componente vive. Se reconecta con el token nuevo cuando
+ * cambia (el daemon genera uno en cada arranque). No devuelve estado: no re-renderiza a quien la use.
+ */
+export const useLiveConnection = (token: string, onResync: () => void): void => {
   const seqRef = useRef(0)
   const onResyncRef = useRef(onResync)
   onResyncRef.current = onResync
@@ -51,16 +98,19 @@ export const useLive = (token: string, onResync: () => void): LiveState => {
     let ws: WebSocket | null = null
     let closed = false
     let retry: ReturnType<typeof setTimeout> | null = null
+    let fallos = 0
+    // Con otro token los `seq` del servidor anterior no valen: se pide desde cero.
+    seqRef.current = 0
 
     const connect = () => {
       if (closed) return
-      const url = `ws://${window.location.host}/api/live`
-      ws = new WebSocket(url)
+      ws = abrirSocketVivo()
 
       ws.onopen = () => {
         // El token va en el primer frame, nunca en la query string: no queda en logs.
+        // `connected` NO se pone aquí: un token malo también abre el socket, y el servidor lo
+        // cierra sin decir por qué. Se considera conectado al recibir la primera respuesta.
         ws?.send(JSON.stringify({ token, resumeFrom: seqRef.current }))
-        setState((s) => ({ ...s, connected: true }))
       }
 
       ws.onmessage = (msg) => {
@@ -69,6 +119,10 @@ export const useLive = (token: string, onResync: () => void): LiveState => {
           payload = JSON.parse(String(msg.data))
         } catch {
           return
+        }
+        if (fallos !== 0 || !state.connected) {
+          fallos = 0
+          poner({ connected: true, fallos: 0 })
         }
         const data = payload as {
           type?: string
@@ -80,29 +134,20 @@ export const useLive = (token: string, onResync: () => void): LiveState => {
           onResyncRef.current()
           return
         }
-        setState((s) => {
-          const next = { ...s }
-          if (data.sessions) next.sessions = data.sessions
-          if (data.events?.length) {
-            const touch = { ...s.lastTouch }
-            for (const e of data.events) {
-              if (e.seq > seqRef.current) seqRef.current = e.seq
-              if (e.entityId) touch[e.entityId] = e.ts
-            }
-            next.lastTouch = touch
-            // Solo se guarda una cola corta: la interfaz muestra actividad, no un log.
-            next.events = [...data.events, ...s.events].slice(0, 60)
-          }
-          return next
-        })
+        if (data.sessions) poner({ sessions: data.sessions })
+        for (const e of data.events ?? []) {
+          if (e.seq > seqRef.current) seqRef.current = e.seq
+          for (const f of oyentesEvento) f(e)
+        }
       }
 
-      const reconnect = () => {
-        setState((s) => ({ ...s, connected: false }))
+      ws.onclose = () => {
+        ws = null
         if (closed) return
-        retry = setTimeout(connect, 1500)
+        fallos++
+        poner({ connected: false, fallos })
+        retry = setTimeout(connect, esperaTras(fallos))
       }
-      ws.onclose = reconnect
       ws.onerror = () => ws?.close()
     }
 
@@ -111,8 +156,7 @@ export const useLive = (token: string, onResync: () => void): LiveState => {
       closed = true
       if (retry) clearTimeout(retry)
       ws?.close()
+      poner({ connected: false, sessions: [], fallos: 0 })
     }
   }, [token])
-
-  return state
 }
