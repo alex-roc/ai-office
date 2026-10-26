@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, realpath, stat, symlink, writeFile } from 'no
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { test } from 'node:test'
-import { etagOf } from '../src/claude-code/frontmatter.ts'
+import { etagOf } from '../src/claude-code/etag.ts'
 import {
   applyArchiveAgent,
   applyCreateFile,

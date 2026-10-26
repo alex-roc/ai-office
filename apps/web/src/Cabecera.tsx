@@ -79,7 +79,14 @@ const CabeceraImpl = ({
   onAyuda: () => void
 }) => {
   const s = snapshot.stats
-  const raiz = shortPath(snapshot.catalog.roots[0] ?? '~/.claude')
+  // `roots` son las tres carpetas que se leen (agents, commands, skills); la raíz de Claude Code
+  // es la que las contiene, y de ella cuelgan projects/ e history.jsonl.
+  const [
+    dirAgentes = '~/.claude/agents',
+    dirComandos = '~/.claude/commands',
+    dirSkills = '~/.claude/skills',
+  ] = snapshot.catalog.roots
+  const raiz = shortPath(dirAgentes.replace(/[\\/]agents[\\/]?$/, ''))
   const dias = ventanaDeHistorial(snapshot)
   const ventana =
     dias === undefined
@@ -160,7 +167,7 @@ const CabeceraImpl = ({
         <Lectura
           valor={s.agents}
           rotulo="agentes"
-          cita={`Archivos agents/*.md bajo ${snapshot.catalog.roots.map(shortPath).join(', ')}`}
+          cita={`Archivos *.md en ${shortPath(dirAgentes)}`}
         />
         <Lectura
           clase="alerta"
@@ -171,7 +178,7 @@ const CabeceraImpl = ({
         <Lectura
           valor={s.skills}
           rotulo="skills"
-          cita={`Carpetas skills/*/SKILL.md bajo ${raiz}`}
+          cita={`Carpetas */SKILL.md en ${shortPath(dirSkills)}`}
         />
         <Lectura
           clase="alerta"
@@ -189,7 +196,7 @@ const CabeceraImpl = ({
         <Lectura
           valor={s.commands}
           rotulo="comandos"
-          cita={`Archivos commands/*.md bajo ${raiz}`}
+          cita={`Archivos *.md en ${shortPath(dirComandos)}`}
         />
         <Lectura
           clase="alerta"

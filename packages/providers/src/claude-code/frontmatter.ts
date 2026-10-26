@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto'
 import { parseDocument } from 'yaml'
 
 /**
@@ -108,10 +107,6 @@ export const setFrontmatterFields = (
   const out = `${head}${yamlOut}---\n${parsed.body}`
   return { text: out, changed: true }
 }
-
-/** Identidad del contenido para control de concurrencia optimista. */
-export const etagOf = (text: string, mtimeMs: number, size: number): string =>
-  `${createHash('sha256').update(text).digest('hex').slice(0, 16)}:${Math.trunc(mtimeMs)}:${size}`
 
 /** Estimación de tokens suficientemente buena para un presupuesto de contexto (~4 chars/token). */
 export const estimateTokens = (text: string): number => Math.ceil(text.length / 4)

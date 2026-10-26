@@ -1,4 +1,5 @@
 import { writeFile } from 'node:fs/promises'
+import { GRADE_LABEL } from '@ai-office/core'
 import {
   activityByTarget,
   buildDeclaredGraph,
@@ -152,7 +153,7 @@ export const censo = async (posterPath?: string): Promise<void> => {
     for (const { s, a } of top) {
       console.log(
         `    ${green('.')} ${s.name.padEnd(28)} ${n(a?.uses ?? 0).padStart(5)} usos  ${dim(
-          `${a?.grade}, ${relDate(a?.lastUsedAt ?? null)}`,
+          `${a?.grade ? GRADE_LABEL[a.grade] : '—'}, ${relDate(a?.lastUsedAt ?? null)}`,
         )}`,
       )
     }

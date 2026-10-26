@@ -12,3 +12,5 @@ packages/cli/LICENSE
 # Notas locales del agente (proyecto público): los gotchas compartidos viven en docs/GOTCHAS.md
 CLAUDE.md
 AGENTS.md
+_site/
+.playwright-mcp/

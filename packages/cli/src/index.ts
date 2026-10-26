@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { censo } from './commands/censo.ts'
+import { demo } from './commands/demo.ts'
 import { doctor, hooksInstall, hooksUninstall } from './commands/hooks.ts'
 import { start } from './commands/start.ts'
 import { cliVersion, resolvePort } from './env.ts'
@@ -65,7 +66,16 @@ const commands: Record<string, CliCommand> = {
       }
     },
   },
-  // demo: otro módulo registrará aquí su entrada (`ai-office demo`).
+  demo: {
+    usage: 'ai-office demo',
+    summary: 'la interfaz sobre una instalación ficticia: se puede editar todo sin riesgo',
+    options: [
+      ['--no-open', 'solo imprime el enlace, sin abrir el navegador'],
+      ['--port 7379', 'puerto (por defecto 7379, para convivir con el real)'],
+    ],
+    run: (args) =>
+      demo(Number(flagValue(args, '--port') ?? 7379), { open: !args.includes('--no-open') }),
+  },
 }
 
 const help = (): string => {

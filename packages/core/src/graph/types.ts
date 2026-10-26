@@ -81,5 +81,13 @@ export const gradeOf = (input: GradeInput, now = Date.now()): Grade => {
   return 'tried'
 }
 
+/** Cómo se dice cada grado en la interfaz y en el censo: un solo sitio para las dos. */
+export const GRADE_LABEL: Record<Grade, string> = {
+  unused: 'sin estrenar',
+  tried: 'estrenada',
+  practicing: 'en práctica',
+  certified: 'acreditada',
+}
+
 /** Cuenta como activo lo que está en práctica o acreditado. */
 export const isActiveGrade = (g: Grade): boolean => g === 'practicing' || g === 'certified'

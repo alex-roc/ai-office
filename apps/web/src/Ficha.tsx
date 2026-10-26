@@ -151,7 +151,14 @@ const FichaImpl = ({
   }
 
   const name = isMain ? NOMBRE_HILO : (entity?.name ?? id)
-  const kind = isMain ? 'en directo' : (entity?.kind ?? '')
+  // El vocabulario de Claude Code, en español donde el término lo tiene (agente, comando).
+  const NOMBRE_TIPO: Record<string, string> = {
+    agent: 'agente',
+    skill: 'skill',
+    command: 'comando',
+    mcp: 'servidor MCP',
+  }
+  const kind = isMain ? 'en directo' : (NOMBRE_TIPO[entity?.kind ?? ''] ?? entity?.kind ?? '')
   const agente = entity?.kind === 'agent' ? (entity as Agent) : null
   const archivado = agente ? estaArchivado(agente) : false
 

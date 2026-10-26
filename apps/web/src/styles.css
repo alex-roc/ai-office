@@ -352,6 +352,8 @@ header.bar { row-gap: 0.15rem; padding-top: 0.2rem; padding-bottom: 0.2rem; }
 .banda button:hover, .bienvenida button:hover { color: var(--tinta); border-color: var(--apagado); }
 .banda button:disabled, .pantalla-error button:disabled { opacity: 0.5; cursor: default; }
 .banda.error { background: rgba(207, 106, 79, 0.14); border-left: 3px solid var(--rojo); }
+.banda.demo { background: rgba(127, 176, 138, 0.12); border-left: 3px solid var(--verde); }
+.banda.demo a { color: var(--ambar); white-space: nowrap; }
 .banda.escaneo { display: block; background: rgba(217, 160, 91, 0.08); color: var(--apagado); font-size: 12px; }
 .banda.escaneo summary { cursor: pointer; }
 .banda.escaneo ul { margin: 0.4rem 0 0; padding-left: 1.2rem; max-height: 120px; overflow-y: auto; }

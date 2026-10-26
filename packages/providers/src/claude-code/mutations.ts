@@ -13,7 +13,8 @@ import { homedir } from 'node:os'
 import { basename, dirname, join, resolve, sep } from 'node:path'
 import { makeId } from '@ai-office/core'
 import { removeSection, upsertSection } from './body-sections.ts'
-import { estimateTokens, etagOf, parseMarkdownDoc, setFrontmatterFields } from './frontmatter.ts'
+import { etagOf } from './etag.ts'
+import { estimateTokens, parseMarkdownDoc, setFrontmatterFields } from './frontmatter.ts'
 import { paths } from './paths.ts'
 
 /**

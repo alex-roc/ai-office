@@ -145,6 +145,13 @@ export class Escena {
   private idPrincipal = ''
 
   private camara = { x: 0, y: 0, escala: 1 }
+  /**
+   * Si el usuario ya ha movido la cámara. Mientras no lo haya hecho, cualquier cambio de tamaño
+   * del lienzo vuelve a encuadrar: el primer encuadre puede ocurrir con el tamaño viejo (la banda
+   * de bienvenida o un aviso aún ocupan sitio, o el snapshot llega antes que el layout final) y
+   * dejaba la planta fuera de la vista, con el lienzo aparentemente vacío.
+   */
+  private camaraManual = false
   private objetivo = { x: 0, y: 0, escala: 1 }
   private tiempo = 0
 
@@ -212,7 +219,9 @@ export class Escena {
     // pasa debajo en una ventana estrecha), el canvas se quedaba con el tamaño viejo y dejaba
     // una franja negra. Se observa el propio contenedor.
     this.observador = new ResizeObserver(() => {
-      if (this.estado === 'lista') this.app.resize()
+      if (this.estado !== 'lista') return
+      this.app.resize()
+      if (!this.camaraManual) this.encajar()
     })
     this.observador.observe(host)
     this.atlas = await cargarAtlas()
@@ -231,6 +240,7 @@ export class Escena {
       const wx = local.x / this.mini.k + this.mini.x0
       const wy = local.y / this.mini.k + this.mini.y0
       const ox = this.layout ? origenX(this.layout.filas) : 0
+      this.camaraManual = true
       this.objetivo.x = this.app.renderer.width / 2 - (wx + ox) * this.camara.escala
       this.objetivo.y = this.app.renderer.height / 2 - wy * this.camara.escala
     }
@@ -401,7 +411,8 @@ export class Escena {
     if (longitud <= 0) return
     const s = new Sprite(aTextura(mampara(longitud, 1, alto)))
     const p = toScreen(col, row1)
-    s.position.set(p.x - TILE.w / 2, p.y + TILE.h / 2 - alto)
+    // El borde inferior izquierdo del lienzo cae en (col, row1) y sube hacia (col, row1 - longitud).
+    s.position.set(p.x, p.y - longitud * (TILE.h / 2) - alto)
     s.zIndex = depthOf(col, row1 - longitud, bias)
     this.capaObjetos.addChild(s)
   }
@@ -786,6 +797,7 @@ export class Escena {
     const p = this.posicionDe(id)
     if (!p) return false
     const ox = this.layout ? origenX(this.layout.filas) : 0
+    this.camaraManual = true
     this.objetivo.x = this.app.renderer.width / 2 - (p.x + ox) * this.objetivo.escala
     this.objetivo.y = this.app.renderer.height / 2 - p.y * this.objetivo.escala
     return true
@@ -822,6 +834,7 @@ export class Escena {
     const j = Math.max(0, Math.min(ESCALAS.length - 1, (i < 0 ? 1 : i) + direccion))
     const nueva = ESCALAS[j] ?? 1
     if (nueva === this.objetivo.escala) return
+    this.camaraManual = true
     // Punto del mundo bajo el cursor (con el origen incluido), antes y después del cambio.
     const u = (x - this.objetivo.x) / this.objetivo.escala
     const v = (y - this.objetivo.y) / this.objetivo.escala
@@ -853,6 +866,7 @@ export class Escena {
   }
 
   desplazar(dx: number, dy: number): void {
+    this.camaraManual = true
     this.objetivo.x += dx
     this.objetivo.y += dy
   }
@@ -1081,6 +1095,7 @@ export class Escena {
   /** Encaja la planta entera en el lienzo. Es el estado inicial: se ve todo de un vistazo. */
   encajar(): void {
     if (!this.layout) return
+    this.camaraManual = false
     const w = this.app.renderer.width
     const h = this.app.renderer.height
     // La pared izquierda sobresale media baldosa del vértice del suelo; encuadrar sin contarlo

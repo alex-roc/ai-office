@@ -1,6 +1,7 @@
 export * from './claude-code/body-sections.ts'
 export * from './claude-code/catalog.ts'
 export * from './claude-code/compile.ts'
+export * from './claude-code/etag.ts'
 export * from './claude-code/frontmatter.ts'
 export * from './claude-code/graph.ts'
 export * from './claude-code/history.ts'

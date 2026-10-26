@@ -6,6 +6,7 @@ import { Buscador } from './Buscador.tsx'
 import { Cabecera } from './Cabecera.tsx'
 import { hayDialogoAbierto } from './Dialogo.tsx'
 import { DiffDialog } from './Diff.tsx'
+import { DEMO } from './demo.ts'
 import { erroresDeEscaneo, sinArchivados } from './derivados.ts'
 import { ApiError, mensajeDeError } from './errores.ts'
 import { Ficha, type Vista } from './Ficha.tsx'
@@ -369,6 +370,15 @@ const App = () => {
         onBuscar={() => setBuscando(true)}
         onAyuda={() => setAyuda(true)}
       />
+      {DEMO && (
+        <div className="banda demo" role="note">
+          <span>
+            Demo de solo lectura con una instalación ficticia. Los destellos reproducen lo que
+            consta en sus transcripts.
+          </span>
+          <a href="https://alex-roc.github.io/ai-office/?lang=es#install">Instálalo en la tuya</a>
+        </div>
+      )}
       {error && (
         <div className="banda error" role="alert">
           <span>{conCodigo(error)}</span>

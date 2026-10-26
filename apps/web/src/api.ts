@@ -1,3 +1,4 @@
+import { abrirSocketDemo, DEMO, demoPost, demoSnapshot, MSG_DEMO } from './demo.ts'
 import { ApiError, esDaemonCaido, MSG_AUTH, MSG_CONFLICTO, MSG_RED } from './errores.ts'
 import type { Snapshot } from './types.ts'
 
@@ -70,6 +71,16 @@ const headers = (conCuerpo: boolean): HeadersInit => ({
 
 /** Una petición HTTP al daemon, con todos los fallos ya traducidos a `ApiError`. */
 const pedir = async <T>(url: string, init: RequestInit): Promise<T> => {
+  if (DEMO) {
+    // Sin daemon: el snapshot es el de la instalación ficticia y escribir no está permitido.
+    if (url === '/api/snapshot' || url === '/api/refresh') return (await demoSnapshot()) as T
+    try {
+      const cuerpo = typeof init.body === 'string' ? JSON.parse(init.body) : undefined
+      return (await demoPost(url, cuerpo)) as T
+    } catch (err) {
+      throw new ApiError('http', (err as Error).message || MSG_DEMO, 403)
+    }
+  }
   let res: Response
   try {
     res = await fetch(url, init)
@@ -123,6 +134,7 @@ export const refreshSnapshot = (): Promise<Snapshot> => apiPost<Snapshot>('/api/
 
 /** Abre el WebSocket de eventos en vivo. El token NO va aquí: se manda en el primer frame. */
 export const abrirSocketVivo = (): WebSocket => {
+  if (DEMO) return abrirSocketDemo()
   const esquema = window.location.protocol === 'https:' ? 'wss' : 'ws'
   return new WebSocket(`${esquema}://${window.location.host}/api/live`)
 }
