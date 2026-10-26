@@ -103,7 +103,9 @@ npm trust list @alex-roc/ai-office      # check it
 It needs **2FA enabled on the npm account** (a passkey or Touch ID is enough, no authenticator app)
 and npm ≥ 11.15 for `npm trust`; an E400 usually means one of those is missing. The same setup can
 be done on the website instead: the package → *Settings* → *Trusted Publisher* → *GitHub Actions*
-(owner `alex-roc`, repo `ai-office`, workflow `release.yml`).
+(owner `alex-roc`, repo `ai-office`, workflow `release.yml`). This package allows direct `npm publish`
+(checked by the owner); npm's default is staged publishing, approved on the website. The connection
+is "pending validation" until the first publish through it, then "Valid" (done with 0.1.1).
 
 Requirements: npm ≥ 11.5.1 in CI (the workflow updates it), GitHub-hosted runners, and
 `id-token: write`. Sources: [trusted publishers](https://docs.npmjs.com/trusted-publishers/),
