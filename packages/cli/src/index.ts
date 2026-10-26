@@ -155,7 +155,9 @@ const main = async (): Promise<void> => {
     console.log(cliVersion(t))
     return
   }
-  if (cmd === '--help' || cmd === '-h' || cmd === 'help') {
+  // `--help` en cualquier posición es ayuda, nunca una ejecución: `ai-office demo --help` arrancaba
+  // un daemon de verdad (y se quedaba vivo en el puerto) porque el subcomando no miraba la opción.
+  if (cmd === 'help' || argv.includes('--help') || argv.includes('-h')) {
     console.log(help(t))
     return
   }

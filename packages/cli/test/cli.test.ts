@@ -223,3 +223,14 @@ test('census: sin plugins ni servidores MCP no imprime esas secciones; y se auto
     await rm(root, { recursive: true, force: true })
   }
 })
+
+test('`--help` detrás de un subcomando muestra la ayuda y no arranca nada', () => {
+  // Antes `ai-office demo --help` levantaba un daemon de demo de verdad y se quedaba vivo.
+  for (const sub of ['demo', 'start', 'census']) {
+    const out = execFileSync(process.execPath, [INDEX, sub, '--help'], {
+      encoding: 'utf8',
+      timeout: 10_000,
+    })
+    assert.match(out, /ai-office census/)
+  }
+})
