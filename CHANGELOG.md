@@ -3,6 +3,18 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project uses [SemVer](https://semver.org/).
 
+## [0.1.1] - 2026-10-26
+
+### Changed
+- Published as `@alex-roc/ai-office` (npm rejected the bare name as too similar to `aioffice`);
+  the command is still `ai-office`.
+- Releases are published from GitHub Actions with npm trusted publishing (OIDC) and provenance.
+
+### Added since the first tag
+- See, edit and measure agents, skills, slash commands, plugins and MCP servers: the Ledger
+  view, editing of prompts, SKILL.md and commands, creating entities, plugin and MCP
+  enable/disable, configurable scope (user or project) and Show panel, English and Spanish.
+
 ## [0.1.0] - 2026-10-26
 
 First public release.

@@ -9,7 +9,7 @@
       "name": "ai-office",
       "source": "./",
       "description": "See, edit and measure your Claude Code agents, skills, commands, plugins and MCP servers.",
-      "version": "0.1.0"
+      "version": "0.1.1"
     }
   ],
   "description": "See, edit and measure your own Claude Code configuration."
