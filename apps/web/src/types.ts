@@ -39,6 +39,8 @@ export interface Agent extends EntityBase {
   color: string | null
   preloadedSkills: string[]
   bodyTokens: number
+  /** Está en `agents/.archivo/`: se lista para poder restaurarlo (`agent.unarchive`), no cuenta. */
+  archived?: boolean
 }
 
 export interface Skill extends EntityBase {
@@ -96,7 +98,10 @@ export interface Planta {
 export interface Snapshot {
   catalog: { agents: Agent[]; skills: Skill[]; commands: Command[]; roots: string[] }
   edges: Edge[]
+  /** Skills, agentes y comandos (estos desde history.jsonl y la herramienta Skill). */
   activity: Record<string, Activity>
+  /** Archivos del catálogo que no se pudieron leer, con el motivo. */
+  scanErrors: string[]
   vocabularyGaps: Record<string, string[]>
   planta: Planta
   mainThreadId: string
@@ -106,8 +111,12 @@ export interface Snapshot {
     commands: number
     agentsUnused: number
     skillsUnused: number
+    /** Skills jubiladas: salen del denominador del ratio activo. */
+    skillsRetired: number
     commandsUsed: number
     activeRatio: number
+    /** Días que Claude Code conserva los transcripts (`cleanupPeriodDays`); `null` si no se sabe. */
+    historyWindowDays: number | null
     descriptionTokens: number
     deadDescriptionTokens: number
     declaredAgentSkill: number

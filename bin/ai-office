@@ -1,12 +1,50 @@
 #!/usr/bin/env node
 // Punto de entrada cuando ai-office se instala como plugin: el directorio `bin/` del plugin
 // entra en el PATH de la herramienta Bash, así que `ai-office` queda disponible sin instalar nada.
-import { fileURLToPath } from 'node:url'
-import { dirname, join } from 'node:path'
+//
+// Opciones del plugin (`userConfig` de .claude-plugin/plugin.json): Claude Code las expone como
+// CLAUDE_PLUGIN_OPTION_<CLAVE>. `port` lo lee la propia CLI (`packages/cli/src/env.ts`, junto con
+// `AI_OFFICE_PORT`, que vale fuera del plugin) y `telemetry` el relay de hooks. Aquí solo se
+// comprueba que el plugin tenga sus dependencias, para no mostrar un stack trace de ERR_MODULE_NOT_FOUND.
 import { spawn } from 'node:child_process'
+import { createRequire } from 'node:module'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 const here = dirname(fileURLToPath(import.meta.url))
-const cli = join(here, '..', 'packages', 'cli', 'src', 'index.ts')
-spawn(process.execPath, [cli, ...process.argv.slice(2)], { stdio: 'inherit' }).on('exit', (code) => {
+const root = join(here, '..')
+const cli = join(root, 'packages', 'cli', 'src', 'index.ts')
+
+// El plugin se clona sin node_modules. Con pnpm cada paquete del monorepo tiene los suyos, así que
+// se resuelve desde el paquete que los usa en vez de mirar una carpeta concreta.
+const resolvesFrom = (pkg, dep) => {
+  try {
+    createRequire(join(root, 'packages', pkg, 'package.json')).resolve(dep)
+    return true
+  } catch {
+    return false
+  }
+}
+const missing = [
+  ['daemon', 'fastify'],
+  ['providers', 'yaml'],
+]
+  .filter(([pkg, dep]) => !resolvesFrom(pkg, dep))
+  .map(([, dep]) => dep)
+if (missing.length > 0) {
+  console.error(
+    `ai-office: faltan las dependencias del plugin (${missing.join(', ')}).\n` +
+      'Instálalas una sola vez con:\n\n' +
+      `  cd "${root}" && pnpm install --prod\n`,
+  )
+  process.exit(1)
+}
+
+const child = spawn(process.execPath, [cli, ...process.argv.slice(2)], { stdio: 'inherit' })
+child.on('error', (err) => {
+  console.error(`ai-office: no se pudo arrancar (${err.message})`)
+  process.exit(1)
+})
+child.on('exit', (code) => {
   process.exit(code ?? 0)
 })

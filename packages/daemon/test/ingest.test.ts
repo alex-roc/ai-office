@@ -1,5 +1,14 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import {
+  appendFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  statSync,
+  utimesSync,
+  writeFileSync,
+} from 'node:fs'
 import { createConnection } from 'node:net'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -75,6 +84,51 @@ test('drainSpool ingiere y borra los ndjson pendientes, marcando replayed', () =
   assert.equal(received.length, 2)
   assert.equal(received[0]!.replayed, true)
   assert.throws(() => statSync(join(dir, '2026-09-01.ndjson'))) // se borró
+})
+
+test('drainSpool no pierde la línea que el relay añade mientras se procesa el archivo', () => {
+  const dir = tmpDir('aio-spool')
+  const file = join(dir, '2026-09-01.ndjson')
+  const first = JSON.stringify({ hook_event_name: 'SessionStart', session_id: 's1', ts: 1 })
+  const late = JSON.stringify({ hook_event_name: 'UserPromptSubmit', session_id: 's1', ts: 2 })
+  writeFileSync(file, `${first}\n`)
+
+  const received: NormalizedEvent[] = []
+  let appended = false
+  drainSpool(dir, (e) => {
+    received.push(e)
+    // El relay escribe en el archivo "de hoy" justo ahora: leer-y-borrar se lo llevaba por delante.
+    if (!appended) appendFileSync(file, `${late}\n`)
+    appended = true
+  })
+  assert.equal(received.length, 1)
+  drainSpool(dir, (e) => received.push(e))
+  assert.deepEqual(
+    received.map((e) => e.ts),
+    [1, 2],
+  )
+})
+
+test('drainSpool recoge un .draining huérfano, pero no uno que se está leyendo', () => {
+  const dir = tmpDir('aio-spool')
+  const line = (ts: number) =>
+    `${JSON.stringify({ hook_event_name: 'SessionStart', session_id: 's', ts })}\n`
+  const old = join(dir, 'a.ndjson.draining')
+  const fresh = join(dir, 'b.ndjson.draining')
+  writeFileSync(old, line(1))
+  writeFileSync(fresh, line(2))
+  const longAgo = new Date(Date.now() - 5 * 60_000)
+  utimesSync(old, longAgo, longAgo)
+  writeFileSync(join(dir, '.lleno'), 'x')
+
+  const received: NormalizedEvent[] = []
+  drainSpool(dir, (e) => received.push(e))
+  assert.deepEqual(
+    received.map((e) => e.ts),
+    [1],
+  )
+  assert.equal(existsSync(fresh), true)
+  assert.equal(existsSync(join(dir, '.lleno')), false, 'tras drenar, el spool ya no está lleno')
 })
 
 test('drainSpool no revienta con líneas corruptas', () => {

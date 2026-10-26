@@ -1,4 +1,5 @@
 import type { Agent, Command, Skill } from '@ai-office/core'
+import { stringify } from 'yaml'
 import { parseMarkdownDoc } from './frontmatter.ts'
 
 /**
@@ -44,6 +45,24 @@ const slug = (s: string): string =>
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-|-$/g, '')
 
+const escapeRegExp = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+/** Una frase en una sola línea: un salto de línea en una tarea abriría un paso que no existe. */
+const oneLine = (s: string): string => s.replace(/\s*[\r\n]+\s*/g, ' ').trim()
+
+/**
+ * Las notas son texto libre del usuario y van dentro del archivo que Claude Code lee como
+ * comando: no pueden contener nuestros marcadores (romperían `importFlow` y duplicarían el
+ * bloque al recompilar) ni una línea `---` que parezca abrir o cerrar un frontmatter.
+ */
+const sanitizeNotes = (notes: string): string =>
+  notes
+    .replace(/<!--\s*ai-office:flujo:[^>]*-->/g, '')
+    .split(/\r?\n/)
+    .map((l) => (/^\s*(---+|\.\.\.)\s*$/.test(l) ? `\\${l.trim()}` : l))
+    .join('\n')
+    .trim()
+
 /** Genera el Markdown de un slash command a partir del flujo. */
 export const compileFlow = (flow: Flow): string => {
   const phases = new Map<number, FlowStep[]>()
@@ -55,12 +74,15 @@ export const compileFlow = (flow: Flow): string => {
   })
 
   const lines: string[] = []
+  // El frontmatter lo emite la librería YAML, no una plantilla: una descripción con `:`, `#` o un
+  // salto de línea seguido de `allowed-tools: Bash(*)` sería, escrita a pelo, una clave nueva.
   lines.push('---')
-  lines.push(`description: ${flow.description}`)
+  lines.push(stringify({ description: flow.description }, { lineWidth: 0 }).trimEnd())
   lines.push('---')
   lines.push('')
-  if (flow.notes?.trim()) {
-    lines.push(flow.notes.trim())
+  const notes = flow.notes ? sanitizeNotes(flow.notes) : ''
+  if (notes) {
+    lines.push(notes)
     lines.push('')
   }
   lines.push(MARK_START)
@@ -72,7 +94,7 @@ export const compileFlow = (flow: Flow): string => {
       lines.push(`${phase}. **En paralelo**, delega a la vez:`)
       for (const s of steps) {
         lines.push(
-          `   - agente \`${s.agent}\`: ${s.task}${
+          `   - agente \`${s.agent}\`: ${oneLine(s.task)}${
             s.skills?.length ? ` (consulta ${s.skills.map((k) => `\`${k}\``).join(', ')})` : ''
           }`,
         )
@@ -83,8 +105,8 @@ export const compileFlow = (flow: Flow): string => {
       lines.push(
         `${phase}. Delega al agente \`${s.agent}\`: ${
           s.skills?.length
-            ? `${endSentence(s.task)} Consulta ${s.skills.map((k) => `\`${k}\``).join(', ')}.`
-            : s.task
+            ? `${endSentence(oneLine(s.task))} Consulta ${s.skills.map((k) => `\`${k}\``).join(', ')}.`
+            : oneLine(s.task)
         }`,
       )
     }
@@ -127,16 +149,16 @@ export const importFlow = (command: Command, agents: Agent[], skills: Skill[]): 
 
     // Un paso es toda línea que nombre un agente conocido entre acentos graves o en prosa.
     for (const name of agentNames) {
-      const re = new RegExp(`(?<![A-Za-z0-9_-])${name}(?![A-Za-z0-9_-])`)
+      const re = new RegExp(`(?<![A-Za-z0-9_-])${escapeRegExp(name)}(?![A-Za-z0-9_-])`)
       if (!re.test(line)) continue
       let task = line
         .replace(/^[\d.\-*\s]+/, '')
         .replace(/\*\*/g, '')
-        .replace(new RegExp(`^(agente\\s+)?\`?${name}\`?[:,]?\\s*`, 'i'), '')
+        .replace(new RegExp(`^(agente\\s+)?\`?${escapeRegExp(name)}\`?[:,]?\\s*`, 'i'), '')
         .replace(/^delega al agente\s+`?[a-z0-9-]+`?[:,]?\s*/i, '')
         .trim()
       const mentioned = [...skillNames].filter((k) =>
-        new RegExp(`(?<![A-Za-z0-9_-])${k}(?![A-Za-z0-9_-])`).test(line),
+        new RegExp(`(?<![A-Za-z0-9_-])${escapeRegExp(k)}(?![A-Za-z0-9_-])`).test(line),
       )
       // La coletilla "Consulta `x`, `y`." la genera el compilador a partir del campo `skills`.
       // Si se dejara dentro del texto, al recompilar saldría dos veces.
@@ -160,5 +182,16 @@ export const importFlow = (command: Command, agents: Agent[], skills: Skill[]): 
   }
 }
 
-/** Ruta destino de un comando compilado. El nombre se normaliza para que sea tecleable. */
-export const flowFileName = (flow: Flow): string => `${slug(flow.name)}.md`
+/**
+ * Nombre de archivo de un comando compilado. El nombre se normaliza para que sea tecleable, y si
+ * no queda nada (`"¿¿??"`) se avisa: un `.md` sin nombre sería un archivo oculto que nadie ve.
+ */
+export const flowFileName = (flow: Flow): string => {
+  const name = slug(flow.name)
+  if (!name) {
+    throw new Error(
+      `el nombre "${flow.name}" no sirve para un comando: usa al menos una letra o un número`,
+    )
+  }
+  return `${name}.md`
+}

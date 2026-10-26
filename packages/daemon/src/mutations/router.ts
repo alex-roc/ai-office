@@ -11,6 +11,7 @@ import {
   applySetAgentSkillMentions,
   applySetAgentTools,
   applySetSkillDescription,
+  applyUnarchiveAgent,
   applyUnretireSkill,
   etagOf,
   type MutationPlan,
@@ -22,6 +23,7 @@ import {
   planSetAgentSkillMentions,
   planSetAgentTools,
   planSetSkillDescription,
+  planUnarchiveAgent,
   planUnretireSkill,
 } from '@ai-office/providers'
 
@@ -43,6 +45,8 @@ export type MutationKind =
   | 'skill.retire'
   | 'skill.unretire'
   | 'agent.archive'
+  /** Restaura un agente de `agents/.archivo/`. Misma petición que `agent.archive`. */
+  | 'agent.unarchive'
 
 export interface MutationRequest {
   kind: MutationKind
@@ -75,6 +79,13 @@ const findEntity = (
 const extraRootsFor = (entity: Agent | Skill): string[] =>
   entity.source.symlink ? [entity.source.realPath] : []
 
+/** Archivar un archivado o restaurar uno activo movería el archivo a donde no corresponde. */
+const assertArchiveState = (entity: Agent | Skill, kind: MutationKind): void => {
+  const archived = entity.kind === 'agent' && entity.archived === true
+  if (kind === 'agent.archive' && archived) throw new Error(`${entity.name} ya está archivado`)
+  if (kind === 'agent.unarchive' && !archived) throw new Error(`${entity.name} no está archivado`)
+}
+
 const readCurrent = async (path: string): Promise<{ text: string; etag: string }> => {
   const [text, st] = await Promise.all([readFile(path, 'utf8'), stat(path)])
   return { text, etag: etagOf(text, st.mtimeMs, st.size) }
@@ -85,6 +96,7 @@ export const planMutation = async (
   req: MutationRequest,
 ): Promise<PlanResponse> => {
   const { entity } = findEntity(catalog, req.entityId)
+  assertArchiveState(entity, req.kind)
   const path = entity.source.realPath
   const { text, etag } = await readCurrent(path)
 
@@ -118,6 +130,8 @@ export const planMutation = async (
         return planUnretireSkill(path, text)
       case 'agent.archive':
         return planArchiveAgent(path, text)
+      case 'agent.unarchive':
+        return planUnarchiveAgent(path, text)
       default:
         throw new Error(`operación desconocida: ${String(req.kind)}`)
     }
@@ -132,6 +146,7 @@ export const applyMutation = async (
   req: MutationRequest & { etag: string },
 ): Promise<{ path: string; etag: string; backup: string }> => {
   const { entity } = findEntity(catalog, req.entityId)
+  assertArchiveState(entity, req.kind)
   const visiblePath = entity.source.path
   const opts = { extraAllowedRoots: extraRootsFor(entity) }
   const name = entity.name
@@ -180,6 +195,8 @@ export const applyMutation = async (
       return applyUnretireSkill(name, visiblePath, req.etag, opts)
     case 'agent.archive':
       return applyArchiveAgent(name, visiblePath, req.etag, opts)
+    case 'agent.unarchive':
+      return applyUnarchiveAgent(name, visiblePath, req.etag, opts)
     default:
       throw new Error(`operación desconocida: ${String(req.kind)}`)
   }

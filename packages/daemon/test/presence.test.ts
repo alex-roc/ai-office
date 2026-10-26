@@ -106,3 +106,20 @@ test('reconcile cierra una sesión huérfana que nunca vio Stop', () => {
     false,
   )
 })
+
+test('purge olvida las sesiones terminadas hace tiempo, y solo esas', () => {
+  const store = createPresenceStore()
+  store.apply(ev({ type: 'session.start', sessionId: 'vieja', ts: 1 }))
+  store.apply(ev({ type: 'session.end', sessionId: 'vieja', ts: 2 }))
+  store.apply(ev({ type: 'session.start', sessionId: 'viva', ts: 3 }))
+  store.apply(ev({ type: 'session.start', sessionId: 'reciente', ts: 4 }))
+  store.apply(ev({ type: 'session.end', sessionId: 'reciente', ts: 5 }))
+
+  assert.equal(store.purge(Date.now(), 60_000), 0, 'recién terminadas: se ven un rato')
+  // Una hora después, solo sobreviven las vivas.
+  assert.equal(store.purge(Date.now() + 3_600_000, 60_000), 2)
+  assert.deepEqual(
+    store.list().map((s) => s.sessionId),
+    ['viva'],
+  )
+})

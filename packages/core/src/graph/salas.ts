@@ -139,7 +139,9 @@ const motivoDe = (esComando: boolean, nombre: string, cuantos: number, total: nu
     : `${sujeto} citan \`${nombre}\` en su prompt.`
 }
 
-export const agruparEnSalas = (catalog: Catalog, edges: Edge[]): Planta => {
+export const agruparEnSalas = (completo: Catalog, edges: Edge[]): Planta => {
+  // Un agente archivado no trabaja en ningún despacho: la planta solo reparte a los activos.
+  const catalog = { ...completo, agents: completo.agents.filter((a) => !a.archived) }
   const rasgos = rasgosDe(catalog, edges)
   const total = Math.max(1, catalog.agents.length)
 

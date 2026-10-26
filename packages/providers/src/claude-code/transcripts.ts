@@ -26,6 +26,8 @@ export interface Invocation {
   projectSlug: string
   cwd: string | null
   ts: number
+  /** Id del `tool_use`: es lo que permite no contar dos veces el mismo bloque. */
+  toolUseId: string | null
 }
 
 export interface TranscriptScan {
@@ -36,11 +38,23 @@ export interface TranscriptScan {
   errors: string[]
 }
 
-/** Solo se parsean las líneas que pueden contener una invocación. Descarta la gran mayoría. */
+/**
+ * Solo se parsean las líneas que pueden contener una invocación. Descarta la gran mayoría.
+ * `"name":"Task"` es el nombre antiguo de la herramienta de subagentes (hoy `Agent`): los
+ * historiales de versiones previas siguen en disco y no deben desaparecer del censo.
+ */
 const isCandidate = (line: string): boolean =>
-  line.includes('"name":"Skill"') || line.includes('"name":"Agent"')
+  line.includes('"name":"Skill"') ||
+  line.includes('"name":"Agent"') ||
+  line.includes('"name":"Task"')
 
-const parseLine = (line: string, projectSlug: string, actor: Actor, out: Invocation[]): void => {
+const parseLine = (
+  line: string,
+  projectSlug: string,
+  actor: Actor,
+  out: Invocation[],
+  seen: Set<string>,
+): void => {
   let obj: Record<string, unknown>
   try {
     obj = JSON.parse(line)
@@ -53,8 +67,20 @@ const parseLine = (line: string, projectSlug: string, actor: Actor, out: Invocat
   const ts = typeof obj.timestamp === 'string' ? Date.parse(obj.timestamp) : Number.NaN
   for (const block of content) {
     if (!block || typeof block !== 'object') continue
-    const b = block as { type?: string; name?: string; input?: Record<string, unknown> }
+    const b = block as {
+      type?: string
+      id?: string
+      name?: string
+      input?: Record<string, unknown>
+    }
     if (b.type !== 'tool_use') continue
+    // El mismo bloque puede aparecer en más de una línea (mensajes reescritos al reanudar, o
+    // copiados a un archivo nuevo al bifurcar una sesión): el id del tool_use lo identifica.
+    const toolUseId = typeof b.id === 'string' ? b.id : null
+    if (toolUseId) {
+      if (seen.has(toolUseId)) continue
+      seen.add(toolUseId)
+    }
     if (b.name === 'Skill' && typeof b.input?.skill === 'string') {
       out.push({
         target: b.input.skill,
@@ -64,8 +90,12 @@ const parseLine = (line: string, projectSlug: string, actor: Actor, out: Invocat
         projectSlug,
         cwd: typeof obj.cwd === 'string' ? obj.cwd : null,
         ts: Number.isNaN(ts) ? 0 : ts,
+        toolUseId,
       })
-    } else if (b.name === 'Agent' && typeof b.input?.subagent_type === 'string') {
+    } else if (
+      (b.name === 'Agent' || b.name === 'Task') &&
+      typeof b.input?.subagent_type === 'string'
+    ) {
       out.push({
         target: b.input.subagent_type,
         type: 'agent',
@@ -74,6 +104,7 @@ const parseLine = (line: string, projectSlug: string, actor: Actor, out: Invocat
         projectSlug,
         cwd: typeof obj.cwd === 'string' ? obj.cwd : null,
         ts: Number.isNaN(ts) ? 0 : ts,
+        toolUseId,
       })
     }
   }
@@ -84,6 +115,7 @@ const readJsonl = async (
   projectSlug: string,
   actor: Actor,
   scan: TranscriptScan,
+  seen: Set<string>,
 ): Promise<void> => {
   try {
     const st = await stat(path)
@@ -95,7 +127,7 @@ const readJsonl = async (
     })
     for await (const line of rl) {
       if (!isCandidate(line)) continue
-      parseLine(line, projectSlug, actor, scan.invocations)
+      parseLine(line, projectSlug, actor, scan.invocations, seen)
     }
   } catch (err) {
     scan.errors.push(`${path}: ${(err as Error).message}`)
@@ -126,6 +158,7 @@ export const scanTranscripts = async (
     sessions: new Set(),
     errors: [],
   }
+  const seen = new Set<string>()
   let projects: string[]
   try {
     projects = await readdir(root)
@@ -146,7 +179,7 @@ export const scanTranscripts = async (
     for (const entry of entries) {
       if (entry.endsWith('.jsonl')) {
         scan.sessions.add(basename(entry, '.jsonl'))
-        await readJsonl(join(projectDir, entry), projectSlug, { kind: 'main' }, scan)
+        await readJsonl(join(projectDir, entry), projectSlug, { kind: 'main' }, scan, seen)
         continue
       }
       // Un directorio con el nombre de la sesión contiene los subagentes de esa sesión.
@@ -161,7 +194,7 @@ export const scanTranscripts = async (
         if (!sub.endsWith('.jsonl')) continue
         const agentId = basename(sub, '.jsonl').replace(/^agent-/, '')
         const actor = await actorForSubagent(join(subDir, `agent-${agentId}.meta.json`), agentId)
-        await readJsonl(join(subDir, sub), projectSlug, actor, scan)
+        await readJsonl(join(subDir, sub), projectSlug, actor, scan, seen)
       }
     }
     onProgress?.(i + 1, projects.length)

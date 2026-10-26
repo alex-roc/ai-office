@@ -10,6 +10,9 @@ import type { OfficeEvent, SessionState } from '@ai-office/core'
  * `claude agents --json` y cierra las que ya no están.
  */
 
+/** Cuánto se queda visible una sesión terminada antes de olvidarla (para que se vea cómo acabó). */
+const ENDED_TTL_MS = 10 * 60 * 1000
+
 const emptyAgents = (): SessionState['agents'] => ({})
 
 const ensureSession = (sessions: Map<string, SessionState>, event: OfficeEvent): SessionState => {
@@ -30,6 +33,13 @@ const ensureSession = (sessions: Map<string, SessionState>, event: OfficeEvent):
 
 export const createPresenceStore = () => {
   const sessions = new Map<string, SessionState>()
+  // Cuándo pasó cada sesión a `ended`, con el reloj de esta máquina: `lastEventAt` es la hora del
+  // evento (que puede ser de un spool de hace días) y no dice cuánto lleva terminada.
+  const endedAt = new Map<string, number>()
+  const markEnded = (s: SessionState): void => {
+    if (s.status !== 'ended') endedAt.set(s.sessionId, Date.now())
+    s.status = 'ended'
+  }
 
   /** Aplica un evento normalizado y devuelve el estado resultante de su sesión. */
   const apply = (event: OfficeEvent): SessionState => {
@@ -46,7 +56,7 @@ export const createPresenceStore = () => {
         s.startedAt = event.ts
         break
       case 'session.end':
-        s.status = 'ended'
+        markEnded(s)
         break
       case 'turn.start':
         s.status = 'thinking'
@@ -109,7 +119,27 @@ export const createPresenceStore = () => {
 
   const get = (sessionId: string): SessionState | undefined => sessions.get(sessionId)
 
-  const list = (): SessionState[] => [...sessions.values()]
+  /**
+   * Olvida las sesiones terminadas hace más de `ttlMs`. Sin esto el mapa solo crece (cada sesión
+   * que alguna vez existió) y la interfaz recibe la lista entera en cada evento.
+   */
+  const purge = (now = Date.now(), ttlMs = ENDED_TTL_MS): number => {
+    let removed = 0
+    for (const [id, s] of sessions) {
+      if (s.status !== 'ended') continue
+      if (now - (endedAt.get(id) ?? now) > ttlMs) {
+        sessions.delete(id)
+        endedAt.delete(id)
+        removed++
+      }
+    }
+    return removed
+  }
+
+  const list = (): SessionState[] => {
+    purge()
+    return [...sessions.values()]
+  }
 
   /**
    * Cierra las sesiones que ya no aparecen en `liveSessionIds` (típicamente `claude agents
@@ -121,13 +151,13 @@ export const createPresenceStore = () => {
     const closed: SessionState[] = []
     for (const s of sessions.values()) {
       if (s.status === 'ended' || live.has(s.sessionId)) continue
-      s.status = 'ended'
+      markEnded(s)
       closed.push(s)
     }
     return closed
   }
 
-  return { apply, get, list, reconcile }
+  return { apply, get, list, reconcile, purge }
 }
 
 export type PresenceStore = ReturnType<typeof createPresenceStore>

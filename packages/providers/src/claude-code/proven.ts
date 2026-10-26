@@ -1,4 +1,6 @@
 import { type Catalog, type Edge, gradeOf, isActiveGrade, makeId } from '@ai-office/core'
+import type { HistoryScan } from './history.ts'
+import { slugForCwd } from './paths.ts'
 import type { Actor, Invocation } from './transcripts.ts'
 
 /** Nodo del hilo principal: no es un agente de `~/.claude/agents`, pero es un actor de pleno derecho. */
@@ -14,40 +16,74 @@ interface Bucket {
   lastUsedAt: number
 }
 
+const newBucket = (): Bucket => ({
+  uses: 0,
+  sessions: new Set(),
+  projects: new Set(),
+  lastUsedAt: 0,
+})
+
+const addUse = (b: Bucket, inv: Invocation): void => {
+  b.uses += 1
+  if (inv.sessionId) b.sessions.add(inv.sessionId)
+  b.projects.add(inv.projectSlug)
+  if (inv.ts > b.lastUsedAt) b.lastUsedAt = inv.ts
+}
+
+/** Hacia qué entidad apunta una invocación. Un `Skill` puede nombrar un comando. */
+interface Target {
+  id: string
+  type: 'skill' | 'agent' | 'command'
+}
+
+const targetResolver = (catalog: Catalog) => {
+  // Los archivados no existen para Claude Code: no pueden recibir uso.
+  const skillByName = new Map(catalog.skills.map((s) => [s.name, s]))
+  const agentByName = new Map(catalog.agents.filter((a) => !a.archived).map((a) => [a.name, a]))
+  const commandByName = new Map(catalog.commands.map((c) => [c.name, c]))
+  return (inv: Invocation): Target => {
+    if (inv.type === 'agent') {
+      return {
+        id:
+          agentByName.get(inv.target)?.id ?? makeId('agent', 'claude-code', 'builtin', inv.target),
+        type: 'agent',
+      }
+    }
+    const skill = skillByName.get(inv.target)
+    if (skill) return { id: skill.id, type: 'skill' }
+    // En versiones recientes un slash command también se invoca por la herramienta Skill, con el
+    // nombre del comando en `tool_input.skill`. Si no es una skill y sí es un comando, es suyo.
+    const command = commandByName.get(inv.target)
+    if (command) return { id: command.id, type: 'command' }
+    // El nombre puede venir con prefijo de plugin (`plugin:skill`): se usa tal cual como id.
+    return { id: makeId('skill', 'claude-code', 'plugin', inv.target), type: 'skill' }
+  }
+}
+
 /**
  * Convierte el historial en aristas `proven`: lo que de verdad pasó, con su cuenta,
  * sus sesiones y sus proyectos distintos (que es lo que determina el grado).
  */
 export const buildProvenGraph = (invocations: Invocation[], catalog: Catalog): Edge[] => {
-  const skillByName = new Map(catalog.skills.map((s) => [s.name, s]))
-  const agentByName = new Map(catalog.agents.map((a) => [a.name, a]))
+  const resolve = targetResolver(catalog)
   const buckets = new Map<
     string,
     { from: string; to: string; type: 'skill' | 'agent'; b: Bucket }
   >()
 
   for (const inv of invocations) {
+    const target = resolve(inv)
+    // Un comando invocado por Skill es actividad del comando (ver `activityByTarget`), no una
+    // arista agente→skill.
+    if (target.type === 'command') continue
     const from = actorId(inv.actor)
-    // El nombre puede venir con prefijo de plugin (`plugin:skill`): se usa tal cual como id.
-    const to =
-      inv.type === 'skill'
-        ? (skillByName.get(inv.target)?.id ?? makeId('skill', 'claude-code', 'plugin', inv.target))
-        : (agentByName.get(inv.target)?.id ?? makeId('agent', 'claude-code', 'builtin', inv.target))
-    const key = `${from}|${to}`
+    const key = `${from}|${target.id}`
     let entry = buckets.get(key)
     if (!entry) {
-      entry = {
-        from,
-        to,
-        type: inv.type,
-        b: { uses: 0, sessions: new Set(), projects: new Set(), lastUsedAt: 0 },
-      }
+      entry = { from, to: target.id, type: target.type, b: newBucket() }
       buckets.set(key, entry)
     }
-    entry.b.uses += 1
-    if (inv.sessionId) entry.b.sessions.add(inv.sessionId)
-    entry.b.projects.add(inv.projectSlug)
-    if (inv.ts > entry.b.lastUsedAt) entry.b.lastUsedAt = inv.ts
+    addUse(entry.b, inv)
   }
 
   return [...buckets.values()].map(({ from, to, type, b }) => ({
@@ -74,34 +110,64 @@ export interface EntityActivity {
   active: boolean
 }
 
-/** Agrega las aristas probadas por entidad de destino, para saber qué está vivo y qué no. */
-export const activityByTarget = (proven: Edge[], now = Date.now()): Map<string, EntityActivity> => {
-  const map = new Map<string, EntityActivity>()
-  for (const e of proven) {
-    const cur = map.get(e.to) ?? {
-      id: e.to,
-      name: e.to.split('/').pop() ?? e.to,
-      uses: 0,
-      sessions: 0,
-      projects: 0,
-      lastUsedAt: null,
-      grade: 'unused' as const,
-      active: false,
-    }
-    cur.uses += e.uses ?? 0
-    cur.sessions += e.sessions ?? 0
-    cur.projects = Math.max(cur.projects, e.projects ?? 0)
-    if (e.lastUsedAt && (cur.lastUsedAt === null || e.lastUsedAt > cur.lastUsedAt)) {
-      cur.lastUsedAt = e.lastUsedAt
-    }
-    map.set(e.to, cur)
+export interface ActivityOptions {
+  /** Comandos tecleados (de `history.jsonl`): los slash commands no dejan rastro como herramienta. */
+  commandUse?: HistoryScan['commandUse']
+  now?: number
+}
+
+/**
+ * Actividad por entidad de destino, para saber qué está vivo y qué no.
+ *
+ * Se calcula desde las invocaciones y no desde las aristas porque las sesiones y los proyectos
+ * son CONJUNTOS: la misma sesión en la que trabajaron tres agentes con una skill es una sesión,
+ * no tres. Sumar las aristas por actor inflaba el grado de lo que usa más de un agente.
+ */
+export const activityByTarget = (
+  invocations: Invocation[],
+  catalog: Catalog,
+  opts: ActivityOptions = {},
+): Map<string, EntityActivity> => {
+  const resolve = targetResolver(catalog)
+  const buckets = new Map<string, Bucket>()
+  const bucketOf = (id: string): Bucket => {
+    const existing = buckets.get(id)
+    if (existing) return existing
+    const created = newBucket()
+    buckets.set(id, created)
+    return created
   }
-  for (const a of map.values()) {
-    a.grade = gradeOf(
-      { uses: a.uses, sessions: a.sessions, projects: a.projects, lastUsedAt: a.lastUsedAt },
+
+  for (const inv of invocations) addUse(bucketOf(resolve(inv).id), inv)
+
+  for (const command of catalog.commands) {
+    const typed = opts.commandUse?.get(command.name)
+    if (!typed) continue
+    const b = bucketOf(command.id)
+    b.uses += typed.count
+    for (const s of typed.sessions) b.sessions.add(s)
+    for (const p of typed.projects) b.projects.add(slugForCwd(p))
+    if (typed.lastUsedAt > b.lastUsedAt) b.lastUsedAt = typed.lastUsedAt
+  }
+
+  const now = opts.now ?? Date.now()
+  const map = new Map<string, EntityActivity>()
+  for (const [id, b] of buckets) {
+    const lastUsedAt = b.lastUsedAt || null
+    const grade = gradeOf(
+      { uses: b.uses, sessions: b.sessions.size, projects: b.projects.size, lastUsedAt },
       now,
     )
-    a.active = isActiveGrade(a.grade)
+    map.set(id, {
+      id,
+      name: id.split('/').pop() ?? id,
+      uses: b.uses,
+      sessions: b.sessions.size,
+      projects: b.projects.size,
+      lastUsedAt,
+      grade,
+      active: isActiveGrade(grade),
+    })
   }
   return map
 }

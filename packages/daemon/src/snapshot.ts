@@ -3,11 +3,16 @@ import {
   activityByTarget,
   buildDeclaredGraph,
   buildProvenGraph,
+  type CatalogScan,
   type EntityActivity,
+  type HistoryScan,
   MAIN_THREAD_ID,
-  scanCatalog,
+  readHistoryWindowDays,
+  scanCatalogReport,
   scanHistory,
   scanTranscripts,
+  skillStats,
+  type TranscriptScan,
   vocabularyGap,
 } from '@ai-office/providers'
 
@@ -21,15 +26,23 @@ export interface Snapshot {
   catalog: Catalog
   /** Grafo declarado (prosa y frontmatter) + acreditado (historial). */
   edges: Edge[]
+  /** Actividad por id de entidad: skills, agentes y comandos (estos desde `history.jsonl` y la herramienta Skill). */
   activity: Record<string, EntityActivity>
+  /** Archivos del catálogo que no se pudieron leer (symlink roto, .md ilegible), con el motivo. */
+  scanErrors: string[]
   stats: {
+    /** Agentes activos: los archivados (`agents/.archivo/`) no cuentan. */
     agents: number
     skills: number
     commands: number
     agentsUnused: number
     skillsUnused: number
+    /** Skills jubiladas (`disable-model-invocation`): salen del denominador del ratio. */
+    skillsRetired: number
     commandsUsed: number
     activeRatio: number
+    /** Días que Claude Code conserva los transcripts (`cleanupPeriodDays`); `null` si no se sabe. */
+    historyWindowDays: number | null
     descriptionTokens: number
     deadDescriptionTokens: number
     declaredAgentSkill: number
@@ -50,20 +63,45 @@ export interface Snapshot {
   mainThreadId: string
 }
 
-export const buildSnapshot = async (): Promise<Snapshot> => {
-  const t0 = Date.now()
-  const catalog = await scanCatalog()
-  const [scan, history] = await Promise.all([scanTranscripts(), scanHistory()])
+/**
+ * Lo caro de calcular y que NO cambia cuando el usuario edita un archivo del catálogo: gigabytes
+ * de transcripts, el historial tecleado y los ajustes. Se cachea aparte para que una mutación
+ * reescanee el catálogo (milisegundos) sin releer el historial (segundos).
+ */
+export interface HistoricalData {
+  scan: TranscriptScan
+  history: HistoryScan
+  historyWindowDays: number | null
+}
+
+export const scanHistorical = async (): Promise<HistoricalData> => {
+  const [scan, history, historyWindowDays] = await Promise.all([
+    scanTranscripts(),
+    scanHistory(),
+    readHistoryWindowDays(),
+  ])
+  return { scan, history, historyWindowDays }
+}
+
+/** Une un catálogo recién escaneado con un historial ya calculado. */
+export const assembleSnapshot = (
+  { catalog, errors }: CatalogScan,
+  { scan, history, historyWindowDays }: HistoricalData,
+  t0 = Date.now(),
+): Snapshot => {
+  // Los archivados viajan en `catalog.agents` para poder restaurarlos, pero no se cuentan ni
+  // entran en ningún grafo (ver `buildDeclaredGraph`).
+  const liveAgents = catalog.agents.filter((a) => !a.archived)
 
   const declared = buildDeclaredGraph(catalog)
   const proven = buildProvenGraph(scan.invocations, catalog)
   const edges = [...declared, ...proven]
-  const activityMap = activityByTarget(proven)
+  const activityMap = activityByTarget(scan.invocations, catalog, {
+    commandUse: history.commandUse,
+  })
 
-  const skillsUnused = catalog.skills.filter((s) => !activityMap.get(s.id)?.uses)
-  const agentsUnused = catalog.agents.filter((a) => !activityMap.get(a.id)?.uses)
-  const skillsActive = catalog.skills.filter((s) => activityMap.get(s.id)?.active).length
-  const descriptionTokens = catalog.skills.reduce((a, s) => a + s.descriptionTokens, 0)
+  const agentsUnused = liveAgents.filter((a) => !activityMap.get(a.id)?.uses)
+  const skills = skillStats(catalog, activityMap)
 
   const vocabularyGaps: Record<string, string[]> = {}
   for (const s of catalog.skills) {
@@ -75,6 +113,7 @@ export const buildSnapshot = async (): Promise<Snapshot> => {
     catalog,
     edges,
     activity: Object.fromEntries(activityMap),
+    scanErrors: errors,
     vocabularyGaps,
     // Solo con el grafo DECLARADO: la planta describe cómo está organizado el trabajo según lo
     // que dicen los archivos, no según lo que haya pasado. Mezclar el historial movería a un
@@ -82,15 +121,17 @@ export const buildSnapshot = async (): Promise<Snapshot> => {
     planta: agruparEnSalas(catalog, declared),
     mainThreadId: MAIN_THREAD_ID,
     stats: {
-      agents: catalog.agents.length,
+      agents: liveAgents.length,
       skills: catalog.skills.length,
       commands: catalog.commands.length,
       agentsUnused: agentsUnused.length,
-      skillsUnused: skillsUnused.length,
-      commandsUsed: catalog.commands.filter((c) => history.commandUse.has(c.name)).length,
-      activeRatio: catalog.skills.length ? skillsActive / catalog.skills.length : 0,
-      descriptionTokens,
-      deadDescriptionTokens: skillsUnused.reduce((a, s) => a + s.descriptionTokens, 0),
+      skillsUnused: skills.skillsUnused,
+      skillsRetired: skills.skillsRetired,
+      commandsUsed: catalog.commands.filter((c) => activityMap.get(c.id)?.uses).length,
+      activeRatio: skills.activeRatio,
+      historyWindowDays,
+      descriptionTokens: skills.descriptionTokens,
+      deadDescriptionTokens: skills.deadDescriptionTokens,
       declaredAgentSkill: declared.filter(
         (e) => e.kind === 'agent-uses-skill' && e.layer === 'declared',
       ).length,
@@ -106,4 +147,11 @@ export const buildSnapshot = async (): Promise<Snapshot> => {
       buildMs: Date.now() - t0,
     },
   }
+}
+
+/** Todo de una vez: lo que usa el primer arranque y `/api/refresh`. */
+export const buildSnapshot = async (): Promise<Snapshot> => {
+  const t0 = Date.now()
+  const [catalog, historical] = await Promise.all([scanCatalogReport(), scanHistorical()])
+  return assembleSnapshot(catalog, historical, t0)
 }

@@ -8,16 +8,8 @@
     "url": "https://github.com/alex-roc"
   },
   "license": "MIT",
-  "keywords": [
-    "skills",
-    "agents",
-    "visualization",
-    "audit",
-    "graph"
-  ],
-  "commands": [
-    "./commands/"
-  ],
+  "keywords": ["skills", "agents", "visualization", "audit", "graph"],
+  "commands": ["./commands/"],
   "hooks": "./hooks/hooks.json",
   "userConfig": {
     "port": {

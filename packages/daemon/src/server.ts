@@ -1,21 +1,30 @@
 import { execFile } from 'node:child_process'
 import { existsSync } from 'node:fs'
+import type { AddressInfo } from 'node:net'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import type { SessionState } from '@ai-office/core'
-import { paths } from '@ai-office/providers'
+import { paths, scanCatalogReport } from '@ai-office/providers'
 import fastifyStatic from '@fastify/static'
 import fastifyWebsocket from '@fastify/websocket'
 import Fastify from 'fastify'
-import { type AuthConfig, createToken, registerGuards } from './auth.ts'
+import { type AuthConfig, createToken, persistToken, registerGuards } from './auth.ts'
 import { createEventBus } from './bus.ts'
 import { startIngestSocket } from './ingest/socket.ts'
 import { createDedupeCache, watchSpool } from './ingest/spool.ts'
 import { openFlow, planFlow, previewFlow, saveFlow } from './mutations/flows.ts'
 import { applyMutation, type MutationRequest, planMutation } from './mutations/router.ts'
 import { createPresenceStore } from './presence.ts'
-import { buildSnapshot, type Snapshot } from './snapshot.ts'
+import { assembleSnapshot, type HistoricalData, type Snapshot, scanHistorical } from './snapshot.ts'
+
+/** Plazo por defecto del primer frame del WebSocket. */
+const HELLO_TIMEOUT_MS = 5000
+
+export interface ServerOptions {
+  /** Plazo del primer frame del WebSocket (con el token). */
+  helloTimeoutMs?: number
+}
 
 const execFileAsync = promisify(execFile)
 const here = dirname(fileURLToPath(import.meta.url))
@@ -48,7 +57,26 @@ const liveSessionIds = async (): Promise<string[] | null> => {
   }
 }
 
-export const startServer = async (port = 7377): Promise<ServerHandle> => {
+/** ¿Hay ya un ai-office respondiendo en este puerto? Sondea `/api/health`, que es público. */
+const aiOfficeAt = async (port: number): Promise<boolean> => {
+  try {
+    const res = await fetch(`http://127.0.0.1:${port}/api/health`, {
+      signal: AbortSignal.timeout(800),
+    })
+    return ((await res.json()) as { name?: string }).name === 'ai-office'
+  } catch {
+    return false
+  }
+}
+
+export const startServer = async (port = 7377, opts: ServerOptions = {}): Promise<ServerHandle> => {
+  // Antes de tocar nada: un segundo arranque no debe invalidar el token del primero ni quitarle
+  // el spool. Se avisa con claridad en vez de morir con un EADDRINUSE crudo.
+  if (await aiOfficeAt(port)) {
+    throw new Error(
+      `ya hay un ai-office escuchando en el puerto ${port}. Usa ese (su enlace con token se imprimió al arrancarlo) o elige otro puerto con AI_OFFICE_PORT.`,
+    )
+  }
   const p = paths()
   const auth: AuthConfig = await createToken(join(p.ours, 'run'), port)
   const app = Fastify({ logger: false })
@@ -105,6 +133,7 @@ export const startServer = async (port = 7377): Promise<ServerHandle> => {
   const spoolHandle = watchSpool(join(p.ours, 'spool'), handleEvent, dedupe)
 
   const reconcileTimer = setInterval(() => {
+    presence.purge()
     void liveSessionIds().then((ids) => {
       if (!ids) return
       for (const closed of presence.reconcile(ids)) {
@@ -123,22 +152,57 @@ export const startServer = async (port = 7377): Promise<ServerHandle> => {
   reconcileTimer.unref()
 
   // --- snapshot ------------------------------------------------------------------------------
+  // Dos cachés con ciclos de vida distintos: el historial (segundos sobre gigabytes) solo se
+  // recalcula en `/api/refresh`; el catálogo (milisegundos) se reescanea tras cada mutación.
   let snapshot: Snapshot | null = null
+  let historical: HistoricalData | null = null
   let building: Promise<Snapshot> | null = null
+  // Sube con cada invalidación. Una construcción que empezó antes de una mutación termina con un
+  // catálogo anterior al cambio: se devuelve a quien lo pidió pero NO se cachea.
+  let generation = 0
+  // El historial solo se invalida con `/api/refresh`, no con una mutación.
+  let historyEpoch = 0
+
   const getSnapshot = async (): Promise<Snapshot> => {
     if (snapshot) return snapshot
-    building ??= buildSnapshot().then((s) => {
-      snapshot = s
-      building = null
-      return s
-    })
-    return building
+    if (building) return building
+    const mine = generation
+    const myEpoch = historyEpoch
+    const t0 = Date.now()
+    let attempt: Promise<Snapshot> | undefined
+    attempt = (async () => {
+      try {
+        const [catalog, hist] = await Promise.all([
+          scanCatalogReport(),
+          historical ?? scanHistorical(),
+        ])
+        if (myEpoch === historyEpoch) historical = hist
+        const built = assembleSnapshot(catalog, hist, t0)
+        if (mine === generation) snapshot = built
+        return built
+      } finally {
+        // Aunque falle: si la promesa fallida se quedara guardada, todas las peticiones
+        // siguientes recibirían el mismo error para siempre.
+        if (building === attempt) building = null
+      }
+    })()
+    building = attempt
+    return attempt
+  }
+
+  /** El catálogo cambió en disco: el siguiente snapshot lo reescanea, sin releer transcripts. */
+  const invalidateCatalog = () => {
+    generation++
+    snapshot = null
+    building = null
   }
 
   app.get('/api/health', async () => ({ ok: true, name: 'ai-office' }))
   app.get('/api/snapshot', async () => await getSnapshot())
   app.post('/api/refresh', async () => {
-    snapshot = null
+    historical = null
+    historyEpoch++
+    invalidateCatalog()
     return await getSnapshot()
   })
   app.get('/api/sessions', async () => ({ sessions: presence.list() }))
@@ -157,7 +221,7 @@ export const startServer = async (port = 7377): Promise<ServerHandle> => {
       const body = req.body as MutationRequest & { etag: string }
       const result = await applyMutation((await getSnapshot()).catalog, body)
       // El catálogo acaba de cambiar en disco: el siguiente que pida el snapshot lo recalcula.
-      snapshot = null
+      invalidateCatalog()
       return result
     } catch (err) {
       const e = err as Error & { name?: string; currentEtag?: string }
@@ -180,7 +244,10 @@ export const startServer = async (port = 7377): Promise<ServerHandle> => {
 
   app.post('/api/flows/preview', async (req, reply) => {
     try {
-      return await previewFlow((req.body as { flow: Parameters<typeof previewFlow>[0] }).flow)
+      return await previewFlow(
+        (req.body as { flow: Parameters<typeof previewFlow>[0] }).flow,
+        (await getSnapshot()).catalog,
+      )
     } catch (err) {
       return reply.code(400).send({ error: (err as Error).message })
     }
@@ -188,7 +255,10 @@ export const startServer = async (port = 7377): Promise<ServerHandle> => {
 
   app.post('/api/flows/plan', async (req, reply) => {
     try {
-      return await planFlow((req.body as { flow: Parameters<typeof planFlow>[0] }).flow)
+      return await planFlow(
+        (req.body as { flow: Parameters<typeof planFlow>[0] }).flow,
+        (await getSnapshot()).catalog,
+      )
     } catch (err) {
       return reply.code(400).send({ error: (err as Error).message })
     }
@@ -197,8 +267,8 @@ export const startServer = async (port = 7377): Promise<ServerHandle> => {
   app.post('/api/flows/save', async (req, reply) => {
     try {
       const { flow, etag } = req.body as { flow: Parameters<typeof saveFlow>[0]; etag: string }
-      const result = await saveFlow(flow, etag)
-      snapshot = null
+      const result = await saveFlow(flow, etag, (await getSnapshot()).catalog)
+      invalidateCatalog()
       return result
     } catch (err) {
       const e = err as Error & { name?: string; currentEtag?: string }
@@ -213,6 +283,13 @@ export const startServer = async (port = 7377): Promise<ServerHandle> => {
   app.get('/api/live', { websocket: true }, (socket) => {
     let sub: { close: () => void } | null = null
     let authed = false
+
+    // Un cliente que abre el socket y calla ocuparía una conexión para siempre: el primer frame
+    // (con el token) tiene 5 s para llegar.
+    const helloTimer = setTimeout(() => {
+      if (!authed) socket.close()
+    }, opts.helloTimeoutMs ?? HELLO_TIMEOUT_MS)
+    helloTimer.unref()
 
     const send = (payload: unknown) => {
       if (socket.readyState === socket.OPEN) socket.send(JSON.stringify(payload))
@@ -234,6 +311,7 @@ export const startServer = async (port = 7377): Promise<ServerHandle> => {
         return
       }
       authed = true
+      clearTimeout(helloTimer)
       const subscription = bus.subscribe(
         (event) => {
           send({ events: [event] })
@@ -246,7 +324,10 @@ export const startServer = async (port = 7377): Promise<ServerHandle> => {
       sendSessions(presence.list())
     })
 
-    socket.on('close', () => sub?.close())
+    socket.on('close', () => {
+      clearTimeout(helloTimer)
+      sub?.close()
+    })
   })
 
   const dist = webDist()
@@ -264,10 +345,27 @@ export const startServer = async (port = 7377): Promise<ServerHandle> => {
     )
   }
 
-  await app.listen({ port, host: '127.0.0.1' })
+  try {
+    await app.listen({ port, host: '127.0.0.1' })
+  } catch (err) {
+    clearInterval(reconcileTimer)
+    spoolHandle.close()
+    await socketHandle?.close()
+    if ((err as NodeJS.ErrnoException).code === 'EADDRINUSE') {
+      throw new Error(
+        `el puerto ${port} está ocupado por otro programa. Elige otro con AI_OFFICE_PORT.`,
+      )
+    }
+    throw err
+  }
+  // El token se guarda solo cuando el servidor ya escucha: si este arranque hubiera fallado, el
+  // archivo seguiría siendo el del que sí está corriendo.
+  await persistToken(auth)
+  // Con puerto 0 el sistema elige uno: lo que se anuncia es el real.
+  const actualPort = (app.server.address() as AddressInfo).port
   return {
-    url: `http://127.0.0.1:${port}/#t=${auth.token}`,
-    port,
+    url: `http://127.0.0.1:${actualPort}/#t=${auth.token}`,
+    port: actualPort,
     token: auth.token,
     close: async () => {
       clearInterval(reconcileTimer)

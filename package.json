@@ -8,7 +8,7 @@
   },
   "scripts": {
     "censo": "node packages/cli/src/index.ts censo",
-    "typecheck": "tsc -b --pretty",
+    "typecheck": "tsc -b --pretty && tsc --noEmit -p apps/web",
     "lint": "biome check .",
     "format": "biome format --write .",
     "test": "node --test --test-timeout=30000 \"packages/**/test/*.test.ts\" \"apps/**/test/*.test.ts\"",
@@ -16,7 +16,8 @@
     "dev:web": "pnpm --filter @ai-office/web dev",
     "build:web": "pnpm --filter @ai-office/web build",
     "build": "bash scripts/build.sh",
-    "verificar:paquete": "bash scripts/verificar-paquete.sh"
+    "verificar:paquete": "bash scripts/verificar-paquete.sh",
+    "demo": "node packages/cli/src/index.ts demo"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.13",

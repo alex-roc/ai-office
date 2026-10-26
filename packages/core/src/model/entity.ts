@@ -75,6 +75,11 @@ export interface Agent extends EntityBase {
   /** Cuerpo del prompt, sin el frontmatter. */
   body: string
   bodyTokens: number
+  /**
+   * Está en `agents/.archivo/`: Claude Code no lo carga. Se lista para poder restaurarlo, pero no
+   * entra en grafos, despachos ni estadísticas.
+   */
+  archived?: boolean
 }
 
 export interface Skill extends EntityBase {

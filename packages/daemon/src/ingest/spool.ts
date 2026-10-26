@@ -1,4 +1,12 @@
-import { mkdirSync, readdirSync, readFileSync, unlinkSync, watch } from 'node:fs'
+import {
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  statSync,
+  unlinkSync,
+  watch,
+} from 'node:fs'
 import { join } from 'node:path'
 import { type NormalizedEvent, normalizeHookEvent } from './normalize.ts'
 
@@ -10,6 +18,14 @@ import { type NormalizedEvent, normalizeHookEvent } from './normalize.ts'
  */
 
 const SPOOL_FILE_RE = /\.ndjson$/
+/** Un spool en proceso de lectura: ya no lo escribe el relay. */
+const DRAINING_SUFFIX = '.draining'
+/** Marca que deja el relay cuando el spool llegó a su tope (ver `ai-office-hook.mjs`). */
+const SPOOL_FULL_MARKER = '.lleno'
+/** Cada cuánto se revisa el spool aunque `fs.watch` no avise de nada. */
+const POLL_MS = 1000
+/** Un `.draining` más viejo que esto es de un daemon que murió a medias: se recoge. */
+const ORPHAN_AFTER_MS = 60_000
 
 /**
  * Detecta duplicados entre lo que ya llegó por el socket y lo que trae el spool: ambos caminos
@@ -59,15 +75,33 @@ export const drainSpool = (
 ): void => {
   let files: string[]
   try {
-    files = readdirSync(spoolDir)
-      .filter((f) => SPOOL_FILE_RE.test(f))
-      .sort()
+    files = readdirSync(spoolDir).sort()
   } catch {
     return // el directorio aún no existe: no hay nada que drenar
   }
 
   for (const file of files) {
-    const full = join(spoolDir, file)
+    let full = join(spoolDir, file)
+    if (SPOOL_FILE_RE.test(file)) {
+      // Se renombra ANTES de leer: el relay sigue añadiendo líneas a `AAAA-MM-DD.ndjson`, y leer y
+      // luego borrar perdía las que llegaban entre una cosa y otra. Tras el `rename` el relay
+      // crea un archivo nuevo, que recoge el siguiente drenaje.
+      const claimed = `${full}${DRAINING_SUFFIX}`
+      try {
+        renameSync(full, claimed)
+      } catch {
+        continue // otro drenaje se lo llevó antes
+      }
+      full = claimed
+    } else if (file.endsWith(DRAINING_SUFFIX)) {
+      try {
+        if (Date.now() - statSync(full).mtimeMs < ORPHAN_AFTER_MS) continue // lo está leyendo otro
+      } catch {
+        continue
+      }
+    } else {
+      continue
+    }
     let text: string
     try {
       text = readFileSync(full, 'utf8')
@@ -102,6 +136,12 @@ export const drainSpool = (
       // si ya no está, mejor: el objetivo era que desapareciera
     }
   }
+  // El spool ya no está lleno: el relay vuelve a poder anotar si algún día se llena otra vez.
+  try {
+    unlinkSync(join(spoolDir, SPOOL_FULL_MARKER))
+  } catch {
+    // normalmente no existe
+  }
 }
 
 export interface SpoolWatcherHandle {
@@ -132,9 +172,15 @@ export const watchSpool = (
   }
 
   const watcher = watch(spoolDir, { persistent: false }, () => scheduleDrain())
+  // `fs.watch` no es fiable: en macOS descarta lo que ocurre en los primeros milisegundos tras
+  // crearse (un hook que escribe justo al arrancar el daemon) y no avisa nunca de un evento
+  // perdido. Un `readdir` cada segundo es barato y garantiza que el spool acaba vaciándose.
+  const poll = setInterval(() => drainSpool(spoolDir, onEvent, dedupe), POLL_MS)
+  poll.unref()
   return {
     close: () => {
       if (pending) clearTimeout(pending)
+      clearInterval(poll)
       watcher.close()
     },
   }

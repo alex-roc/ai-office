@@ -15,10 +15,18 @@ export interface HistoryEntry {
   project: string | null
 }
 
+export interface CommandUse {
+  count: number
+  lastUsedAt: number
+  sessions: Set<string>
+  /** Directorios de trabajo (`project` del historial), tal cual. */
+  projects: Set<string>
+}
+
 export interface HistoryScan {
   entries: number
-  /** Comando (sin la barra) -> veces tecleado y última vez. */
-  commandUse: Map<string, { count: number; lastUsedAt: number }>
+  /** Comando (sin la barra) -> veces tecleado, última vez, y en qué sesiones y proyectos. */
+  commandUse: Map<string, CommandUse>
   /** Vocabulario de todo lo escrito, para el contraste de descriptions. */
   vocab: Set<string>
 }
@@ -40,7 +48,7 @@ export const scanHistory = async (path = `${paths().home}/history.jsonl`): Promi
     })
     for await (const line of rl) {
       if (!line.trim()) continue
-      let obj: { display?: unknown; timestamp?: unknown }
+      let obj: { display?: unknown; timestamp?: unknown; sessionId?: unknown; project?: unknown }
       try {
         obj = JSON.parse(line)
       } catch {
@@ -57,8 +65,15 @@ export const scanHistory = async (path = `${paths().home}/history.jsonl`): Promi
       const m = /^\/([a-z0-9][\w:-]*)$/i.exec(head)
       if (!m?.[1]) continue
       const name = m[1]
-      const cur = scan.commandUse.get(name) ?? { count: 0, lastUsedAt: 0 }
+      const cur = scan.commandUse.get(name) ?? {
+        count: 0,
+        lastUsedAt: 0,
+        sessions: new Set<string>(),
+        projects: new Set<string>(),
+      }
       cur.count += 1
+      if (typeof obj.sessionId === 'string') cur.sessions.add(obj.sessionId)
+      if (typeof obj.project === 'string') cur.projects.add(obj.project)
       if (ts > cur.lastUsedAt) cur.lastUsedAt = ts
       scan.commandUse.set(name, cur)
     }

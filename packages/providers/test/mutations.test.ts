@@ -6,6 +6,7 @@ import { test } from 'node:test'
 import { etagOf } from '../src/claude-code/frontmatter.ts'
 import {
   applyArchiveAgent,
+  applyCreateFile,
   applyRetireSkill,
   applySetAgentColor,
   applySetAgentModel,
@@ -15,6 +16,7 @@ import {
   applySetSkillDescription,
   applyUnarchiveAgent,
   applyUnretireSkill,
+  applyWriteCommand,
   ConflictError,
   planRetireSkill,
   planSetAgentColor,
@@ -311,4 +313,65 @@ cuerpo
   const plan = planRetireSkill('/skills/x/SKILL.md', yaRetirada)
   assert.equal(plan.changed, false)
   assert.equal(plan.diff, '')
+})
+
+test('applyCreateFile no sobrescribe un archivo que ya existe', async () => {
+  const { claudeHome } = await scratch()
+  await mkdir(join(claudeHome, 'commands'), { recursive: true })
+  const path = join(claudeHome, 'commands', 'nuevo.md')
+
+  const creado = await applyCreateFile('command', 'nuevo', path, 'primero\n')
+  assert.equal(await readFile(creado.path, 'utf8'), 'primero\n')
+
+  await assert.rejects(() => applyCreateFile('command', 'nuevo', path, 'segundo\n'), /ya existe/)
+  assert.equal(await readFile(path, 'utf8'), 'primero\n', 'el contenido original sigue intacto')
+})
+
+test('applyCreateFile no pisa lo que aparece justo antes de escribir (carrera)', async () => {
+  const { claudeHome } = await scratch()
+  await mkdir(join(claudeHome, 'commands'), { recursive: true })
+  const path = join(claudeHome, 'commands', 'carrera.md')
+  // Dos creaciones simultáneas: exactamente una gana, la otra falla, y nada se mezcla.
+  const results = await Promise.allSettled([
+    applyCreateFile('command', 'carrera', path, 'A'.repeat(5000)),
+    applyCreateFile('command', 'carrera', path, 'B'.repeat(5000)),
+  ])
+  assert.equal(results.filter((r) => r.status === 'fulfilled').length, 1)
+  const text = await readFile(path, 'utf8')
+  assert.ok(/^(A+|B+)$/.test(text), 'el archivo es entero de uno de los dos')
+})
+
+test('el backup no puede salir de backups/ aunque el nombre traiga ../ o /', async () => {
+  const { claudeHome } = await scratch()
+  const path = join(claudeHome, 'agents', 'code-reviewer.md')
+  await writeFile(path, AGENT_DOC, 'utf8')
+
+  const r = await applySetAgentColor('../../../escapado', path, 'blue', await etagOfFile(path))
+  const raiz = join(claudeHome, 'ai-office', 'backups')
+  assert.ok(r.backup.startsWith(`${raiz}/`), r.backup)
+  assert.ok(!r.backup.slice(raiz.length).includes('..'), r.backup)
+})
+
+test('dos escrituras en el mismo milisegundo no se pisan el backup', async () => {
+  const { claudeHome } = await scratch()
+  const path = join(claudeHome, 'agents', 'code-reviewer.md')
+  await writeFile(path, AGENT_DOC, 'utf8')
+  const real = Date.now
+  Date.now = () => 1_700_000_000_000
+  try {
+    const a = await applySetAgentColor('code-reviewer', path, 'blue', await etagOfFile(path))
+    const b = await applySetAgentColor('code-reviewer', path, 'red', a.etag)
+    assert.notEqual(a.backup, b.backup)
+  } finally {
+    Date.now = real
+  }
+})
+
+test('applyWriteCommand sobre un comando en subcarpeta escribe en su propio archivo', async () => {
+  const { claudeHome } = await scratch()
+  await mkdir(join(claudeHome, 'commands', 'ns'), { recursive: true })
+  const path = join(claudeHome, 'commands', 'ns', 'x.md')
+  await writeFile(path, 'viejo\n', 'utf8')
+  await applyWriteCommand('ns:x', path, 'nuevo\n', await etagOfFile(path))
+  assert.equal(await readFile(path, 'utf8'), 'nuevo\n')
 })

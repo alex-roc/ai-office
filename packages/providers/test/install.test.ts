@@ -1,6 +1,28 @@
 import assert from 'node:assert/strict'
+import {
+  chmodSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { test } from 'node:test'
-import { planInstall, planUninstall } from '../src/claude-code/install.ts'
+import {
+  applyInstall,
+  applyUninstall,
+  EVENTS_TO_INSTALL,
+  installRelay,
+  planInstall,
+  planUninstall,
+  stableRelayPath,
+} from '../src/claude-code/install.ts'
 
 const RELAY_PATH = '/home/dev/ai-office/packages/hook-relay/bin/ai-office-hook.mjs'
 
@@ -175,4 +197,104 @@ test('desinstalar no toca el grupo ajeno de PreToolUse aunque quede el único de
 test('un settings.json ilegible no revienta con una excepción críptica', () => {
   assert.throws(() => planInstall('{ esto no es json', RELAY_PATH), /ilegible/)
   assert.throws(() => planInstall('[]', RELAY_PATH), /objeto JSON/)
+})
+
+// --- eventos, creación, symlink, ruta estable --------------------------------------------------
+
+/** Un CLAUDE_HOME de usar y tirar: el backup y el relay estable caen dentro, no en ~/.claude. */
+const scratchHome = (): string => {
+  const home = realpathSync(mkdtempSync(join(tmpdir(), 'aio-install-')))
+  process.env.CLAUDE_HOME = home
+  return home
+}
+
+test('la lista de eventos coincide con hooks/hooks.json del plugin', () => {
+  const manifest = JSON.parse(
+    readFileSync(new URL('../../../hooks/hooks.json', import.meta.url), 'utf8'),
+  ) as { hooks: Record<string, unknown> }
+  assert.deepEqual([...EVENTS_TO_INSTALL].sort(), Object.keys(manifest.hooks).sort())
+})
+
+test('applyInstall crea settings.json cuando no existe', async () => {
+  const home = scratchHome()
+  const settings = join(home, 'settings.json')
+  const plan = await applyInstall(settings, RELAY_PATH)
+  assert.equal(plan.changed, true)
+  const out = JSON.parse(readFileSync(settings, 'utf8'))
+  assert.equal(Object.keys(out.hooks).length, EVENTS_TO_INSTALL.length)
+  assert.ok(readFileSync(settings, 'utf8').endsWith('\n'))
+
+  // Y desinstalar lo deja sin hooks, sin romper.
+  await applyUninstall(settings)
+  assert.equal(JSON.parse(readFileSync(settings, 'utf8')).hooks, undefined)
+})
+
+test('si settings.json es un symlink, se escribe en su destino y el enlace sigue siendo enlace', async () => {
+  const home = scratchHome()
+  const store = join(home, 'dotfiles')
+  mkdirSync(store)
+  const real = join(store, 'settings.json')
+  writeFileSync(real, FIXTURE)
+  chmodSync(real, 0o640)
+  const link = join(home, 'settings.json')
+  symlinkSync(real, link)
+
+  await applyInstall(link, RELAY_PATH)
+
+  assert.ok(lstatSync(link).isSymbolicLink(), 'el enlace no se reemplaza por un archivo suelto')
+  assert.match(readFileSync(real, 'utf8'), /ai-office-hook/)
+  assert.equal(statSync(real).mode & 0o777, 0o640, 'conserva los permisos')
+
+  await applyUninstall(link)
+  assert.equal(readFileSync(real, 'utf8'), FIXTURE)
+})
+
+test('un symlink roto no se reemplaza: error claro', async () => {
+  const home = scratchHome()
+  const link = join(home, 'settings.json')
+  symlinkSync(join(home, 'no-existe.json'), link)
+  await assert.rejects(() => applyInstall(link, RELAY_PATH), /enlace roto/)
+  assert.ok(lstatSync(link).isSymbolicLink())
+})
+
+test('el relay se copia a una ruta estable bajo ~/.claude/ai-office/bin', async () => {
+  const home = scratchHome()
+  const source = join(home, 'cache-npx-_npx-123-ai-office-hook.mjs')
+  writeFileSync(source, '// relay v1\n')
+  assert.equal(stableRelayPath(), join(home, 'ai-office', 'bin', 'ai-office-hook.mjs'))
+
+  assert.equal(await installRelay(source), true)
+  assert.equal(readFileSync(stableRelayPath(), 'utf8'), '// relay v1\n')
+  assert.equal(await installRelay(source), false, 'sin cambios no reescribe')
+  writeFileSync(source, '// relay v2\n')
+  assert.equal(await installRelay(source), true)
+  assert.ok(existsSync(stableRelayPath()))
+})
+
+test('un hook propio con otra ruta (caché de npx purgada) se corrige en el sitio', () => {
+  const viejo = planInstall(FIXTURE, '/home/u/.npm/_npx/abc/ai-office-hook.mjs')
+  const nuevo = planInstall(viejo.text, RELAY_PATH)
+  assert.equal(nuevo.changed, true)
+  const out = JSON.parse(nuevo.text)
+  const ours = out.hooks.SessionStart[0].hooks.filter((h: { command: string }) =>
+    h.command.includes('ai-office-hook'),
+  )
+  assert.equal(ours.length, 1)
+  assert.ok(ours[0].command.includes(RELAY_PATH))
+})
+
+test('desinstalar no borra arrays ni grupos vacíos que puso el usuario', () => {
+  // Eventos que ai-office no instala: ni el array vacío ni el grupo sin hooks son nuestros.
+  const text = JSON.stringify(
+    { hooks: { Elicitation: [], Setup: [{ matcher: 'x', hooks: [] }] } },
+    null,
+    2,
+  )
+  const plan = planUninstall(text)
+  assert.equal(plan.changed, false)
+  assert.equal(plan.text, text)
+
+  // Y tras instalar y desinstalar siguen ahí: solo se va lo nuestro.
+  const out = JSON.parse(planUninstall(planInstall(text, RELAY_PATH).text).text)
+  assert.deepEqual(out.hooks, { Elicitation: [], Setup: [{ matcher: 'x', hooks: [] }] })
 })

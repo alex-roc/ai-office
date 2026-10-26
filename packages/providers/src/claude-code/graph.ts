@@ -135,18 +135,25 @@ export const commandEdges = (commands: Command[], agents: Agent[], skills: Skill
 export const skillClientEdges = (skills: Skill[], agents: Agent[]): Edge[] => {
   const edges: Edge[] = []
   for (const skill of skills) {
-    const haystack = `${skill.description}\n${skill.body}`
     for (const agent of agents) {
-      const mentions = findMentions(haystack, agent.name)
-      if (mentions.length === 0) continue
+      // La description vive en el frontmatter (sin línea citable) y el cuerpo empieza en
+      // `bodyStartLine`: se buscan por separado para que la evidencia diga la línea real.
+      const inDescription = findMentions(skill.description, agent.name)
+      const inBody = findMentions(skill.body, agent.name)
+      if (inDescription.length + inBody.length === 0) continue
       edges.push({
         from: skill.id,
         to: agent.id,
         kind: 'skill-declares-client',
         layer: 'declared',
-        evidence: mentions
-          .slice(0, 3)
-          .map((m) => ({ path: skill.source.realPath, excerpt: m.excerpt })),
+        evidence: [
+          ...inDescription.slice(0, 1).map((m) => ({
+            path: skill.source.realPath,
+            field: 'description',
+            excerpt: m.excerpt,
+          })),
+          ...evidenceFrom(skill.source.realPath, inBody, skill.bodyStartLine),
+        ].slice(0, 3),
       })
     }
   }
@@ -194,10 +201,14 @@ export const agentToolEdges = (agents: Agent[]): Edge[] => {
 }
 
 /** El grafo declarado completo: todo lo que los archivos afirman que debería pasar. */
-export const buildDeclaredGraph = (catalog: Catalog): Edge[] => [
-  ...agentSkillEdges(catalog.agents, catalog.skills),
-  ...commandEdges(catalog.commands, catalog.agents, catalog.skills),
-  ...skillClientEdges(catalog.skills, catalog.agents),
-  ...agentDelegationEdges(catalog.agents),
-  ...agentToolEdges(catalog.agents),
-]
+export const buildDeclaredGraph = (catalog: Catalog): Edge[] => {
+  // Los agentes archivados no se cargan: ni son origen ni destino de ninguna relación.
+  const agents = catalog.agents.filter((a) => !a.archived)
+  return [
+    ...agentSkillEdges(agents, catalog.skills),
+    ...commandEdges(catalog.commands, agents, catalog.skills),
+    ...skillClientEdges(catalog.skills, agents),
+    ...agentDelegationEdges(agents),
+    ...agentToolEdges(agents),
+  ]
+}

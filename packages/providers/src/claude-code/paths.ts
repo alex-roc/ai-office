@@ -1,8 +1,17 @@
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
-/** Rutas de Claude Code. Todo lo que el producto lee sale de aquí. */
-export const claudeHome = (): string => process.env.CLAUDE_HOME ?? join(homedir(), '.claude')
+/**
+ * Directorio de configuración de Claude Code. Precedencia:
+ *  1. `CLAUDE_HOME`: la nuestra, para probar contra una copia sin tocar nada real.
+ *  2. `CLAUDE_CONFIG_DIR`: la variable oficial de Claude Code. Quien la usa (varias cuentas,
+ *     contenedores) tiene TODO su estado ahí, incluido `.claude.json`.
+ *  3. `~/.claude`.
+ */
+export const claudeHome = (): string =>
+  process.env.CLAUDE_HOME || process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude')
+
+const customHome = (): boolean => Boolean(process.env.CLAUDE_HOME || process.env.CLAUDE_CONFIG_DIR)
 
 export const paths = () => {
   const home = claudeHome()
@@ -13,8 +22,11 @@ export const paths = () => {
     skills: join(home, 'skills'),
     projects: join(home, 'projects'),
     settings: join(home, 'settings.json'),
-    /** Contadores de uso que el propio CLI mantiene. Ojo: vive fuera de ~/.claude. */
-    usageJson: join(homedir(), '.claude.json'),
+    /**
+     * Contadores de uso que el propio CLI mantiene. Por defecto vive FUERA de `~/.claude`
+     * (`~/.claude.json`); con un directorio de configuración propio vive dentro de él.
+     */
+    usageJson: customHome() ? join(home, '.claude.json') : join(homedir(), '.claude.json'),
     /** Estado propio de ai-office. Nunca se mezcla con el de Claude Code. */
     ours: join(home, 'ai-office'),
   }

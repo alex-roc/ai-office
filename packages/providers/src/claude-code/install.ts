@@ -1,5 +1,16 @@
 import { createHash, randomBytes } from 'node:crypto'
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import {
+  chmod,
+  copyFile,
+  lstat,
+  mkdir,
+  readFile,
+  realpath,
+  rename,
+  rm,
+  stat,
+  writeFile,
+} from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { paths } from './paths.ts'
 
@@ -25,7 +36,11 @@ const HOOK_MARKER = 'ai-office-hook'
  * los eventos que no son de herramienta (SessionStart, SessionEnd, etc. ya llegan así). */
 const MATCHER = '*'
 
-const EVENTS_TO_INSTALL = [
+/**
+ * Debe coincidir con las claves de `hooks/hooks.json` (el plugin): quien instala por settings.json
+ * recibe los mismos eventos que quien instala el plugin. Lo comprueba `install.test.ts`.
+ */
+export const EVENTS_TO_INSTALL = [
   'SessionStart',
   'SessionEnd',
   'UserPromptSubmit',
@@ -37,6 +52,8 @@ const EVENTS_TO_INSTALL = [
   'SubagentStop',
   'PermissionRequest',
   'PermissionDenied',
+  'TaskCreated',
+  'TaskCompleted',
   'Notification',
   'PreCompact',
   'PostCompact',
@@ -146,7 +163,15 @@ const installEvent = (
   )
   if (existingGroup) {
     const hooks = existingGroup.hooks as unknown[]
-    if (hooks.some(isOurHook)) return false // ya instalado: nada que hacer
+    const ours = hooks.find(isOurHook) as Record<string, unknown> | undefined
+    if (ours) {
+      // Ya instalado. Si apunta a otra ruta (una versión anterior lo registraba en la caché de
+      // npx, que se borra) se corrige en el sitio: es un hook nuestro, no una clave ajena.
+      const wanted = buildHookEntry(relayPath).command
+      if (ours.command === wanted) return false
+      ours.command = wanted
+      return true
+    }
     hooks.push(buildHookEntry(relayPath))
     return true
   }
@@ -187,21 +212,23 @@ export const planUninstall = (settingsText: string): InstallPlan => {
     for (const eventName of Object.keys(hooksSection)) {
       const groups = hooksSection[eventName]
       if (!Array.isArray(groups)) continue
+      // Solo se limpia lo que ESTE evento perdió: un array vacío o un grupo sin hooks que puso el
+      // usuario son suyos, y borrarlos sería tocar una clave ajena.
+      let removedHere = false
       for (let i = groups.length - 1; i >= 0; i--) {
         const group = groups[i]
         if (!isRecord(group) || !Array.isArray(group.hooks)) continue
         const hooks = group.hooks as unknown[]
         const kept = hooks.filter((h) => !isOurHook(h))
-        if (kept.length !== hooks.length) changed = true
+        if (kept.length === hooks.length) continue
+        removedHere = true
+        changed = true
         group.hooks = kept
         if (kept.length === 0) groups.splice(i, 1)
       }
-      if (groups.length === 0) {
-        delete hooksSection[eventName]
-        changed = true
-      }
+      if (removedHere && groups.length === 0) delete hooksSection[eventName]
     }
-    if (Object.keys(hooksSection).length === 0) delete parsed.hooks
+    if (changed && Object.keys(hooksSection).length === 0) delete parsed.hooks
   }
 
   const text = stringifySettings(parsed, settingsText)
@@ -215,46 +242,111 @@ const sha256 = (text: string): string => createHash('sha256').update(text).diges
  * archivo temporal del MISMO directorio y `rename` atómico, y antes de renombrar se comprueba que
  * nadie más haya tocado el archivo desde que lo leímos (comparando su sha256). Si cambió, se
  * aborta: es preferible que el usuario reintente a pisarle un cambio que hizo mientras tanto.
+ *
+ * Si `settings.json` es un symlink (dotfiles gestionados con stow o similares) se escribe en su
+ * destino real y conservando sus permisos: renombrar sobre el enlace lo reemplazaría por un
+ * archivo suelto y rompería la proyección. `originalText === null` es "el archivo no existe": se
+ * crea, y se aborta si aparece otro mientras tanto.
  */
 const atomicWrite = async (
   settingsPath: string,
-  originalText: string,
+  originalText: string | null,
   newText: string,
 ): Promise<void> => {
-  const backupDir = join(paths().ours, 'backups')
-  await mkdir(backupDir, { recursive: true })
-  await writeFile(join(backupDir, `settings.json.${Date.now()}`), originalText, 'utf8')
+  let target = settingsPath
+  try {
+    target = await realpath(settingsPath)
+  } catch {
+    // Un enlace roto no se puede escribir "a través": se pediría reemplazarlo, y eso no es nuestro.
+    if (
+      await lstat(settingsPath).then(
+        (st) => st.isSymbolicLink(),
+        () => false,
+      )
+    ) {
+      throw new Error(`settings.json es un enlace roto: ${settingsPath}`)
+    }
+  }
+  await mkdir(dirname(target), { recursive: true })
 
-  const originalHash = sha256(originalText)
-  const tmpPath = join(
-    dirname(settingsPath),
-    `.settings.json.tmp-${randomBytes(6).toString('hex')}`,
-  )
+  let mode: number | null = null
+  if (originalText !== null) {
+    mode = (await stat(target)).mode & 0o777
+    const backupDir = join(paths().ours, 'backups')
+    await mkdir(backupDir, { recursive: true })
+    await writeFile(join(backupDir, `settings.json.${Date.now()}`), originalText, 'utf8')
+  }
+
+  const tmpPath = join(dirname(target), `.settings.json.tmp-${randomBytes(6).toString('hex')}`)
   await writeFile(tmpPath, newText, 'utf8')
+  if (mode !== null) await chmod(tmpPath, mode)
 
-  const current = await readFile(settingsPath, 'utf8')
-  if (sha256(current) !== originalHash) {
+  const current = await readFile(target, 'utf8').catch(() => null)
+  if (
+    current === null
+      ? originalText !== null
+      : originalText === null || sha256(current) !== sha256(originalText)
+  ) {
     await rm(tmpPath, { force: true })
     throw new Error(
       'settings.json cambió mientras preparábamos la escritura: aborto para no pisar el cambio ajeno',
     )
   }
-  await rename(tmpPath, settingsPath)
+  await rename(tmpPath, target)
 }
+
+/** `null` si el archivo no existe; cualquier otro error de lectura sí es un error. */
+const readSettings = async (settingsPath: string): Promise<string | null> => {
+  try {
+    return await readFile(settingsPath, 'utf8')
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null
+    throw err
+  }
+}
+
+/** Un `settings.json` que aún no existe se trata como `{}`: instalar lo crea. */
+const EMPTY_SETTINGS = '{}\n'
 
 export const applyInstall = async (
   settingsPath: string,
   relayPath: string,
 ): Promise<InstallPlan> => {
-  const original = await readFile(settingsPath, 'utf8')
-  const plan = planInstall(original, relayPath)
+  const original = await readSettings(settingsPath)
+  const plan = planInstall(original ?? EMPTY_SETTINGS, relayPath)
   if (plan.changed) await atomicWrite(settingsPath, original, plan.text)
   return plan
 }
 
 export const applyUninstall = async (settingsPath: string): Promise<InstallPlan> => {
-  const original = await readFile(settingsPath, 'utf8')
+  const original = await readSettings(settingsPath)
+  if (original === null) return planUninstall(EMPTY_SETTINGS)
   const plan = planUninstall(original)
   if (plan.changed) await atomicWrite(settingsPath, original, plan.text)
   return plan
+}
+
+/**
+ * Ruta ESTABLE del relay que se registra en settings.json. La del paquete no sirve: con `npx` vive
+ * en una caché que se purga, y el hook quedaría apuntando a un archivo que ya no existe (Claude
+ * Code lo ignora en silencio). Una copia bajo `~/.claude/ai-office/bin/` sobrevive a todo.
+ */
+export const stableRelayPath = (): string => join(paths().ours, 'bin', 'ai-office-hook.mjs')
+
+/** Copia el relay a su ruta estable. Devuelve `true` si el contenido cambió (o no existía). */
+export const installRelay = async (sourcePath: string): Promise<boolean> => {
+  const dest = stableRelayPath()
+  const wanted = await readFile(sourcePath, 'utf8')
+  if ((await readFile(dest, 'utf8').catch(() => null)) === wanted) return false
+  await mkdir(dirname(dest), { recursive: true })
+  const tmp = `${dest}.tmp-${randomBytes(4).toString('hex')}`
+  await copyFile(sourcePath, tmp)
+  await chmod(tmp, 0o755)
+  await rename(tmp, dest)
+  return true
+}
+
+/** Retira la copia estable del relay (al desinstalar). No falla si no está. */
+export const removeRelay = async (): Promise<void> => {
+  await rm(stableRelayPath(), { force: true })
 }

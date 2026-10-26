@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { Agent, Skill } from '@ai-office/core'
-import { agentSkillEdges } from '../src/claude-code/graph.ts'
+import { emptyCatalog } from '@ai-office/core'
+import { agentSkillEdges, buildDeclaredGraph, skillClientEdges } from '../src/claude-code/graph.ts'
 
 const source = (path: string) => ({
   path,
@@ -96,4 +97,28 @@ test('no inventa autodelegaciones ni aristas de sustring', () => {
   const edges = agentSkillEdges([a], skills)
   // "mi-release-tools-viejo" no debe contar; solo la mencion real al final.
   assert.equal(edges.length, 0, 'una sola mencion no explicita no basta')
+})
+
+test('skillClientEdges cita la línea real del archivo, no la del cuerpo', () => {
+  // La mención está en la línea 2 del cuerpo; con bodyStartLine 5 es la 6 del archivo.
+  const s = { ...skill('style-guide'), body: 'intro\nla usa el agente `code-reviewer` siempre\n' }
+  const edges = skillClientEdges([s], [agent('code-reviewer', '')])
+  assert.equal(edges.length, 1)
+  assert.equal(edges[0]?.evidence[0]?.line, 6)
+  assert.equal(edges[0]?.evidence[0]?.path, '/skills/style-guide/SKILL.md')
+})
+
+test('una mención en la description se cita como campo, sin inventar una línea', () => {
+  const s = { ...skill('style-guide'), description: 'Para el agente `code-reviewer`' }
+  const edges = skillClientEdges([s], [agent('code-reviewer', '')])
+  assert.equal(edges[0]?.evidence[0]?.field, 'description')
+  assert.equal(edges[0]?.evidence[0]?.line, undefined)
+})
+
+test('los agentes archivados no entran en el grafo declarado', () => {
+  const archivado = { ...agent('viejo', 'lee `style-guide` y `style-guide`'), archived: true }
+  const activo = agent('code-reviewer', 'lee `style-guide` y `style-guide`')
+  const edges = buildDeclaredGraph({ ...emptyCatalog(), agents: [archivado, activo], skills })
+  assert.ok(edges.some((e) => e.from === activo.id))
+  assert.ok(!edges.some((e) => e.from === archivado.id || e.to === archivado.id))
 })

@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
 import {
   appendFile,
   chmod,
@@ -268,9 +268,27 @@ const readWithEtag = async (
   return { text, etag: etagOf(text, st.mtimeMs, st.size), mode: st.mode }
 }
 
-/** `~/.claude/ai-office/backups/<kind>/<nombre>/<epoch>.md` */
-const backupPathFor = (kind: string, name: string): string =>
-  join(paths().ours, 'backups', kind, name, `${Date.now()}.md`)
+/**
+ * `~/.claude/ai-office/backups/<kind>/<nombre>/<epoch>-<aleatorio>.md`
+ *
+ * El nombre viene de la interfaz o de un archivo del usuario, así que se sanea: un `../` o una
+ * `/` lo sacarían de `backups/`. Y el sufijo aleatorio evita que dos escrituras en el mismo
+ * milisegundo (un guardado doble) se pisen el respaldo.
+ */
+const backupPathFor = (kind: string, name: string): string => {
+  const safe =
+    name
+      .replace(/[^\p{L}\p{N}._-]+/gu, '_')
+      .replace(/\.{2,}/g, '_')
+      .replace(/^\./, '_') || '_'
+  return join(
+    paths().ours,
+    'backups',
+    kind,
+    safe,
+    `${Date.now()}-${randomBytes(3).toString('hex')}.md`,
+  )
+}
 
 const writeBackup = async (kind: string, name: string, text: string): Promise<string> => {
   const backupPath = backupPathFor(kind, name)
@@ -831,16 +849,18 @@ export const applyCreateFile = async (
   await assertWithinRoots(join(parent, basename(path)), opts?.extraAllowedRoots)
 
   const target = join(parent, basename(path))
+  // `wx` falla con EEXIST si el archivo ya existe: comprobar con `stat` y escribir después dejaba
+  // una ventana en la que otro proceso lo creaba y esta escritura lo pisaba sin aviso.
   try {
-    await stat(target)
-    throw new Error(
-      `ya existe un archivo en ${target}: usa la operación de edición, no la de creación`,
-    )
+    await writeFile(target, content, { encoding: 'utf8', mode: 0o644, flag: 'wx' })
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err
+    if ((err as NodeJS.ErrnoException).code === 'EEXIST') {
+      throw new Error(
+        `ya existe un archivo en ${target}: usa la operación de edición, no la de creación`,
+      )
+    }
+    throw err
   }
-
-  await writeAtomic(target, content, 0o644)
   const st = await stat(target)
   await appendAudit({
     ts: Date.now(),

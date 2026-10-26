@@ -39,6 +39,35 @@ const readEtag = async (path: string): Promise<{ text: string; etag: string; exi
   }
 }
 
+interface FlowTarget {
+  /** Nombre con el que se audita y se respalda. */
+  name: string
+  path: string
+  /** Raíces extra que la escritura necesita autorizar (el destino real de un symlink). */
+  opts: { extraAllowedRoots: string[] }
+}
+
+/**
+ * Dónde se guarda un flujo. Si viene de un comando que ya existe se escribe SOBRE ese archivo
+ * (`source.realPath`): recompilar el nombre no vale, porque `commands/ns/x.md` se llama `ns:x` y
+ * un comando que es symlink no debe reemplazarse por un archivo suelto. Solo un flujo nuevo
+ * construye la ruta a partir de su nombre.
+ */
+const targetOf = (flow: Flow, catalog?: Catalog): FlowTarget => {
+  const existing =
+    catalog?.commands.find((c) => c.name === flow.name) ??
+    catalog?.commands.find((c) => c.name === flowFileName(flow).replace(/\.md$/, ''))
+  if (existing) {
+    return {
+      name: existing.name,
+      path: existing.source.realPath,
+      opts: { extraAllowedRoots: existing.source.symlink ? [existing.source.realPath] : [] },
+    }
+  }
+  const name = flowFileName(flow).replace(/\.md$/, '')
+  return { name, path: commandPath(name), opts: { extraAllowedRoots: [] } }
+}
+
 /** Abre un comando existente en el lienzo, recuperando sus pasos. */
 export const openFlow = async (catalog: Catalog, commandId: string): Promise<FlowResponse> => {
   const command = catalog.commands.find((c) => c.id === commandId)
@@ -50,28 +79,27 @@ export const openFlow = async (catalog: Catalog, commandId: string): Promise<Flo
 }
 
 /** Vista previa: qué Markdown saldría de este lienzo, sin tocar nada. */
-export const previewFlow = async (flow: Flow): Promise<FlowResponse> => {
-  const path = commandPath(flowFileName(flow).replace(/\.md$/, ''))
+export const previewFlow = async (flow: Flow, catalog?: Catalog): Promise<FlowResponse> => {
+  const { path } = targetOf(flow, catalog)
   const { etag, exists } = await readEtag(path)
   return { flow, markdown: compileFlow(flow), path, etag, exists }
 }
 
-export const planFlow = async (flow: Flow) => {
-  const path = commandPath(flowFileName(flow).replace(/\.md$/, ''))
+export const planFlow = async (flow: Flow, catalog?: Catalog) => {
+  const { path } = targetOf(flow, catalog)
   const { text, etag } = await readEtag(path)
   const plan = planWriteCommand(path, text, compileFlow(flow))
   const { before: _b, after: _a, ...rest } = plan
   return { ...rest, etag }
 }
 
-export const saveFlow = async (flow: Flow, etag: string) => {
-  const name = flowFileName(flow).replace(/\.md$/, '')
-  const path = commandPath(name)
+export const saveFlow = async (flow: Flow, etag: string, catalog?: Catalog) => {
+  const { name, path, opts } = targetOf(flow, catalog)
   const markdown = compileFlow(flow)
   const { exists } = await readEtag(path)
   // Un comando nuevo no tiene etag que comparar: se crea, y la creación falla si alguien lo
   // creó mientras tanto, que es la misma protección por otro camino.
   return exists
-    ? applyWriteCommand(name, path, markdown, etag)
+    ? applyWriteCommand(name, path, markdown, etag, opts)
     : applyCreateFile('command', name, path, markdown)
 }

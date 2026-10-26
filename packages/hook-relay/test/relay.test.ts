@@ -1,6 +1,14 @@
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { createServer } from 'node:net'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -25,10 +33,23 @@ test.after(() => {
 const runHook = (
   input: string,
   home: string,
+  extraEnv: Record<string, string> = {},
 ): Promise<{ code: number | null; stdout: string; stderr: string }> =>
   new Promise((resolve, reject) => {
+    // Sin heredar las variables que cambian dónde mira el relay: la máquina de quien prueba
+    // puede tener CLAUDE_CONFIG_DIR puesta.
+    const env: Record<string, string | undefined> = { ...process.env, HOME: home }
+    for (const key of [
+      'CLAUDE_HOME',
+      'CLAUDE_CONFIG_DIR',
+      'AI_OFFICE_TELEMETRY',
+      'CLAUDE_PLUGIN_OPTION_TELEMETRY',
+    ]) {
+      delete env[key]
+    }
+    Object.assign(env, extraEnv)
     const child = spawn(process.execPath, [BIN], {
-      env: { ...process.env, HOME: home },
+      env,
       stdio: ['pipe', 'pipe', 'pipe'],
     })
     let stdout = ''
@@ -91,12 +112,14 @@ test('socket vivo: entrega la línea y recorta los payloads grandes', async () =
     hook_event_name: 'PreToolUse',
     session_id: 's1',
     cwd: '/proj',
-    tool_name: 'Bash',
+    tool_name: 'Grep',
     tool_use_id: 'tu-1',
     tool_input: { command: bigCommand, unrelatedBigField: 'z'.repeat(3000) },
     tool_output: bigOutput,
   }
-  const r = await runHook(JSON.stringify(payload), home)
+  const r = await runHook(JSON.stringify(payload), home, {
+    AI_OFFICE_SOCKET_TIMEOUT_MS: '3000',
+  })
   server.close()
 
   assert.equal(r.code, 0)
@@ -106,7 +129,7 @@ test('socket vivo: entrega la línea y recorta los payloads grandes', async () =
   const line = received[0]!.trim()
   assert.ok(!line.includes('\n'), 'una conexión = una línea NDJSON')
   const event = JSON.parse(line)
-  assert.equal(event.tool_name, 'Bash')
+  assert.equal(event.tool_name, 'Grep')
   assert.equal(event.tool_use_id, 'tu-1')
   assert.equal(event.tool_input.command, bigCommand.slice(0, 200))
   assert.ok(event.tool_input.preview.length <= 1024)
@@ -169,4 +192,80 @@ test('stdin gigante: se trunca a 256 KB y el proceso igual termina limpio', asyn
   assert.equal(r.code, 0)
   assert.equal(r.stdout, '')
   assert.equal(r.stderr, '')
+})
+
+test('privacidad: de Write, Edit y Bash solo salen nombres y tamaños', async () => {
+  const home = tmpHome()
+  const secret = 'AWS_SECRET_ACCESS_KEY=abc123'
+  for (const [tool, input] of [
+    ['Bash', { command: `curl -H "x: ${secret}" https://x`, description: 'despliega' }],
+    ['Write', { file_path: '/p/.env', content: secret }],
+    ['Edit', { file_path: '/p/a.ts', old_string: secret, new_string: 'otra cosa' }],
+  ] as const) {
+    const r = await runHook(
+      JSON.stringify({
+        hook_event_name: 'PostToolUse',
+        session_id: 'priv',
+        tool_name: tool,
+        tool_input: input,
+        tool_output: `salida con ${secret}`,
+      }),
+      home,
+    )
+    assert.equal(r.code, 0)
+  }
+  const raw = readdirSync(join(home, '.claude', 'ai-office', 'spool'))
+    .map((f) => readFileSync(join(home, '.claude', 'ai-office', 'spool', f), 'utf8'))
+    .join('')
+  assert.ok(!raw.includes('abc123'), 'el contenido no debe llegar al spool')
+  const lines = spoolLines(home) as Array<{
+    tool_input: { bytes: number; file_path?: string }
+    tool_output: Record<string, unknown>
+  }>
+  assert.equal(lines.length, 3)
+  assert.equal(lines[1]?.tool_input.file_path, '/p/.env')
+  assert.equal(typeof lines[0]?.tool_input.bytes, 'number')
+  assert.deepEqual(Object.keys(lines[2]!.tool_output), ['bytes'])
+})
+
+test('telemetry desactivada: no escribe nada (ni spool ni log)', async () => {
+  const apagados: Record<string, string>[] = [
+    { AI_OFFICE_TELEMETRY: '0' },
+    { CLAUDE_PLUGIN_OPTION_TELEMETRY: 'false' },
+  ]
+  for (const env of apagados) {
+    const home = tmpHome()
+    const r = await runHook(
+      JSON.stringify({ hook_event_name: 'SessionStart', session_id: 'off' }),
+      home,
+      env,
+    )
+    assert.equal(r.code, 0)
+    assert.equal(existsSync(join(home, '.claude', 'ai-office')), false)
+  }
+})
+
+test('respeta CLAUDE_CONFIG_DIR y CLAUDE_HOME (este último manda)', async () => {
+  const home = tmpHome()
+  const cfg = join(home, 'otra-cuenta')
+  const payload = JSON.stringify({ hook_event_name: 'SessionStart', session_id: 'cfg' })
+  await runHook(payload, home, { CLAUDE_CONFIG_DIR: cfg })
+  assert.equal(readdirSync(join(cfg, 'ai-office', 'spool')).length, 1)
+  assert.equal(existsSync(join(home, '.claude')), false)
+
+  const test = join(home, 'prueba')
+  await runHook(payload, home, { CLAUDE_CONFIG_DIR: cfg, CLAUDE_HOME: test })
+  assert.equal(readdirSync(join(test, 'ai-office', 'spool')).length, 1)
+})
+
+test('spool lleno: descarta lo nuevo y lo anota una sola vez', async () => {
+  const home = tmpHome()
+  const spool = join(home, '.claude', 'ai-office', 'spool')
+  mkdirSync(spool, { recursive: true })
+  writeFileSync(join(spool, '2020-01-01.ndjson'), 'x'.repeat(5 * 1024 * 1024))
+  const payload = JSON.stringify({ hook_event_name: 'SessionStart', session_id: 'full' })
+  for (let i = 0; i < 2; i++) assert.equal((await runHook(payload, home)).code, 0)
+  assert.deepEqual(readdirSync(spool).sort(), ['.lleno', '2020-01-01.ndjson'])
+  const log = readFileSync(join(home, '.claude', 'ai-office', 'logs', 'hook-relay.log'), 'utf8')
+  assert.equal(log.split('spool lleno').length - 1, 1)
 })
