@@ -1,5 +1,9 @@
 # assets/
 
+Los sprites de personas y muebles se generaron con IA (generador de imágenes de OpenAI vía Codex)
+a partir de los prompts de `fuentes/`, y se recortaron y redujeron a mano con `tools/sprites/`.
+Se distribuyen bajo la misma licencia MIT que el resto del proyecto.
+
 `fuentes/` guarda la PROCEDENCIA del arte, no el arte que se sirve:
 
 - `estilo.txt`, `personajes.txt`, `mobiliario.txt` — los prompts exactos con los que se generaron

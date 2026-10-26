@@ -1,203 +1,159 @@
+<div align="center">
+
 # ai-office
 
-**¿Qué mitad de tu configuración de Claude Code no usas nunca?**
+**Which half of your Claude Code setup do you never use?**
 
-`ai-office` lee tus agentes, skills y comandos, los cruza con lo que de verdad ha pasado en tus
-sesiones, y te enseña las dos cosas juntas: el organigrama que escribiste y el que existe.
+[![CI](https://github.com/alex-roc/ai-office/actions/workflows/ci.yml/badge.svg)](https://github.com/alex-roc/ai-office/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-d9a05b.svg)](LICENSE)
+[![Node ≥ 22.16](https://img.shields.io/badge/node-%E2%89%A5%2022.16-7fb08a.svg)](https://nodejs.org)
+
+[**Live demo**](https://alex-roc.github.io/ai-office/demo/) · [Website](https://alex-roc.github.io/ai-office/) · [Leer en español](README.es.md)
+
+<img src="site/img/sala-hero.png" alt="The Office view: an isometric pixel-art floor plan where each room groups the agents that cite the same skill" width="900">
+
+</div>
+
+`ai-office` reads your Claude Code **agents, skills and slash commands**, checks them against
+what actually happened in your sessions, and shows you both at once: the org chart you wrote,
+and the one that exists.
 
 ```
-npx ai-office censo
+$ ai-office censo
+
+  agentes              14   6 no han trabajado en los últimos 90 días
+  skills               28   14 sin usar en los últimos 90 días
+  comandos propios      8   4 ejecutados alguna vez
+
+  ratio activo  ████████░░░░░░░░░░░░░░░░  32%
+
+  agente→skill citadas en su prompt   41  declaradas
+  agente→skill demostradas            13  en el historial
 ```
 
-```
-  agentes                            19   10 no han trabajado nunca
-  skills                             40   24 no se han usado nunca
-  comandos propios                   27   ninguno se ha ejecutado
+> The CLI and the interface speak **Spanish** today (the numbers above come from the fictional
+> demo installation). The code is documented in Spanish too; issues and PRs are welcome in
+> English or Spanish.
 
-  ratio activo  ████░░░░░░░░░░░░░░░░░░░░  15%
-```
+## Why
 
-## Por qué existe
+After a while with Claude Code you pile up agents, skills and commands that seemed like a good
+idea. Nothing tells you which ones survive. Skill managers show you an inventory; session viewers
+show you a moment. None of them shows you **a service record**.
 
-Cuando llevas un tiempo con Claude Code acumulas agentes, skills y comandos que te parecieron
-buena idea. Nada te dice cuáles sobreviven. Los gestores de skills que hay te enseñan un
-inventario; los visualizadores de sesiones te enseñan un instante. Ninguno te enseña **una hoja
-de servicios**.
+The finding that makes this project possible: **the graph is already written, in prose.** Agents
+cite skills in the body of their prompt (*"before working, read the style-guide skill"*),
+commands name the agents they call, and some skills declare who they are for. None of that is a
+structured field, so no tool sees it. `ai-office` extracts it, with the file and line that justify
+each link, and lays it over what your transcripts prove happened.
 
-El hallazgo que da sentido al proyecto: **el grafo ya está escrito, en prosa**. Los agentes citan
-skills en el cuerpo de su prompt (*"antes de trabajar, lee tal skill"*), los comandos nombran a los
-agentes que convocan, y algunas skills declaran su clientela. Nada de eso es un campo estructurado,
-así que ninguna herramienta lo ve. `ai-office` lo extrae, con el archivo y la línea que lo
-justifican, y lo superpone a lo que los transcripts demuestran que pasó.
+On a real installation: 66 agent→skill links written in prompts, 0 in the `skills:` field, and
+13 proven in the history. That gap is the product.
 
-En una instalación real: 66 relaciones agente→skill escritas en los prompts, 0 en el campo
-`skills:`, y 13 demostradas en el historial. Esa brecha es el producto.
+## The four layers
 
-## Las cuatro capas
-
-| Capa | De dónde sale | Qué afirma |
+| Layer | Where it comes from | What it claims |
 |---|---|---|
-| **Disponible** | las skills instaladas | cualquiera puede invocarla si el modelo lo decide |
-| **Encomendada** | prosa del cuerpo del agente | su prompt se lo manda, nadie lo garantiza |
-| **Precargada** | `skills:` del frontmatter | se carga siempre, cueste lo que cueste |
-| **Acreditada** | transcripts | lo hizo, N veces, la última el X |
+| **Available** | installed skills | anyone can invoke it, if the model decides to |
+| **Assigned** | prose in the agent's prompt | its prompt says so; nobody guarantees it |
+| **Preloaded** | `skills:` in the frontmatter | always loaded, whatever it costs |
+| **Proven** | your transcripts | it did it, N times, the last one on a given day |
 
-Manda la acreditada: es la única respaldada por hechos.
+The proven layer wins: it is the only one backed by facts.
 
-## Principios
+## Two views
 
-- **Nada sale de tu máquina.** Sin servidor, sin telemetría, sin cuenta, sin red. Lee `~/.claude`
-  y ya.
-- **Todo indicador cita su fuente.** Si un número no puede decir de qué archivo y qué campo sale,
-  no se muestra. Ver [docs/METRICAS.md](docs/METRICAS.md), donde también está la métrica que
-  probamos, no se sostuvo contra los datos, y descartamos.
-- **Ninguna cifra mejora por gastar más.** El *ratio activo* sube al usar lo que ya tienes o al
-  jubilar lo que no usarás. El grado de una skill satura: el uso nº 50 no vale más que el nº 3.
-- **Nada se borra.** Jubilar es reversible; toda escritura lleva diff previo y copia de seguridad.
-- **El formato interno de Claude Code es frágil y se trata como tal.** El historial es
-  enriquecimiento, nunca una dependencia de arranque: si cambia el formato, se pierde el
-  historial, no el producto.
+<table>
+<tr>
+<td width="50%"><img src="site/img/sala-zoom.png" alt="Close-up of the Office"></td>
+<td width="50%"><img src="site/img/plano.png" alt="The Blueprint graph"></td>
+</tr>
+<tr>
+<td><b>The Office</b> — an isometric pixel-art floor plan. Rooms are not invented themes: they
+come from which skills each agent cites and which commands call it, so every door carries the
+name of a real skill or command. A grey figure has never been delegated; the height of a book
+spine is how established a skill is; a blank spine is a skill nobody has opened.</td>
+<td><b>The Blueprint</b> — the graph with every layer at once. Dotted is what your prompts declare;
+solid is what your transcripts prove. Select anything and the side panel quotes the file and line
+behind each claim.</td>
+</tr>
+</table>
 
-## Las dos vistas
+Keyboard: <kbd>1</kbd>/<kbd>2</kbd> switch views, <kbd>/</kbd> finds any agent, skill or command,
+<kbd>+</kbd> <kbd>-</kbd> <kbd>0</kbd> zoom and frame, <kbd>?</kbd> shows the legend and shortcuts.
 
-**Sala** — la planta, en pixel art isométrico. No es una sala grande: son **despachos**, y el
-reparto no lo decide un tema inventado sino dos hechos que ya están escritos en tus archivos —
-qué skills cita cada agente en su prompt y qué comandos lo convocan. Por eso cada puerta lleva
-el nombre de una skill o de un comando de verdad (`style-guide`, `/release`, `sql-recipes`) y
-al señalarla te dice por qué están juntos: *«Los 6 citan `style-guide` en su prompt»*.
+## Change it without fear
 
-En el vestíbulo del centro estás tú, con el **archivo** de las skills que cita media planta y el
-**depósito** de las que no reclama ningún agente. Son montones opuestos y por eso están
-enfrentados: esa comparación es el producto entero.
+<img src="site/img/flujo.png" alt="The flow canvas composing a slash command" width="720">
 
-Los despachos están separados por **pasillos** y cada uno tiene su puerta, como la planta de
-cualquier juego de gestión de oficinas: el ojo necesita suelo vacío por medio para entender que
-dos cosas están separadas. El pasillo no se dibuja, se deduce — es el suelo que no pertenece a
-ningún despacho, así que sale con el parqué del edificio mientras cada despacho lleva su moqueta.
+Everything you edit goes through the same door: **the diff is shown before the disk is touched**,
+a backup is kept, and a line lands in an audit log. Nothing is ever deleted.
 
-Dentro de un despacho la posición sigue siendo dato: un agente **en gris** nunca ha sido
-delegado, la altura del lomo de una skill es su grado y un lomo en blanco —sin tejuelo— es una
-skill que nadie ha usado. A vista de planta mandan las placas; los nombres aparecen al acercarse
-o al señalar un despacho, porque diecinueve nombres a la vez no caben a ningún tamaño.
+- **Drag** from an agent to a skill in the Blueprint and the citation is written into its prompt.
+- **Retire a skill** (`disable-model-invocation`): reversible, and the fastest way to raise your
+  active ratio.
+- **Archive an agent**: it moves to `agents/.archivo/` and comes back with one click.
+- **Compose a slash command** on the flow canvas: who takes part, in what order, consulting what.
+  Steps in the same phase run in parallel, and the preview is the exact Markdown that will be
+  written. Your existing commands can be imported into the canvas.
 
-Con pasillos la planta ya no cabe entera ni en una ventana maximizada, así que la cámara tiene un
-paso de **alejamiento** para verla completa y un **minimapa** abajo a la izquierda: enseña los
-despachos con su color y el recuadro de lo que estás mirando, y se puede pinchar y arrastrar para
-moverse por la planta.
+## Live
 
-**Plano** — el grafo. Las tres capas superpuestas: punteado lo que tus prompts declaran, sólido lo
-que los transcripts demuestran. Al seleccionar algo, la ficha lateral cita el archivo y la línea de
-cada afirmación.
+With the hooks installed, the office comes alive while you work in another window: agents
+materialise when they are delegated and a skill's spine lights up when it is invoked. Each event
+leaves a permanent mark on the records.
 
-### Teclado y búsqueda
+The hook relay never stores what you write: for `Write`, `Edit` and `Bash` only the file name and
+size leave the hook, never the text, the command or its output. It can be turned off entirely.
 
-| Tecla | Acción |
-|---|---|
-| `1` / `2` | Sala / Plano |
-| `/` | **Buscador**: escribe parte del nombre de un agente, skill o comando, elige con las flechas e Intro; lo selecciona y lleva la vista hasta ello |
-| `+` `-` `0` | acercar, alejar, encuadrar todo |
-| `Esc` | cierra el diálogo abierto o quita la selección |
-| `?` | ayuda con atajos y cómo leer cada vista |
+## Install
 
-Los atajos no actúan mientras escribes en un campo ni con un diálogo abierto. La primera vez que
-abres la interfaz aparece una bienvenida breve (se descarta y no vuelve). Los agentes archivados
-salen en la ficha vacía, con un botón para restaurarlos. La cabecera cita en cada cifra el archivo
-del que sale (pasa el ratón) y muestra si hay conexión en vivo con el daemon.
+Requires **Node ≥ 22.16** (it runs TypeScript natively) and **pnpm**.
 
-## El cartel
-
-```bash
-ai-office censo --cartel mi-oficina.svg
-```
-
-Un SVG con los tres números y una figura por cada cosa que tienes, rellena si la usas y hueca si
-no. Es texto, no necesita dependencias y se ve en GitHub. Crece en altura según lo que tengas, así
-que con cientos de skills no se solapa. Los comandos salen rellenos si se han ejecutado (tecleados,
-o invocados por Claude con la herramienta Skill).
-
-## Editar
-
-Todo lo que se edita pasa por el mismo sitio: **se muestra el diff antes de tocar el disco**, se
-guarda una copia previa y queda una línea en el registro de auditoría. Nada se borra.
-
-- **Arrastrar** de un agente a una skill en el Plano escribe la relación en su prompt.
-- **La ficha** de un agente edita su `color`, su `model` y lo archiva; la de una skill la jubila
-  (`disable-model-invocation`), que es la acción que más sube tu ratio activo.
-- **El lienzo de flujos** compone un slash command: quién interviene, en qué orden y qué consulta.
-  Los pasos de la misma fase se ejecutan en paralelo, y la vista previa enseña el Markdown exacto
-  que se va a escribir. Los comandos que ya tienes se importan al lienzo.
-
-## Tiempo real
-
-Con los hooks instalados, la Sala se anima mientras trabajas en otra ventana: los agentes se
-materializan al ser delegados y el lomo de una skill se ilumina al invocarse. Cada uno de esos
-eventos deja rastro permanente en las fichas — a diferencia de un visualizador, aquí **ver trabajar
-cambia lo que las cosas son**.
-
-```bash
-ai-office doctor          # plugin, hooks, daemon vivo y eventos pendientes; con qué hooks tuyos convive
-ai-office hooks install   # enseña el diff; no escribe sin --yes (crea settings.json si no existe)
-```
-
-`hooks install` copia el relay a `~/.claude/ai-office/bin/ai-office-hook.mjs` y registra esa ruta,
-que no depende de la caché de `npx`. Si usas el plugin **no** instales también los hooks: cada
-evento llegaría dos veces (`doctor` lo avisa).
-
-**Privacidad.** El relay no guarda el contenido de lo que haces: de `Write`, `Edit` y `Bash` solo
-salen el nombre del archivo y el tamaño, nunca el texto escrito, el comando ni su salida. El spool
-(lo que se acumula si el daemon está apagado) tiene un tope de 5 MB. Con la opción `telemetry`
-del plugin en falso, o `AI_OFFICE_TELEMETRY=0`, el relay no escribe nada.
-
-## La línea de comandos
-
-```bash
-ai-office                 # abre la interfaz en el navegador (--no-open: solo imprime el enlace)
-ai-office --version
-ai-office --help
-```
-
-El puerto sale de `AI_OFFICE_PORT` o, dentro del plugin, de su opción «Puerto»
-(`CLAUDE_PLUGIN_OPTION_PORT`). Si usas `CLAUDE_CONFIG_DIR` (varias cuentas de Claude Code),
-ai-office lee ese directorio; `CLAUDE_HOME` tiene prioridad y sirve para probar contra una copia.
-
-## Estado
-
-| Fase | Qué | Estado |
-|---|---|---|
-| F1 | Censo, catálogo, grafo declarado y acreditado, Sala y Plano, cartel | **listo** |
-| F2 | Tiempo real por hooks y edición del grafo y las fichas | **listo** |
-| F3 | Compilador de flujos, plugin de Claude Code, paquete npm | **listo** |
-
-## Como plugin de Claude Code
+**As a Claude Code plugin** (recommended: the hooks are declared by the plugin, so your
+`settings.json` is never touched; adds the `/censo` command):
 
 ```bash
 claude plugin marketplace add alex-roc/ai-office
 claude plugin install ai-office@ai-office
 ```
 
-Instalarlo como plugin es la vía recomendada: sus hooks se declaran aparte y **no se toca tu
-`settings.json`**, donde viven tus permisos y tus otros hooks. Añade el comando `/censo`.
+The first time, run `pnpm install --prod` inside the plugin directory; `ai-office` prints the exact
+command if the dependencies are missing.
 
-El plugin se instala sin dependencias: la primera vez corre `pnpm install --prod` en su directorio
-(`ai-office` te lo dice con el comando exacto si faltan). Sus dos opciones, **Puerto** y **Registrar
-actividad**, llegan como `CLAUDE_PLUGIN_OPTION_PORT` y `CLAUDE_PLUGIN_OPTION_TELEMETRY`; fuera del
-plugin valen `AI_OFFICE_PORT` y `AI_OFFICE_TELEMETRY=0`.
-
-## Desarrollo
-
-Requiere Node ≥ 22.16 (ejecuta TypeScript sin transpilar) y pnpm.
+**From source:**
 
 ```bash
+git clone https://github.com/alex-roc/ai-office && cd ai-office
 pnpm install
-pnpm censo        # el censo sobre tu propia instalación
-pnpm test         # suite
-pnpm typecheck
+pnpm censo                         # the numbers
+pnpm dev                           # the office, in your browser
+pnpm demo                          # a fictional office, safe to edit
+node packages/cli/src/index.ts censo --cartel office.svg   # a shareable SVG poster
 ```
 
-```
-packages/core        dominio puro, sin I/O
-packages/providers   lectura de ~/.claude: catálogo, grafo, transcripts, historial
-packages/cli         la línea de comandos
-```
+Other commands: `ai-office doctor` (plugin, hooks, daemon and pending events),
+`ai-office hooks install|uninstall` (shows the diff first, writes nothing without `--yes`),
+`ai-office --version`. `CLAUDE_CONFIG_DIR` is honoured if you use several Claude Code accounts.
 
-MIT.
+## Principles
+
+- **Nothing leaves your machine.** No server, no telemetry, no account, no network. The local
+  daemon listens on `127.0.0.1` only, behind a token that changes on every start
+  ([threat model](SECURITY.md)).
+- **Every number cites its source.** If a figure cannot say which file and field it comes from,
+  it is not shown. [docs/METRICAS.md](docs/METRICAS.md) even documents the metric we tried and
+  threw away because the data did not back it.
+- **No number improves by spending more.** A skill's grade saturates and expires after 90 days.
+- **Claude Code's internal formats are fragile and treated as such.** History is enrichment,
+  never a startup dependency: if a format changes you lose the history, not the product.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). Architecture: [docs/ARQUITECTURA.md](docs/ARQUITECTURA.md).
+The gotchas that already cost a debugging session each: [docs/GOTCHAS.md](docs/GOTCHAS.md).
+
+## License
+
+[MIT](LICENSE) © Alex Ojeda Copa. The pixel-art sprites were generated with AI and hand-processed
+(see [assets/README.md](assets/README.md)). Not affiliated with Anthropic.

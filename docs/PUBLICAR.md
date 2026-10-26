@@ -62,8 +62,8 @@ instalar el paquete publicado y no aparecen en el bundle final como paquetes sep
 
 ## Antes de publicar
 
-1. Rellena `repository`/`homepage`/`bugs` en `packages/cli/package.json` con la URL real del
-   repositorio (hoy tienen un `TU-USUARIO` de relleno).
+1. Comprueba que `repository`/`homepage`/`bugs` de `packages/cli/package.json` apuntan a
+   `github.com/alex-roc/ai-office`.
 2. Sube la versión (`packages/cli/package.json`, campo `version`) siguiendo semver.
 3. `pnpm install && pnpm test && pnpm typecheck` en verde.
 4. `pnpm build` (compila la web, transpila el CLI, copia el relay y los estáticos).

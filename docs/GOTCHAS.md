@@ -183,3 +183,24 @@ daemon lo procesa. Se renombra a `.draining` antes de leer: el relay crea uno nu
 **Un hook registrado desde la caché de `npx` muere en silencio.** Claude Code ignora un hook cuyo
 archivo ya no existe. Por eso `hooks install` copia el relay a `~/.claude/ai-office/bin/` y registra
 esa ruta; `doctor` avisa si un hook de settings.json apunta a algo que ya no existe.
+
+**Las mamparas laterales de un despacho se dibujaban una baldosa desplazadas.** `mamparaColumna`
+colocaba el lienzo con el mismo desplazamiento `(-w/2, +h/2)` que la pared exterior izquierda, pero
+el lienzo de una pared que SUBE hacia la derecha tiene su borde inferior izquierdo en
+`(0, longitud·h/2 + alto)`, no en `(0, alto)`. Por dentro de la planta se disimulaba (caía sobre el
+pasillo); en el borde del edificio salía flotando fuera del suelo. La esquina inferior izquierda
+del lienzo tiene que caer EXACTAMENTE en `toScreen(col, row1)`.
+
+**El primer encuadre puede hacerse con el tamaño viejo del lienzo.** Si el snapshot llega antes de
+que la cabecera, la bienvenida o un aviso terminen de ocupar su sitio (pasa siempre en la demo
+estática, que lee un JSON local en milisegundos), `encajar()` calcula con un alto que ya no es el
+real y la planta queda fuera de la vista: lienzo "vacío" sin ningún error. Mientras el usuario no
+haya movido la cámara, cada cambio de tamaño vuelve a encuadrar.
+
+**`frontmatter.ts` no puede importar nada de Node.** El compilador de flujos (`compile.ts`) corre
+también en el navegador, en la demo estática, y arrastra a `frontmatter.ts`. Por eso `etagOf`
+(que usa `node:crypto`) vive aparte, en `etag.ts`. Un import de Node ahí rompe la demo en el build.
+
+**En macOS el directorio temporal es un symlink** (`/var` → `/private/var`). Los `realPath` del
+catálogo salen con la forma resuelta, así que al reescribir rutas temporales (el snapshot de la
+demo) hay que sustituir las dos formas o queda un `/private~/.claude/...` en pantalla.

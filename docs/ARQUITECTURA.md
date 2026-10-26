@@ -236,3 +236,30 @@ CLAUDE_HOME=/tmp/mi-copia node packages/cli/src/index.ts start
 También respeta `CLAUDE_CONFIG_DIR`, la variable oficial de Claude Code (con `CLAUDE_HOME` por
 delante cuando están las dos). Es como se prueban las escrituras de verdad —crear un comando, dar color a un agente, jubilar una
 skill— sin riesgo para la instalación del usuario.
+
+## La instalación de demostración
+
+`packages/cli/src/demo/` define una oficina ficticia (catálogo en `catalog.ts`, actividad en
+`synth.ts`) y la escribe con la forma exacta de `~/.claude`: agentes, skills, comandos,
+`settings.json`, `history.jsonl` y transcripts con subagentes. La actividad se sintetiza RELATIVA
+a la fecha de hoy con un PRNG de semilla fija: el grado caduca a 90 días, así que una demo con
+fechas congeladas se iría apagando sola.
+
+Tiene tres usos, todos sobre el mismo código que una instalación real:
+
+- **`ai-office demo`** escribe la oficina en un directorio temporal, apunta `CLAUDE_HOME` ahí y
+  arranca el daemon en el puerto 7379. Se puede editar todo: las escrituras van a la copia.
+- **La demo estática** de la página del proyecto. `scripts/demo-snapshot.ts` construye el snapshot
+  con `buildSnapshot` del daemon y la interfaz se compila con `VITE_DEMO=1`. En ese modo
+  `apps/web/src/demo.ts` sustituye los tres puntos de red de `api.ts`: el snapshot sale del JSON,
+  el lienzo de flujos usa el compilador real en el navegador, las escrituras se rechazan con un
+  mensaje que explica por qué, y el WebSocket es un guion que reproduce el grafo ACREDITADO.
+- **Las capturas** del README y de la página.
+
+## La página del proyecto
+
+`site/` es HTML, CSS y JS sin build, bilingüe (el inglés está en el HTML; el español en
+`i18n.js`, que captura el inglés del propio DOM para no duplicarlo). `scripts/build-site.sh` la
+monta en `_site/` con los sprites de la interfaz y la demo estática en `_site/demo/`, y el
+workflow `pages.yml` la publica en cada push a `main` y una vez por semana (para que la demo no
+envejezca).

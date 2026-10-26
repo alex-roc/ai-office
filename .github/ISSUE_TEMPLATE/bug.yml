@@ -1,0 +1,32 @@
+name: Bug / Error
+description: Something is broken or shows a wrong number · Algo falla o muestra una cifra equivocada
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened? · ¿Qué pasó?
+      description: Include the command you ran or the view you were on. · Incluye el comando o la vista.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect? · ¿Qué esperabas?
+  - type: input
+    id: versions
+    attributes:
+      label: Versions · Versiones
+      placeholder: "ai-office 0.1.0, Node 22.16, Claude Code 2.x, macOS 15"
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Output of `ai-office doctor` · Salida de `ai-office doctor`
+      render: text
+  - type: markdown
+    attributes:
+      value: |
+        Please do **not** paste transcripts or the contents of your agents and skills: they can
+        contain private data. Names and line numbers are enough.
+        Por favor **no** pegues transcripts ni el contenido de tus agentes y skills: pueden
+        contener datos privados. Bastan los nombres y los números de línea.

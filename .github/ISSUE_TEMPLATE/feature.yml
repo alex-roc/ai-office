@@ -1,0 +1,15 @@
+name: Idea
+description: Suggest an improvement · Propón una mejora
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does it solve? · ¿Qué problema resuelve?
+    validations:
+      required: true
+  - type: textarea
+    id: source
+    attributes:
+      label: Where would the data come from? · ¿De dónde saldría el dato?
+      description: Every number in ai-office cites a file and a field. · Toda cifra cita un archivo y un campo.
