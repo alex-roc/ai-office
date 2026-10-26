@@ -6,7 +6,7 @@
 
 Agentes · skills · slash commands · plugins · servidores MCP
 
-[![npm](https://img.shields.io/npm/v/ai-office.svg?color=d9a05b)](https://www.npmjs.com/package/ai-office)
+[![npm](https://img.shields.io/npm/v/@alex-roc/ai-office.svg?color=d9a05b)](https://www.npmjs.com/package/@alex-roc/ai-office)
 [![CI](https://github.com/alex-roc/ai-office/actions/workflows/ci.yml/badge.svg)](https://github.com/alex-roc/ai-office/actions/workflows/ci.yml)
 [![Licencia: MIT](https://img.shields.io/badge/licencia-MIT-d9a05b.svg)](LICENSE)
 [![Node ≥ 22.18](https://img.shields.io/badge/node-%E2%89%A5%2022.18-7fb08a.svg)](https://nodejs.org)
@@ -23,9 +23,9 @@ Mira cómo encaja, cámbialo sin miedo y descubre qué hace de verdad el trabajo
 ya tienes en `~/.claude` (y en el `.claude/` de tu proyecto), sin salir de tu máquina.
 
 ```bash
-npx ai-office --lang es          # la oficina, en tu navegador (dentro de un proyecto: su ámbito)
-npx ai-office census --lang es   # las cifras, en tu terminal
-npx ai-office demo --lang es     # una oficina ficticia, para editar sin riesgo
+npx @alex-roc/ai-office --lang es          # la oficina, en tu navegador (dentro de un proyecto: su ámbito)
+npx @alex-roc/ai-office census --lang es   # las cifras, en tu terminal
+npx @alex-roc/ai-office demo --lang es     # una oficina ficticia, para editar sin riesgo
 ```
 
 La interfaz y el CLI están en inglés por defecto y en español con el botón EN/ES, `--lang es` o
@@ -82,7 +82,7 @@ llamadas por herramienta MCP y lo que cuesta en contexto la description de cada 
 sin usar» y tienes tu lista de limpieza.
 
 ```
-$ npx ai-office census --lang es
+$ npx @alex-roc/ai-office census --lang es
 
   agentes              14   6 no han trabajado en los últimos 90 días
   skills               28   14 sin usar en los últimos 90 días
@@ -102,7 +102,7 @@ $ npx ai-office census --lang es
 | **Acreditada** | tus transcripts | lo hizo, N veces, la última tal día |
 
 Con los hooks instalados, la oficina se anima mientras trabajas: los agentes se materializan al ser
-delegados y el lomo de una skill se ilumina al invocarse. `npx ai-office census --poster mi-oficina.svg
+delegados y el lomo de una skill se ilumina al invocarse. `npx @alex-roc/ai-office census --poster mi-oficina.svg
 --lang es` te da un cartel para compartir.
 
 ## Ámbito y qué se muestra
@@ -121,7 +121,7 @@ delegados y el lomo de una skill se ilumina al invocarse. `npx ai-office census 
 Requiere **Node ≥ 22.18**.
 
 ```bash
-npx ai-office --lang es            # o: npm i -g ai-office
+npx @alex-roc/ai-office --lang es            # o: npm i -g @alex-roc/ai-office
 ```
 
 **Como plugin de Claude Code** (para la actividad en vivo: los hooks los declara el plugin, así que

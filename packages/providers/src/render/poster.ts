@@ -69,7 +69,7 @@ const TEXT: Record<Lang, PosterText> = {
     proven: (n) => `${n} proven`,
     tokens: (t) => `~${t} tokens per session in descriptions, `,
     deadSkills: (pct) => `${pct}% from skills I don't use`,
-    footer: 'generated with ai-office · npx ai-office census',
+    footer: 'generated with ai-office · npx @alex-roc/ai-office census',
   },
   es: {
     title: 'Mi configuración de Claude Code',
@@ -90,7 +90,7 @@ const TEXT: Record<Lang, PosterText> = {
     proven: (n) => `${n} demostradas`,
     tokens: (t) => `~${t} tokens por sesión en descriptions, `,
     deadSkills: (pct) => `${pct}% de skills que no uso`,
-    footer: 'generado con ai-office · npx ai-office censo',
+    footer: 'generado con ai-office · npx @alex-roc/ai-office censo',
   },
 }
 

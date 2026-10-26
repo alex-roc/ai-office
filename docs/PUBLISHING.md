@@ -70,7 +70,7 @@ installing the published package and do not appear in the final bundle as separa
 4. `pnpm build` (builds the web, transpiles the CLI, copies the relay and the static files).
 5. `pnpm verificar:paquete` — generates the tarball with `npm pack`, audits its contents and
    installs it in a temporary directory outside the repo to really try `ai-office --help` and
-   `ai-office censo`, the way someone with `npx ai-office` would. If this doesn't pass, you don't
+   `ai-office censo`, the way someone with `npx @alex-roc/ai-office` would. If this doesn't pass, you don't
    publish.
 6. Review the tarball by hand if anything gives you doubts: `npm pack --dry-run` from `packages/cli/`
    lists the contents without generating the file.
@@ -94,13 +94,13 @@ without being explicitly asked.
 
 | Route | What it installs | Where it lives |
 |---|---|---|
-| **npm** (`npx ai-office`) | the compiled CLI, to use from the terminal | `packages/cli` → this document |
+| **npm** (`npx @alex-roc/ai-office`) | the compiled CLI, to use from the terminal | `packages/cli` → this document |
 | **Claude Code plugin** (`claude plugin install`) | the hooks and the `/censo` command, without touching `settings.json` | `.claude-plugin/`, `hooks/`, `commands/`, `bin/ai-office` |
 
 They are different mechanisms and are not mixed: the plugin runs `bin/ai-office`, which launches
 `packages/cli/src/index.ts` **directly as TypeScript** (Node runs it natively, no build needed) from
 an install of the plugin's own monorepo. The npm package, on the other hand, exists so you can type
-`npx ai-office` without cloning anything. `claude plugin validate .` remains the plugin's check and
+`npx @alex-roc/ai-office` without cloning anything. `claude plugin validate .` remains the plugin's check and
 is independent of everything in this document.
 
 Both routes ship the same interface and CLI, in English by default with Spanish selectable

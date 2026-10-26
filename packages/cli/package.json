@@ -1,5 +1,5 @@
 {
-  "name": "ai-office",
+  "name": "@alex-roc/ai-office",
   "version": "0.1.0",
   "description": "See, edit and measure your Claude Code setup — agents, skills, slash commands, plugins and MCP servers — as a pixel-art office, a live graph and a ledger. Edits with a diff; runs locally.",
   "license": "MIT",
@@ -49,5 +49,8 @@
     "@ai-office/core": "workspace:*",
     "@ai-office/providers": "workspace:*",
     "@ai-office/daemon": "workspace:*"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

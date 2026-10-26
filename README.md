@@ -6,7 +6,7 @@
 
 Agents · skills · slash commands · plugins · MCP servers
 
-[![npm](https://img.shields.io/npm/v/ai-office.svg?color=d9a05b)](https://www.npmjs.com/package/ai-office)
+[![npm](https://img.shields.io/npm/v/@alex-roc/ai-office.svg?color=d9a05b)](https://www.npmjs.com/package/@alex-roc/ai-office)
 [![CI](https://github.com/alex-roc/ai-office/actions/workflows/ci.yml/badge.svg)](https://github.com/alex-roc/ai-office/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-d9a05b.svg)](LICENSE)
 [![Node ≥ 22.18](https://img.shields.io/badge/node-%E2%89%A5%2022.18-7fb08a.svg)](https://nodejs.org)
@@ -23,9 +23,9 @@ together, change it without fear, and find out what actually does the work. It r
 already in `~/.claude` (and your project's `.claude/`), on your machine.
 
 ```bash
-npx ai-office          # open the office in your browser (inside a project: that project's scope)
-npx ai-office census   # the numbers, in your terminal
-npx ai-office demo     # a fictional office, safe to edit
+npx @alex-roc/ai-office         # open the office in your browser (inside a project: that project's scope)
+npx @alex-roc/ai-office census  # the numbers, in your terminal
+npx @alex-roc/ai-office demo    # a fictional office, safe to edit
 ```
 
 English by default; Spanish with the EN/ES button or `--lang es`.
@@ -81,7 +81,7 @@ tool, and what each skill's description costs in context. Filter to "only unused
 your clean-up list.
 
 ```
-$ npx ai-office census
+$ npx @alex-roc/ai-office census
 
   agents              14   6 have not worked in the last 90 days
   skills              28   14 unused in the last 90 days
@@ -104,7 +104,7 @@ $ npx ai-office census
 | **Proven** | your transcripts | it did it, N times, the last one on a given day |
 
 With the hooks installed, the office comes alive while you work: agents materialise when
-delegated and a skill's spine lights up when invoked. `npx ai-office census --poster office.svg`
+delegated and a skill's spine lights up when invoked. `npx @alex-roc/ai-office census --poster office.svg`
 gives you a shareable poster.
 
 ## Scope and what to show
@@ -122,7 +122,7 @@ gives you a shareable poster.
 Requires **Node ≥ 22.18**.
 
 ```bash
-npx ai-office                      # or: npm i -g ai-office
+npx @alex-roc/ai-office                      # or: npm i -g @alex-roc/ai-office
 ```
 
 **As a Claude Code plugin** (for live activity: the hooks are declared by the plugin, so your

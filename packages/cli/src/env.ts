@@ -34,7 +34,8 @@ export const cliVersion = (t: Messages = messagesFor('en')): string => {
         name?: string
         version?: string
       }
-      if (pkg.name === 'ai-office' && pkg.version) return pkg.version
+      if ((pkg.name === '@alex-roc/ai-office' || pkg.name === 'ai-office') && pkg.version)
+        return pkg.version
     } catch {
       /* probar la siguiente ruta */
     }

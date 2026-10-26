@@ -71,7 +71,7 @@ instalar el paquete publicado y no aparecen en el bundle final como paquetes sep
 4. `pnpm build` (compila la web, transpila el CLI, copia el relay y los estáticos).
 5. `pnpm verificar:paquete` — genera el tarball con `npm pack`, audita su contenido y lo instala en
    un directorio temporal fuera del repo para probar `ai-office --help` y `ai-office censo` de
-   verdad, como lo haría alguien con `npx ai-office`. Si esto no pasa, no se publica.
+   verdad, como lo haría alguien con `npx @alex-roc/ai-office`. Si esto no pasa, no se publica.
 6. Revisa a mano el tarball si algo te da dudas: `npm pack --dry-run` desde `packages/cli/` lista
    el contenido sin generar el archivo.
 
@@ -94,13 +94,13 @@ pedirlo explícitamente.
 
 | Vía | Qué instala | Dónde vive |
 |---|---|---|
-| **npm** (`npx ai-office`) | el CLI compilado, para usarlo desde la terminal | `packages/cli` → este documento |
+| **npm** (`npx @alex-roc/ai-office`) | el CLI compilado, para usarlo desde la terminal | `packages/cli` → este documento |
 | **Plugin de Claude Code** (`claude plugin install`) | los hooks y el comando `/censo`, sin tocar `settings.json` | `.claude-plugin/`, `hooks/`, `commands/`, `bin/ai-office` |
 
 Son mecanismos distintos y no se mezclan: el plugin ejecuta `bin/ai-office`, que lanza
 `packages/cli/src/index.ts` **directamente con TypeScript** (Node lo ejecuta nativo, no hace falta
 build) desde una instalación del propio monorepo del plugin. El paquete de npm, en cambio, existe
-para poder escribir `npx ai-office` sin clonar nada. `claude plugin validate .` sigue siendo el
+para poder escribir `npx @alex-roc/ai-office` sin clonar nada. `claude plugin validate .` sigue siendo el
 chequeo del plugin y es independiente de todo lo de este documento.
 
 Las dos vías llevan la misma interfaz y el mismo CLI, en inglés por defecto con español seleccionable

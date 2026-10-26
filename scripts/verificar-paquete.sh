@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Prueba de verdad de que `npx ai-office` funciona, SIN publicar nada.
+# Prueba de verdad de que `npx @alex-roc/ai-office` funciona, SIN publicar nada.
 #
 # `npm pack` genera el tarball tal y como saldría al registro; se audita su contenido (nada de
 # node_modules, transcripts, ~/.claude o basura de más) y luego se instala con npm normal (no
@@ -63,7 +63,7 @@ INSTALL_DIR="$(mktemp -d)"
   npm init -y --silent >/dev/null
   npm install "$TARBALL_PATH" --silent --no-audit --no-fund
 )
-[ -d "$INSTALL_DIR/node_modules/ai-office" ] || fail "npm install no dejó ai-office en node_modules"
+[ -d "$INSTALL_DIR/node_modules/@alex-roc/ai-office" ] || fail "npm install no dejó @alex-roc/ai-office en node_modules"
 ok "instalado en $INSTALL_DIR"
 
 echo "==> [4/4] ejecutar el binario instalado, desde fuera del repo"
