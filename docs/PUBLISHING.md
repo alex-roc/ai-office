@@ -77,16 +77,36 @@ installing the published package and do not appear in the final bundle as separa
 
 ## Publishing
 
-From `packages/cli/`, logged in to npm (`npm whoami` to check):
+The package is **`@alex-roc/ai-office`** (npm rejected the bare `ai-office` as too similar to the
+existing `aioffice`); the installed command is still `ai-office`.
+
+**Normal way: a GitHub release.** `.github/workflows/release.yml` publishes to npm when a release
+is published, through **trusted publishing** (OIDC): npm trusts that workflow, so there is no
+`NPM_TOKEN` secret, no one-time password, and every version ships with signed provenance. The
+workflow runs lint, typecheck, tests, the build and `verificar:paquete`, and refuses to publish if
+the version in `packages/cli/package.json` doesn't match the release tag.
 
 ```bash
-cd packages/cli
-npm publish --access public
+# 1. bump the version (packages/cli/package.json, plugin.json, CHANGELOG) and commit
+# 2. create the release; CI publishes it
+gh release create v0.2.0 --title "ai-office 0.2.0" --notes-file notes.md
 ```
 
-The first time, if the name `ai-office` already exists or you lack access to the scope,
-`npm publish` warns before writing anything. This command is never run from an automated task
-without being explicitly asked.
+**One-time setup** (done by the account owner, logged in to npm; it changes account settings, so
+an agent must not do it on its own):
+
+```bash
+npm trust github @alex-roc/ai-office --file release.yml --repo alex-roc/ai-office
+npm trust list @alex-roc/ai-office      # check it
+```
+
+Requirements: npm ≥ 11.5.1 in CI (the workflow updates it), GitHub-hosted runners, and
+`id-token: write`. Sources: [trusted publishers](https://docs.npmjs.com/trusted-publishers/),
+[npm trust](https://docs.npmjs.com/cli/v11/commands/npm-trust/).
+
+**By hand** (fallback): from `packages/cli/`, logged in (`npm whoami`), `npm publish --access public`.
+npm may ask to confirm in the browser; `npm login` and that confirmation need an interactive
+terminal, not an agent's shell.
 
 ## Relationship with the Claude Code plugin
 

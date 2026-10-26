@@ -77,16 +77,36 @@ instalar el paquete publicado y no aparecen en el bundle final como paquetes sep
 
 ## Publicar
 
-Desde `packages/cli/`, con sesión iniciada en npm (`npm whoami` para comprobarlo):
+El paquete es **`@alex-roc/ai-office`** (npm rechazó `ai-office` a secas por parecerse demasiado a
+`aioffice`, que ya existe); el comando instalado sigue siendo `ai-office`.
+
+**Vía normal: una release de GitHub.** `.github/workflows/release.yml` publica en npm al publicarse
+una release, con **trusted publishing** (OIDC): npm confía en ese workflow, así que no hay secreto
+`NPM_TOKEN`, ni código de un solo uso, y cada versión sale con su procedencia firmada. El workflow
+pasa lint, typecheck, tests, el build y `verificar:paquete`, y se niega a publicar si la versión de
+`packages/cli/package.json` no coincide con la etiqueta de la release.
 
 ```bash
-cd packages/cli
-npm publish --access public
+# 1. subir la versión (packages/cli/package.json, plugin.json, CHANGELOG) y hacer commit
+# 2. crear la release; el CI la publica
+gh release create v0.2.0 --title "ai-office 0.2.0" --notes-file notas.md
 ```
 
-La primera vez, si el nombre `ai-office` ya existe o no tienes acceso al scope, `npm publish`
-avisa antes de escribir nada. Nunca se ejecuta este comando desde una tarea automatizada sin
-pedirlo explícitamente.
+**Configuración de una sola vez** (la hace el dueño de la cuenta, con sesión en npm; cambia la
+configuración de la cuenta, así que un agente no debe hacerla por su cuenta):
+
+```bash
+npm trust github @alex-roc/ai-office --file release.yml --repo alex-roc/ai-office
+npm trust list @alex-roc/ai-office      # comprobarlo
+```
+
+Requisitos: npm ≥ 11.5.1 en el CI (el workflow lo actualiza), runners alojados por GitHub e
+`id-token: write`. Fuentes: [trusted publishers](https://docs.npmjs.com/trusted-publishers/),
+[npm trust](https://docs.npmjs.com/cli/v11/commands/npm-trust/).
+
+**A mano** (alternativa): desde `packages/cli/`, con sesión (`npm whoami`), `npm publish --access
+public`. npm puede pedir confirmar en el navegador; `npm login` y esa confirmación necesitan una
+terminal interactiva, no la shell de un agente.
 
 ## Relación con el plugin de Claude Code
 
