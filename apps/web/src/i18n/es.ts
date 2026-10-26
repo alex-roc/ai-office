@@ -166,7 +166,8 @@ export const es: Record<keyof typeof en, string> = {
   'help.keys.title': 'Atajos de teclado',
   'help.key.office': 'ver la Sala',
   'help.key.blueprint': 'ver el Plano',
-  'help.key.search': 'buscar un agente, skill o comando y llevar la vista hasta él',
+  'help.key.search':
+    'buscar un agente, skill, comando, plugin o servidor MCP y llevar la vista hasta él',
   'help.key.zoom': 'acercar o alejar',
   'help.key.fit': 'encuadrar todo',
   'help.key.esc': 'cerrar el diálogo abierto o quitar la selección',
@@ -263,7 +264,7 @@ export const es: Record<keyof typeof en, string> = {
   'detail.visibleAs': 'visible como {path}',
 
   // --- Buscador -----------------------------------------------------------------------------
-  'search.title': 'Buscar agente, skill o comando',
+  'search.title': 'Buscar agente, skill, comando, plugin o servidor MCP',
   'search.label': 'Nombre de lo que buscas',
   'search.placeholder': 'escribe un nombre…',
   'search.results': 'Resultados',
@@ -413,7 +414,8 @@ export const es: Record<keyof typeof en, string> = {
   'header.new.command': 'nuevo comando',
   'spark.title': 'Usos por semana, últimas {n} semanas (de la más antigua a la actual): {values}',
 
-  'ledger.aria': 'Registro: cada agente, skill y comando con lo que ha hecho de verdad',
+  'ledger.aria':
+    'Registro: cada agente, skill, comando, plugin y servidor MCP con lo que ha hecho de verdad',
   'ledger.filter.type': 'Filtrar por tipo',
   'ledger.filter.all': 'todo',
   'ledger.filter.agents': 'agentes',
@@ -437,8 +439,10 @@ export const es: Record<keyof typeof en, string> = {
   'ledger.col.cost': 'coste de description',
   'ledger.col.cites': 'skills citadas / probadas',
   'ledger.col.calls': 'agentes que llama',
-  'ledger.src.name': 'Nombre del archivo en {agents}, {skills} o {commands}',
-  'ledger.src.kind': 'En qué carpeta vive el archivo: agents/, skills/ o commands/',
+  'ledger.src.name':
+    'Nombre del archivo en {agents}, {skills} o {commands}; un plugin se llama nombre@marketplace y un servidor, por su clave en .mcp.json o ~/.claude.json',
+  'ledger.src.kind':
+    'En qué carpeta vive el archivo: agents/, skills/ o commands/; o un plugin o un servidor MCP',
   'ledger.src.grade':
     'Grado según usos, sesiones y proyectos (caduca a los 90 días). Fuente: {transcripts}',
   'ledger.src.uses':
@@ -449,7 +453,7 @@ export const es: Record<keyof typeof en, string> = {
   'ledger.src.trend':
     'Usos por semana en las últimas 12 semanas, de la más antigua a la actual; el punto es la semana en curso. Fuente: {transcripts}',
   'ledger.src.cost':
-    'Solo skills: tokens estimados de su description, que se carga en cada sesión. Fuente: `description` en SKILL.md',
+    'Skills y plugins: tokens estimados de la description (un plugin suma las de sus skills), que se carga en cada sesión. Fuente: `description` en SKILL.md',
   'ledger.src.cites':
     'Solo agentes: skills que su prompt cita o precarga (agents/*.md) sobre las que ha invocado de verdad ({transcripts})',
   'ledger.src.calls':
@@ -576,7 +580,7 @@ export const es: Record<keyof typeof en, string> = {
   'help.key.ledger': 'mostrar el Registro',
   'help.ledger.title': 'Cómo leer el Registro',
   'help.ledger.table':
-    'Una fila por agente, skill y comando. Pulsa el título de una columna para ordenar y una fila para abrir su ficha a la derecha. El título de cada columna dice de qué archivo o campo sale su cifra.',
+    'Una fila por agente, skill, comando, plugin y servidor MCP, con filtros por tipo y por ámbito. Pulsa el título de una columna para ordenar y una fila para abrir su ficha a la derecha. El título de cada columna dice de qué archivo o campo sale su cifra.',
   'help.ledger.filters':
     'Filtra por tipo, marca **solo sin usar** para tener tu lista de limpieza, o busca por nombre.',
   'help.ledger.trend':
@@ -600,4 +604,208 @@ export const es: Record<keyof typeof en, string> = {
   'err.reason.invalid-body': 'El texto a escribir no es válido: tiene que ser texto plano.',
   'err.reason.wrong-entity-kind':
     'Ese cambio no corresponde a este tipo de entidad ({kind} sobre un {entityKind}). Puede que la interfaz y el daemon estén desincronizados.',
+
+  // --- Ámbito, "Show", plugins y servidores MCP ---------------------------------------------
+  'count.sessions_one': '{n} sesión',
+  'count.sessions_other': '{n} sesiones',
+  'kind.plugin': 'plugin',
+
+  'scope.label': 'ámbito',
+  'scope.title':
+    'Lo que lee ai-office: solo tus archivos de usuario, o además la carpeta .claude/ y el .mcp.json de un proyecto. Cambiarlo reconstruye todo.',
+  'scope.option.user': 'Usuario ({root})',
+  'scope.group.claude': 'Proyectos con carpeta .claude/',
+  'scope.group.other': 'Otros proyectos en los que has trabajado',
+  'scope.missing': 'carpeta inexistente',
+  'scope.current': 'actual',
+  'scope.demo':
+    'La demo estática no puede cambiar de ámbito: se construyó para un único proyecto ficticio. Instala ai-office para alternar entre los tuyos.',
+  'scope.user': 'usuario',
+  'scope.project': 'proyecto',
+  'scope.plugin': 'plugin {name}',
+  'scope.local': 'local',
+  'scope.managed': 'gestionado',
+  'scope.builtin': 'integrado',
+  'settings.user': 'usuario (tu settings.json, todos los proyectos)',
+  'settings.project': 'proyecto (.claude/settings.json, compartido con el equipo)',
+  'settings.local': 'local (.claude/settings.local.json, privado)',
+  'settings.user.short': 'ajustes de usuario',
+  'settings.project.short': 'ajustes del proyecto',
+  'settings.local.short': 'ajustes locales',
+  'settings.managed.short': 'ajustes gestionados',
+
+  'show.button': 'mostrar',
+  'show.title': 'Elige qué dibujan la Sala y el Plano. El Registro siempre enseña todo.',
+  'show.legend': 'Mostrar en la Sala y en el Plano',
+  'show.agents': 'Agentes',
+  'show.skills': 'Skills',
+  'show.commands': 'Comandos',
+  'show.plugins': 'Plugins',
+  'show.mcp': 'Servidores MCP',
+  'show.note': 'Se guarda en {path}. El Registro lo ignora y siempre enseña todo.',
+  'show.note.demo':
+    'Solo se recuerda en esta pestaña. El Registro lo ignora y siempre enseña todo.',
+
+  'read.plugins': 'plugins activos',
+  'read.plugins.src':
+    'Plugins habilitados sobre los instalados ({path} más el enabledPlugins de tus ajustes). {unused} sin usar; las descriptions de las skills de los habilitados cuestan ~{tokens} tokens en cada sesión.',
+  'read.mcp': 'servidores mcp',
+  'read.mcp.src': 'Servidores declarados en {files}',
+  'read.mcp.unused': 'mcp sin usar',
+  'read.mcp.unused.src': 'Servidores MCP sin una sola llamada en los {transcripts}',
+
+  'room.servers': 'servidores',
+  'room.servers.reason':
+    'Un rack por servidor MCP. Luces encendidas: se ha usado (más luces, más uso). Apagadas: nunca. Tenue: deshabilitado.',
+  'room.plugin': 'plugin · {name}',
+  'room.plugin.reason': 'Plugin v{version} de {marketplace}. {description} Pulsa para abrirlo.',
+  'tip.mcp': '{name} · MCP · {uses} · {grade}',
+  'tip.mcp.never': '{name} · MCP · nunca usado',
+  'tip.mcp.transport': ' · {transport} · {scope}',
+  'tip.mcp.off': ' · deshabilitado',
+  'tip.shadowed': ' · tapado por {by}',
+  'office.legend.plugin':
+    '**Placa `plugin · nombre`**: un plugin habilitado, con sus propios agentes y skills. Pulsa la placa para abrirlo.',
+  'office.legend.rack':
+    '**Sala de servidores**: un rack por servidor MCP. Luces encendidas, se ha usado; apagadas, nunca; tenue, deshabilitado.',
+  'office.legend.shadowed':
+    '**Tenue en el vestíbulo**: algo que otro ámbito tapa (un agente de proyecto con el mismo nombre que el tuyo, por ejemplo). Claude Code no lo carga.',
+
+  'help.config.title': 'Ámbito, plugins y MCP',
+  'help.config.scope':
+    '**Ámbito** (cabecera): Usuario lee solo tus archivos; elegir un proyecto lee además su carpeta `.claude/` y su `.mcp.json`. Cambiarlo reconstruye todo y se recuerda.',
+  'help.config.show':
+    '**Mostrar** (cabecera): marca qué familias dibujan la Sala y el Plano. Los plugins arrancan encendidos solo si traen pocas piezas. El Registro siempre enseña todo.',
+  'help.config.plugins':
+    '**Los plugins** son despachos con la placa `plugin · nombre` en la Sala y llevan un anillo morado en el Plano. Sus archivos son de solo lectura porque una actualización los sobrescribe; se habilitan o deshabilitan desde su ficha.',
+  'help.config.mcp':
+    '**Los servidores MCP** son racks en la sala de servidores y hexágonos en el Plano. Luces encendidas: usado; apagadas: nunca; tenue: deshabilitado. Solo se ven los nombres de las variables de entorno, nunca sus valores.',
+  'welcome.config':
+    '**Ámbito y Mostrar** (cabecera): elige Usuario o un proyecto, y qué dibujan la Sala y el Plano. Los plugins tienen sus propios despachos y los servidores MCP sus propios racks.',
+
+  'plano.legend.shapes':
+    'hexágono = servidor MCP; anillo morado = pieza de un plugin; tenue = no se carga',
+
+  'ledger.filter.plugins': 'plugins',
+  'ledger.filter.mcp': 'MCP',
+  'ledger.filter.scope': 'Filtrar por ámbito',
+  'ledger.scope.all': 'cualquier ámbito',
+  'ledger.scope.user': 'usuario',
+  'ledger.scope.project': 'proyecto',
+  'ledger.scope.plugin': 'plugin',
+  'ledger.col.scope': 'ámbito',
+  'ledger.col.enabled': 'habilitado',
+  'ledger.src.scope':
+    'De dónde sale: tu carpeta de usuario, el proyecto (.claude/ o .mcp.json) o un plugin',
+  'ledger.src.enabled':
+    'Plugins y servidores: si están encendidos (enabledPlugins, disabledMcpServers). Lo demás: cargado, es decir, ni tapado ni de un plugin deshabilitado',
+  'ledger.enabled.perProject.short': 'por proyecto',
+  'ledger.enabled.perProject':
+    'Claude Code lo decide por proyecto. Abre un ámbito de proyecto para verlo.',
+  'ledger.shadowed': '(tapado)',
+  'ledger.shadowed.title': 'Otro ámbito lo tapa: Claude Code no lo carga',
+  'ledger.cost.disabled':
+    'Deshabilitado: su description no se carga, así que ahora no cuesta nada.',
+  'ledger.tools': 'Herramientas más usadas: {tools}',
+
+  'detail.fromPlugin':
+    'Viene del plugin {plugin} · solo lectura (una actualización sobrescribe los archivos de un plugin).',
+  'detail.plugin.open': 'abrir el plugin',
+  'detail.shadowed': 'Tapado por {by}: Claude Code no carga este.',
+  'detail.shadowed.open': 'abrirlo',
+  'detail.ev.mcp': 'servidores MCP que nombra su `tools:`',
+  'detail.ev.mcpName': 'MCP · {name}',
+  'detail.ev.dangling': '(no configurado)',
+  'detail.byTool': 'herramientas que ha llamado',
+  'detail.byTool.more_one': '+{n} herramienta más',
+  'detail.byTool.more_other': '+{n} herramientas más',
+  'detail.byTool.src': 'Llamadas por herramienta (mcp__servidor__herramienta) en los {transcripts}',
+
+  'detail.plugin.about': 'plugin',
+  'detail.plugin.version': 'versión',
+  'detail.plugin.marketplace': 'marketplace',
+  'detail.plugin.enabled': 'habilitado',
+  'detail.plugin.source': 'lo decide',
+  'detail.plugin.source.src':
+    'El archivo de ajustes cuyo enabledPlugins lo nombra con mayor precedencia. Lista de instalados: {root}/plugins/installed_plugins.json',
+  'detail.plugin.source.none': 'ningún ajuste lo nombra',
+  'detail.plugin.cost': 'coste de descriptions',
+  'detail.plugin.cost.off': 'ahora no se carga',
+  'detail.plugin.cost.src':
+    'Tokens estimados de las descriptions de sus skills, que se cargan en cada sesión mientras esté habilitado',
+  'detail.plugin.agents_one': '{n} agente',
+  'detail.plugin.agents_other': '{n} agentes',
+  'detail.plugin.skills_one': '{n} skill',
+  'detail.plugin.skills_other': '{n} skills',
+  'detail.plugin.commands_one': '{n} comando',
+  'detail.plugin.commands_other': '{n} comandos',
+  'detail.plugin.mcp_one': '{n} servidor MCP',
+  'detail.plugin.mcp_other': '{n} servidores MCP',
+  'detail.plugin.enable': 'habilitar plugin',
+  'detail.plugin.disable': 'deshabilitar plugin',
+  'detail.plugin.reload':
+    'Claude Code solo relee los plugins al recargar: ejecuta `/reload-plugins` en tus sesiones abiertas tras guardar.',
+  'detail.plugin.managed':
+    'Un archivo de ajustes gestionado también nombra este plugin. Manda sobre lo que escribas aquí.',
+  'detail.plugin.userOnly':
+    'Solo están disponibles tus ajustes de usuario. Abre un ámbito de proyecto para escribir en sus ajustes de proyecto o locales.',
+  'detail.plugin.readonly':
+    'Los archivos de un plugin son copias que las actualizaciones sobrescriben, así que ai-office solo los lee.',
+  'detail.settings.where': 'escribirlo en',
+  'diff.title.plugin.enable': 'habilitar el plugin {name} en los {where}',
+  'diff.title.plugin.disable': 'deshabilitar el plugin {name} en los {where}',
+
+  'detail.mcp.about': 'servidor',
+  'detail.mcp.scope': 'declarado en',
+  'detail.mcp.transport': 'transporte',
+  'detail.mcp.command': 'comando',
+  'detail.mcp.host': 'host',
+  'detail.mcp.enabled': 'habilitado aquí',
+  'detail.mcp.disabledIn': 'deshabilitado en',
+  'detail.mcp.keys': 'claves de configuración',
+  'detail.mcp.env': 'variables de entorno',
+  'detail.mcp.headers': 'cabeceras',
+  'detail.mcp.keys.note': 'Solo se muestran los nombres: ai-office nunca enseña los valores.',
+  'detail.mcp.who.declared': 'su `tools:` lo nombra (declarado)',
+  'detail.mcp.who.none': 'Ningún agente lo nombra y el historial no muestra ninguna llamada.',
+  'detail.mcp.enable': 'habilitar servidor',
+  'detail.mcp.disable': 'deshabilitar servidor',
+  'detail.mcp.perProject':
+    'Claude Code guarda qué servidores están apagados **por proyecto**: esto cambia solo el proyecto abierto.',
+  'detail.mcp.needsProject':
+    'Claude Code decide qué servidores MCP están encendidos **por proyecto**, así que en el ámbito de usuario no hay nada que cambiar. Abre un proyecto para habilitarlo o deshabilitarlo.',
+  'detail.mcp.fileNote':
+    'Nunca se edita línea a línea: solo se cambia si está encendido o apagado, con su diff.',
+  'diff.title.mcp.enable': 'habilitar el servidor MCP {name} en {project}',
+  'diff.title.mcp.disable': 'deshabilitar el servidor MCP {name} en {project}',
+
+  'create.scope': 'dónde',
+  'create.scope.project': 'en el proyecto {name} (su carpeta .claude/)',
+  'create.scope.user': 'para ti, en {root}',
+
+  // --- Avisos y errores nuevos del daemon ---------------------------------------------------
+  'warn.reload-needed':
+    'Claude Code solo relee los plugins al recargar: ejecuta /reload-plugins en tus sesiones abiertas (o abre una nueva) para que el cambio surta efecto.',
+  'warn.overridden':
+    'Los ajustes {source} lo fijan al revés y mandan: el cambio se escribe pero no surte efecto hasta que se quite eso.',
+  'err.reason.read-only':
+    '{name} es de solo lectura: viene de un plugin (o de ajustes gestionados) y una actualización sobrescribiría cualquier edición.',
+  'err.reason.unexpected-format':
+    '{path} no tiene una forma que ai-office pueda reescribir con seguridad, así que no se tocó.',
+  'err.reason.unreadable-json': '{path} no es un JSON válido, así que no se tocó.',
+  'err.reason.invalid-scope': 'Ámbito no válido: "{scope}".',
+  'err.reason.needs-project':
+    'Eso necesita un ámbito de proyecto: elige primero un proyecto en la cabecera.',
+  'err.reason.project-not-found': 'La carpeta del proyecto no existe: {path}',
+  'err.reason.invalid-config': 'La configuración no es válida ({key}).',
+
+  // --- Sobre qué se mide la actividad -------------------------------------------------------
+  'measure.label': 'medido sobre',
+  'measure.all': 'todos los proyectos',
+  'measure.project': 'este proyecto · {sessions}',
+  'measure.title':
+    'Los usos, los grados y "sin uso" se cuentan sobre esto: en un ámbito de proyecto, solo las sesiones que corrieron dentro de él. Fuente: {transcripts}',
+  'src.measured.project': ', solo este proyecto ({sessions})',
+  'err.reason.claude-json-missing':
+    'Claude Code aún no ha creado ~/.claude.json: abre primero una sesión.',
 }

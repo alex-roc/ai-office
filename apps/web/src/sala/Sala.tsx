@@ -23,6 +23,9 @@ const LEYENDA = [
   'office.legend.shelves',
   'office.legend.card',
   'office.legend.plate',
+  'office.legend.plugin',
+  'office.legend.rack',
+  'office.legend.shadowed',
 ] as const
 
 const SalaImpl = ({

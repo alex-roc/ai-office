@@ -29,6 +29,10 @@
   --verde: #7fb08a;
   --rojo: #cf6a4f;
   --papel: #f3ead9;
+  /* Los dos tonos de la paleta de la Sala (`ciruela`, `cian`) aclarados para leerse sobre la noche:
+     plugin y servidor MCP llevan el mismo color en la planta, en el Plano y en la ficha. */
+  --ciruela: #a58bd0;
+  --cian: #5fb0bb;
 
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
   color-scheme: dark;
@@ -38,7 +42,7 @@
    * (`style={{ stroke: 'var(--ink)' }}`), así que renombrar la paleta sin dejarlos habría roto
    * el grafo entero en silencio: un `var()` que no existe no da error ni aviso, simplemente no
    * pinta. Es el mismo fallo que ya costó una sesión de depuración en ese archivo, visto desde
-   * el otro lado. Si algún día se traducen allí, estos nueve alias se borran.
+   * el otro lado. Si algún día se traducen allí, estos once alias se borran.
    */
   --bg: var(--noche);
   --panel: var(--madera);
@@ -49,6 +53,8 @@
   --proven: var(--verde);
   --declared: var(--tenue);
   --danger: var(--rojo);
+  --plugin: var(--ciruela);
+  --server: var(--cian);
 }
 
 * { box-sizing: border-box; }
@@ -621,3 +627,69 @@ aside.side .chico { font-size: 12px; }
 .menu-lista button:hover, .menu-lista button:focus-visible { background: var(--ambar-hueco); color: var(--tinta); }
 
 .bloque-diff + .bloque-diff { margin-top: 1rem; }
+
+/* --- Ámbito, "Show", plugins y servidores MCP ------------------------------------------- */
+
+.bar-ambito { gap: 0.5rem; }
+.selector-ambito { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 10px; letter-spacing: 0.09em; text-transform: uppercase; color: var(--tenue); }
+.selector-ambito select, .campo-ajustes select {
+  font: inherit; font-size: 12px; letter-spacing: 0; text-transform: none; max-width: 15rem;
+  padding: 0.28rem 0.5rem; border-radius: 5px; border: 1px solid var(--linea);
+  background: var(--madera-alta); color: var(--tinta); cursor: pointer;
+}
+.selector-ambito select:disabled { opacity: 0.55; cursor: not-allowed; }
+.selector-ambito select:hover:not(:disabled), .campo-ajustes select:hover { border-color: var(--apagado); }
+.campo-ajustes { display: flex; flex-direction: column; gap: 0.25rem; font-size: 11px; color: var(--tenue); text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 0.5rem; }
+.campo-ajustes select { max-width: 100%; }
+
+/* El panel "Show" reusa la lista del menú "nuevo", más ancha y con casillas. El `legend` flotado a
+   todo el ancho es la forma de que un fieldset lo pinte DENTRO de su caja y no sobre el borde. */
+.panel-show { display: block; margin: 0; min-width: 15rem; padding: 0.3rem 0.35rem 0.4rem; }
+.panel-show legend {
+  float: left; width: 100%; padding: 0.15rem 0.4rem 0.3rem;
+  font: 600 10px var(--mono); text-transform: uppercase; letter-spacing: 0.1em; color: var(--tenue);
+}
+.panel-show legend + .casilla { clear: both; }
+.panel-show .casilla { padding: 0.25rem 0.4rem; }
+.panel-show .cuenta { margin-left: auto; font: 11px var(--mono); }
+.panel-show .nota { max-width: 15rem; margin: 0.4rem 0.4rem 0.2rem; font-size: 11px; color: var(--tenue); word-break: break-word; }
+
+/* Más lecturas que ancho: se parten en otra línea en vez de desbordar la barra. */
+.lecturas { flex-wrap: wrap; row-gap: 0.25rem; }
+
+.etiqueta.plugin { color: var(--plugin); }
+.etiqueta.mcp { color: var(--server); }
+.ledger .etiqueta.ambito { font-size: 11px; letter-spacing: 0.04em; text-transform: none; }
+.ledger .etiqueta.ambito.plugin { color: var(--plugin); }
+.ledger .etiqueta.ambito.project, .ledger .etiqueta.ambito.local { color: var(--ambar); }
+.ledger td .si { color: var(--verde); }
+.ledger td .no { color: var(--rojo); }
+/* Lo que no se carga (plugin apagado, servidor deshabilitado, algo tapado) se atenúa en la tabla. */
+.ledger tbody tr[data-tenue="true"] > th, .ledger tbody tr[data-tenue="true"] > td:not(:nth-child(4)) { opacity: 0.6; }
+
+/* Ficha: avisos de origen y de lo tapado */
+.aviso-ficha {
+  margin: 0.7rem 0 0; padding: 0.45rem 0.65rem; font-size: 12px; color: var(--apagado);
+  border-left: 3px solid var(--plugin); background: rgba(165, 139, 208, 0.1); border-radius: 0 4px 4px 0;
+}
+.aviso-ficha.tapada { border-left-color: var(--tenue); background: rgba(158, 143, 122, 0.12); }
+.claves { display: flex; flex-wrap: wrap; gap: 0.3rem; margin: 0.1rem 0 0; }
+.claves code {
+  font: 11px var(--mono); padding: 0.1rem 0.4rem; border-radius: 3px; color: var(--apagado);
+  background: var(--hueco); border: 1px solid var(--linea);
+}
+.campo-ambito { border: 0; margin: 0 0 0.9rem; padding: 0; min-width: 0; }
+.campo-ambito .casilla { font-size: 13px; color: var(--tinta); }
+.campo-ambito legend { font: 600 10px var(--mono); text-transform: uppercase; letter-spacing: 0.1em; color: var(--tenue); padding: 0; margin-bottom: 0.2rem; }
+.leyenda-formas { display: block; margin-top: 0.4rem; font-size: 11px; color: var(--tenue); text-shadow: 0 0 4px var(--noche); }
+
+/* Sobre qué se midió la actividad: en un proyecto, solo sus sesiones. */
+.lecturas .medido {
+  display: flex; flex-direction: column; justify-content: center; gap: 1px; padding: 0 0.85rem;
+  border-left: 1px solid var(--linea-suave); cursor: help;
+}
+.lecturas .medido span { font-size: 10px; letter-spacing: 0.09em; text-transform: uppercase; color: var(--tenue); white-space: nowrap; }
+.lecturas .medido b { font: 600 12px var(--mono); color: var(--apagado); white-space: nowrap; }
+.lecturas .medido[data-ambito="project"] b, .ledger-medido[data-ambito="project"] b { color: var(--ambar); }
+.ledger-medido { font: 12px var(--mono); color: var(--tenue); cursor: help; }
+.ledger-medido b { font-weight: 600; color: var(--apagado); }

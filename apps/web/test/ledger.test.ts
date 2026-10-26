@@ -26,6 +26,11 @@ const fila = (p: Partial<FilaLedger> & { name: string }): FilaLedger => ({
   cited: null,
   proven: null,
   calls: null,
+  scope: 'user',
+  origen: null,
+  enabled: true,
+  shadowedBy: null,
+  tools: null,
   ...p,
 })
 

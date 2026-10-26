@@ -363,6 +363,97 @@ test('~/.claude.json con otro formato: unexpected-format y no se toca', async ()
   writeFileSync(file, CLAUDE_JSON)
 })
 
+test('mcp.enable de un servidor desactivado en VARIOS settings lo quita de todos, con un diff por archivo', async () => {
+  const userFile = join(home, 'settings.json')
+  const projFile = join(proj, '.claude/settings.json')
+  const localFile = join(proj, '.claude/settings.local.json')
+  const [userBefore, localBefore] = [read(userFile), read(localFile)]
+  // Desactivado en tres sitios (y `otro` en uno, que no se debe tocar).
+  writeFileSync(userFile, json({ ...JSON.parse(userBefore), disabledMcpjsonServers: ['figma'] }))
+  put(projFile, json({ disabledMcpjsonServers: ['figma'] }))
+  writeFileSync(localFile, json({ disabledMcpjsonServers: ['figma', 'otro'] }))
+  await api('/api/refresh', {})
+  const figma = (await snapshot()).catalog.mcpServers.find((m) => m.id === FIGMA)
+  assert.deepEqual([figma?.enabled, figma?.disabledIn], [false, ['user', 'project', 'local']])
+
+  const p = (await plan('mcp.enable', FIGMA)).body as unknown as {
+    etag: string
+    changed: boolean
+    diff: string
+    files: { scope: string; path: string; changed: boolean; diff: string }[]
+  }
+  assert.deepEqual(
+    p.files.map((f) => [f.scope, f.path, f.changed]),
+    [
+      ['user', userFile, true],
+      ['project', projFile, true],
+      ['local', localFile, true],
+    ],
+  )
+  assert.match(p.etag, /^multi:/)
+  assert.equal(p.changed, true)
+  for (const f of p.files)
+    assert.ok(p.diff.includes(f.diff), 'el diff del plan lleva el de cada archivo')
+
+  // `value.scope` explícito sigue limitando a un solo archivo: plan normal, sin `files`.
+  const one = (await plan('mcp.enable', FIGMA, { scope: 'project' })).body
+  assert.equal(one.files, undefined)
+  assert.doesNotMatch(String(one.etag), /^multi:/)
+
+  // Un archivo cambia entre el plan y el apply: 409 y NO se escribe ninguno.
+  writeFileSync(
+    userFile,
+    `${read(userFile)}
+`,
+  )
+  const stale = await api('/api/mutations/apply', {
+    kind: 'mcp.enable',
+    entityId: FIGMA,
+    etag: p.etag,
+  })
+  assert.equal(stale.status, 409)
+  assert.deepEqual(JSON.parse(read(projFile)).disabledMcpjsonServers, ['figma'])
+
+  const fresh = (await plan('mcp.enable', FIGMA)).body
+  const res = await api('/api/mutations/apply', {
+    kind: 'mcp.enable',
+    entityId: FIGMA,
+    etag: fresh.etag,
+  })
+  assert.equal(res.status, 200)
+  const applied = (await res.json()) as { files: { path: string }[] }
+  assert.deepEqual(
+    applied.files.map((f) => f.path),
+    [userFile, projFile, localFile],
+  )
+  assert.equal(JSON.parse(read(userFile)).disabledMcpjsonServers, undefined)
+  assert.equal(JSON.parse(read(projFile)).disabledMcpjsonServers, undefined)
+  assert.deepEqual(JSON.parse(read(localFile)).disabledMcpjsonServers, ['otro'])
+  assert.equal((await snapshot()).catalog.mcpServers.find((m) => m.id === FIGMA)?.enabled, true)
+
+  writeFileSync(userFile, userBefore)
+  writeFileSync(localFile, localBefore)
+  rmSync(projFile)
+  await api('/api/refresh', {})
+})
+
+test('mcp.* con ~/.claude.json ausente: not-found / claude-json-missing, y no se crea', async () => {
+  const file = join(home, '.claude.json')
+  rmSync(file)
+  for (const kind of ['mcp.disable', 'mcp.enable']) {
+    const p = await plan(kind, GITHUB)
+    assert.deepEqual(
+      [p.status, p.body.code, p.body.reason],
+      [404, 'not-found', 'claude-json-missing'],
+    )
+    assert.match(String(p.body.error), /Claude Code has not created it/)
+    const res = await api('/api/mutations/apply', { kind, entityId: GITHUB, etag: 'absent' })
+    assert.equal(((await res.json()) as ErrBody).reason, 'claude-json-missing')
+  }
+  assert.equal(existsSync(file), false, 'no se inventa un archivo que es de Claude Code')
+  writeFileSync(file, CLAUDE_JSON)
+})
+
 test('un conflicto de etag en un plugin es 409', async () => {
   const p = await plan('plugin.disable', PLUGIN)
   writeFileSync(join(home, 'settings.json'), `${SETTINGS}\n`)
@@ -386,9 +477,15 @@ test('entidades desconocidas: not-found', async () => {
   }
 })
 
+test('el snapshot dice de qué mide la actividad según el ámbito', async () => {
+  const over = (await snapshot()).measuredOver
+  assert.deepEqual([over.kind, over.kind === 'project' ? over.path : ''], ['project', proj])
+})
+
 test('POST /api/config con null vuelve al ámbito usuario', async () => {
   const res = await api('/api/config', { scope: null, project: null })
   const body = (await res.json()) as { scope: unknown; scopeSource: string }
   assert.deepEqual([body.scope, body.scopeSource], [{ kind: 'user' }, 'default'])
   assert.deepEqual((await snapshot()).scope, { kind: 'user' })
+  assert.deepEqual((await snapshot()).measuredOver, { kind: 'all' })
 })

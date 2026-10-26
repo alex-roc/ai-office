@@ -14,6 +14,7 @@ import {
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
+import { OfficeError } from '../src/claude-code/errors.ts'
 import {
   ABSENT_ETAG,
   applySetClaudeJsonMcpDisabled,
@@ -239,6 +240,29 @@ const CLAUDE_JSON = `${JSON.stringify(
   null,
   2,
 )}\n`
+
+test('~/.claude.json ausente: plan y apply fallan con claude-json-missing (not-found) y no lo crean', async () => {
+  const { home } = sandbox()
+  const path = join(home, '.claude.json')
+  const t = await readJsonTarget(path)
+  assert.equal(t.text, null)
+  const missing = (err: unknown) =>
+    err instanceof OfficeError && err.code === 'claude-json-missing' && err.kind === 'not-found'
+  for (const disabled of [true, false]) {
+    assert.throws(() => planSetClaudeJsonMcpDisabled(t.path, t.text, '/p', 'a', disabled), missing)
+    await assert.rejects(
+      applySetClaudeJsonMcpDisabled('a', 'mcp:x', path, '/p', disabled, t.etag, {
+        extraAllowedRoots: [path],
+      }),
+      missing,
+    )
+  }
+  assert.equal(existsSync(path), false)
+  assert.throws(
+    () => planSetClaudeJsonMcpDisabled(t.path, t.text, '/p', 'a', true),
+    /Claude Code has not created it/,
+  )
+})
 
 test('mcp.disable en ~/.claude.json: toca solo disabledMcpServers del proyecto y vuelve byte a byte', async () => {
   const { home } = sandbox()

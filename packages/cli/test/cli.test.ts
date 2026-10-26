@@ -154,12 +154,18 @@ test('census con ámbito: plugins y MCP en secciones breves, y el ámbito resuel
     assert.ok(mcp.length <= 4)
     assert.match(mcp.join('\n'), /3 servers loaded · 1 unused/)
     assert.match(mcp.join('\n'), /never called .*: postgres/)
-    assert.match(mcp.join('\n'), /most used tools: github\.\w+ \(\d+\)/)
+    // Medido solo sobre acme-web: figma es de ese proyecto y github se usó sobre todo en otros.
+    assert.match(mcp.join('\n'), /most used tools: figma\.\w+ \(\d+\)/)
+    assert.match(byConfig, /in this project/)
+    assert.match(byConfig, /usage measured only over this project: \d+ sessions/)
 
     // El flag manda sobre config.json: solo usuario, sin el servidor del proyecto.
     const user = exec('census', '--scope', 'user')
     assert.match(user, /scope: user, only ~\/\.claude \(set by a flag\)/)
     assert.match(sections(user, 'MCP servers').join('\n'), /2 servers loaded/)
+    // En ámbito de usuario se mide todo el historial: ni rastro de "este proyecto".
+    assert.match(sections(user, 'MCP servers').join('\n'), /most used tools: github\.\w+ \(\d+\)/)
+    assert.doesNotMatch(user, /in this project|measured only over/)
     const proj = join(home, 'demo-projects/docs-site')
     const viaFlag = exec('census', '--project', proj)
     assert.match(viaFlag, /scope: project .*docs-site \(set by a flag\)/)
@@ -167,6 +173,9 @@ test('census con ámbito: plugins y MCP en secciones breves, y el ámbito resuel
     const es = exec('census', '--lang', 'es', '--scope', 'user')
     assert.match(es, /ámbito: usuario, solo ~\/\.claude \(fijado con una opción\)/)
     assert.match(es, /servidores MCP/)
+    const esProject = exec('census', '--lang', 'es', '--project', proj)
+    assert.match(esProject, /en este proyecto/)
+    assert.match(esProject, /uso medido solo sobre este proyecto: \d+ sesiones/)
 
     // doctor dice el ámbito y por qué.
     const doctor = exec('doctor')

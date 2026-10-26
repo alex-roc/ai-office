@@ -33,6 +33,13 @@ const LEYENDA_PLANO: Clave[] = [
 
 const LEYENDA_REGISTRO: Clave[] = ['help.ledger.table', 'help.ledger.filters', 'help.ledger.trend']
 
+const LEYENDA_CONFIG: Clave[] = [
+  'help.config.scope',
+  'help.config.show',
+  'help.config.plugins',
+  'help.config.mcp',
+]
+
 const LEYENDA_EDICION: Clave[] = [
   'help.edit.fields',
   'help.edit.prompt',
@@ -75,6 +82,13 @@ export const Ayuda = ({ onCerrar }: { onCerrar: () => void }) => {
       <h4 className="sub-ayuda">{t('help.ledger.title')}</h4>
       <ul className="leyenda-lista">
         {LEYENDA_REGISTRO.map((k) => (
+          <li key={k}>{conCodigo(t(k))}</li>
+        ))}
+      </ul>
+
+      <h4 className="sub-ayuda">{t('help.config.title')}</h4>
+      <ul className="leyenda-lista">
+        {LEYENDA_CONFIG.map((k) => (
           <li key={k}>{conCodigo(t(k))}</li>
         ))}
       </ul>
@@ -125,6 +139,7 @@ export const Bienvenida = ({ onAyuda }: { onAyuda: () => void }) => {
           <li>{conCodigo(t('welcome.office'))}</li>
           <li>{conCodigo(t('welcome.blueprint'))}</li>
           <li>{conCodigo(t('welcome.ledger'))}</li>
+          <li>{conCodigo(t('welcome.config'))}</li>
           <li>{conCodigo(t('welcome.details'))}</li>
         </ul>
       </div>

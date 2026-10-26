@@ -1,10 +1,14 @@
-import { memo, useEffect, useRef, useState } from 'react'
-import { fuenteTranscripts, skillsJubiladas } from './derivados.ts'
+import { memo, useEffect, useId, useRef, useState } from 'react'
+import { servidoresMcpDe } from './alcance.ts'
+import { DEMO } from './demo.ts'
+import { fuenteTranscripts, medidoSobre, medidoTexto, skillsJubiladas } from './derivados.ts'
 import type { Vista } from './Ficha.tsx'
 import { LANGS, type Lang, setLang } from './i18n/index.ts'
 import { useLang, useT } from './i18n/react.ts'
 import { useLiveSelector } from './live.ts'
 import type { CreateRequest } from './mutations.ts'
+import { SelectorAmbito } from './SelectorAmbito.tsx'
+import { CLAVES_SHOW, type Show } from './show.ts'
 import { shortPath } from './texto.ts'
 import type { Snapshot } from './types.ts'
 
@@ -147,6 +151,97 @@ const MenuNuevo = ({
   )
 }
 
+/** Cuántas cosas hay de cada familia, para ponerlo junto a su casilla de "Show". */
+const cuentaDe = (s: Snapshot, clave: (typeof CLAVES_SHOW)[number]): number =>
+  clave === 'plugins'
+    ? (s.stats.plugins ?? 0)
+    : clave === 'mcp'
+      ? (s.stats.mcpServers ?? 0)
+      : s.stats[clave]
+
+/**
+ * Panel "Show": qué familias dibujan la Sala y el Plano. Un botón que despliega casillas; Esc,
+ * clic fuera y volver a pulsarlo lo cierran. Cada casilla se guarda al momento en `config.json`.
+ * El Registro no depende de esto: siempre enseña todo.
+ */
+const MenuShow = ({
+  snapshot,
+  show,
+  onShow,
+  ruta,
+}: {
+  snapshot: Snapshot
+  show: Show
+  onShow: (parche: Partial<Show>) => void
+  /** Dónde se guarda, para citarlo: `null` en la demo, que solo lo recuerda en memoria. */
+  ruta: string | null
+}) => {
+  const t = useT()
+  const [abierto, setAbierto] = useState(false)
+  const raiz = useRef<HTMLDivElement>(null)
+  const boton = useRef<HTMLButtonElement>(null)
+  const idPanel = useId()
+
+  useEffect(() => {
+    if (!abierto) return
+    const fuera = (e: PointerEvent) => {
+      if (!raiz.current?.contains(e.target as Node)) setAbierto(false)
+    }
+    const tecla = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      e.stopPropagation()
+      setAbierto(false)
+      boton.current?.focus()
+    }
+    document.addEventListener('pointerdown', fuera)
+    document.addEventListener('keydown', tecla, true)
+    return () => {
+      document.removeEventListener('pointerdown', fuera)
+      document.removeEventListener('keydown', tecla, true)
+    }
+  }, [abierto])
+
+  const activas = CLAVES_SHOW.filter((k) => show[k]).length
+  return (
+    <div className="menu-nuevo menu-show" ref={raiz}>
+      <button
+        ref={boton}
+        type="button"
+        className="modo"
+        aria-expanded={abierto}
+        aria-controls={idPanel}
+        onClick={() => setAbierto((a) => !a)}
+        title={t('show.title')}
+      >
+        {t('show.button')}{' '}
+        <span className="tenue">
+          {activas}/{CLAVES_SHOW.length}
+        </span>{' '}
+        ▾
+      </button>
+      {abierto && (
+        <fieldset className="menu-lista panel-show" id={idPanel}>
+          <legend>{t('show.legend')}</legend>
+          {CLAVES_SHOW.map((k) => (
+            <label key={k} className="casilla simple">
+              <input
+                type="checkbox"
+                checked={show[k]}
+                onChange={(e) => onShow({ [k]: e.target.checked })}
+              />
+              <span>{t(`show.${k}`)}</span>
+              <span className="tenue cuenta">{cuentaDe(snapshot, k)}</span>
+            </label>
+          ))}
+          <p className="nota">
+            {t(ruta ? 'show.note' : 'show.note.demo', { path: ruta ? shortPath(ruta) : '' })}
+          </p>
+        </fieldset>
+      )}
+    </div>
+  )
+}
+
 const Lectura = ({
   valor,
   rotulo,
@@ -176,6 +271,11 @@ const CabeceraImpl = ({
   onEncuadrar,
   onBuscar,
   onAyuda,
+  show,
+  onShow,
+  onAmbito,
+  rutaConfig,
+  ambitoBloqueado,
 }: {
   snapshot: Snapshot
   vista: Vista
@@ -187,6 +287,14 @@ const CabeceraImpl = ({
   onEncuadrar: () => void
   onBuscar: () => void
   onAyuda: () => void
+  show: Show
+  onShow: (parche: Partial<Show>) => void
+  /** Recibe `user` o `project:<ruta>`. */
+  onAmbito: (valor: string) => void
+  /** Dónde está `config.json` (lo dice el daemon); `null` si no se sabe. */
+  rutaConfig: string | null
+  /** La demo estática sin snapshot de proyecto no puede cambiar de ámbito. */
+  ambitoBloqueado: boolean
 }) => {
   const t = useT()
   const s = snapshot.stats
@@ -200,6 +308,10 @@ const CabeceraImpl = ({
   const raiz = shortPath(dirAgentes.replace(/[\\/]agents[\\/]?$/, ''))
   const transcripts = fuenteTranscripts(snapshot)
   const jubiladas = skillsJubiladas(snapshot)
+  // Las lecturas de plugins y servidores solo salen si los hay, citando el archivo de donde se leen.
+  const ficherosMcp = [
+    ...new Set(servidoresMcpDe(snapshot).map((m) => shortPath(m.source.realPath))),
+  ]
 
   return (
     <header className="bar">
@@ -239,6 +351,16 @@ const CabeceraImpl = ({
           {t(editing ? 'header.edit.on' : 'header.edit.off')}
         </button>
         <MenuNuevo onNuevo={onNuevo} onNuevoFlujo={onNuevoFlujo} />
+      </div>
+
+      <div className="bar-grupo bar-ambito">
+        <SelectorAmbito
+          snapshot={snapshot}
+          onCambiar={onAmbito}
+          deshabilitado={ambitoBloqueado}
+          titulo={ambitoBloqueado ? t('scope.demo') : undefined}
+        />
+        <MenuShow snapshot={snapshot} show={show} onShow={onShow} ruta={DEMO ? null : rutaConfig} />
       </div>
 
       <div className="bar-grupo bar-herramientas">
@@ -301,6 +423,32 @@ const CabeceraImpl = ({
           rotulo={t('read.commands.unused')}
           cita={t('read.commands.unused.src', { root: raiz })}
         />
+        {(s.plugins ?? 0) > 0 && (
+          <Lectura
+            valor={`${s.pluginsEnabled ?? 0}/${s.plugins}`}
+            rotulo={t('read.plugins')}
+            cita={t('read.plugins.src', {
+              path: `${raiz}/plugins/installed_plugins.json`,
+              unused: s.pluginsUnused ?? 0,
+              tokens: s.pluginDescriptionTokens ?? 0,
+            })}
+          />
+        )}
+        {(s.mcpServers ?? 0) > 0 && (
+          <Lectura
+            valor={s.mcpServers ?? 0}
+            rotulo={t('read.mcp')}
+            cita={t('read.mcp.src', { files: ficherosMcp.join(', ') })}
+          />
+        )}
+        {(s.mcpUnused ?? 0) > 0 && (
+          <Lectura
+            clase="alerta"
+            valor={s.mcpUnused ?? 0}
+            rotulo={t('read.mcp.unused')}
+            cita={t('read.mcp.unused.src', { transcripts })}
+          />
+        )}
         <Lectura
           clase="grande"
           valor={pct(s.activeRatio)}
@@ -317,6 +465,15 @@ const CabeceraImpl = ({
           rotulo={t('read.proven')}
           cita={t('read.proven.src', { transcripts })}
         />
+        {/* Todo "sin uso" depende de sobre qué se mida: en un proyecto, solo sus sesiones. */}
+        <div
+          className="medido"
+          data-ambito={medidoSobre(snapshot).kind}
+          title={t('measure.title', { transcripts })}
+        >
+          <span>{t('measure.label')}</span>
+          <b>{medidoTexto(snapshot)}</b>
+        </div>
       </div>
     </header>
   )

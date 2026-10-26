@@ -69,14 +69,26 @@ export interface GradeInput {
   sessions: number
   projects: number
   lastUsedAt: number | null
+  /** Semanas distintas con uso (de la serie semanal). Solo cuenta cuando se mide un proyecto. */
+  weeks?: number
 }
 
-export const gradeOf = (input: GradeInput, now = Date.now()): Grade => {
+export interface GradeOptions {
+  /**
+   * Se mide un solo proyecto. Ahí "en dos proyectos" no puede cumplirse (los únicos proyectos
+   * distintos serían sus worktrees), así que la prueba de que algo está asentado pasa a ser
+   * repetirse en el TIEMPO: en al menos dos semanas distintas.
+   */
+  singleProject?: boolean
+}
+
+export const gradeOf = (input: GradeInput, now = Date.now(), opts: GradeOptions = {}): Grade => {
   if (input.uses <= 0) return 'unused'
   const fresh =
     input.lastUsedAt !== null &&
     now - input.lastUsedAt <= CERTIFICATION_TTL_DAYS * 24 * 60 * 60 * 1000
-  if (input.sessions >= 3 && input.projects >= 2 && fresh) return 'certified'
+  const extendido = opts.singleProject ? (input.weeks ?? 0) >= 2 : input.projects >= 2
+  if (input.sessions >= 3 && extendido && fresh) return 'certified'
   if (input.sessions >= 3) return 'practicing'
   return 'tried'
 }

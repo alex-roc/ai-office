@@ -21,8 +21,9 @@ export interface CommandUse {
   sessions: Set<string>
   /** Directorios de trabajo (`project` del historial), tal cual. */
   projects: Set<string>
-  /** Cada vez que se tecleó, con su fecha y directorio: de aquí salen las series por semana. */
-  events: { ts: number; project: string | null }[]
+  /** Cada vez que se tecleó, con su fecha, directorio y sesión: de aquí salen las series por semana
+   * y, al medir por ámbito, el recuento de lo tecleado dentro de un proyecto. */
+  events: { ts: number; project: string | null; sessionId?: string }[]
 }
 
 export interface HistoryScan {
@@ -72,10 +73,14 @@ export const scanHistory = async (path = `${paths().home}/history.jsonl`): Promi
         lastUsedAt: 0,
         sessions: new Set<string>(),
         projects: new Set<string>(),
-        events: [] as { ts: number; project: string | null }[],
+        events: [] as CommandUse['events'],
       }
       cur.count += 1
-      cur.events.push({ ts, project: typeof obj.project === 'string' ? obj.project : null })
+      cur.events.push({
+        ts,
+        project: typeof obj.project === 'string' ? obj.project : null,
+        ...(typeof obj.sessionId === 'string' ? { sessionId: obj.sessionId } : {}),
+      })
       if (typeof obj.sessionId === 'string') cur.sessions.add(obj.sessionId)
       if (typeof obj.project === 'string') cur.projects.add(obj.project)
       if (ts > cur.lastUsedAt) cur.lastUsedAt = ts

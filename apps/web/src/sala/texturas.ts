@@ -1,5 +1,6 @@
 import { Texture } from 'pixi.js'
 import { MAMPARA_H, TILE, WALL_H } from './iso.ts'
+import { LUCES_RACK } from './layout.ts'
 import { Lienzo, mezcla, ruido } from './lienzo.ts'
 import { P } from './paleta.ts'
 
@@ -242,6 +243,39 @@ export const lomo = (grado: number, color: number | null, ancho = 7): Lienzo => 
     l.hline(1, alto - 8, ancho - 3, P.mostaza)
   }
   l.hline(0, 0, ancho, mezcla(base, P.sombra, 0.25))
+  return l
+}
+
+/**
+ * Rack de un servidor MCP: un armario con cinco bandejas, cada una con su luz. Las luces
+ * encendidas (`luces` de 0 a `LUCES_RACK`, de arriba abajo) son el grado de uso; una bandeja apagada es
+ * un servidor que no ha atendido nunca nada. El estado "deshabilitado" no se pinta aquí: lo pone
+ * la escena con la transparencia del sprite, para que una sola textura sirva a los dos casos.
+ */
+export const ANCHO_RACK = 22
+export const ALTO_RACK = 50
+/** Dónde cae la luz de la bandeja `i` (de 0 a 4): lo comparten el dibujo y el test. */
+export const luzDeRack = (i: number): { x: number; y: number } => ({ x: 3, y: 8 + i * 8 })
+
+export const rack = (luces: number): Lienzo => {
+  const l = new Lienzo(ANCHO_RACK, ALTO_RACK)
+  const frente = ANCHO_RACK - 5
+  // Cara frontal, cara lateral en sombra y tapa iluminada: tres planos bastan para dar volumen.
+  l.rect(0, 3, frente, ALTO_RACK - 3, P.pizarraOscura)
+  l.rect(frente, 3, ANCHO_RACK - frente, ALTO_RACK - 3, P.tinta)
+  l.rect(0, 0, frente, 3, mezcla(P.pizarra, P.luz, 0.3))
+  l.rect(frente, 1, ANCHO_RACK - frente, 2, P.pizarra)
+  l.hline(0, 3, frente, P.pizarra)
+  l.hline(0, ALTO_RACK - 1, ANCHO_RACK, P.tinta)
+  for (let i = 0; i < LUCES_RACK; i++) {
+    const { x, y } = luzDeRack(i)
+    // Bandeja: un filete oscuro arriba y rejilla de ventilación a la derecha de la luz.
+    l.hline(1, y - 3, frente - 2, P.tintaSuave)
+    for (let v = 0; v < 3; v++) l.hline(x + 5, y - 1 + v * 2, frente - x - 8, P.tinta)
+    const encendida = i < luces
+    l.rect(x, y - 1, 2, 2, encendida ? mezcla(P.salvia, P.luz, 0.25) : P.tintaSuave)
+    if (encendida) l.px(x - 1, y, mezcla(P.salvia, P.pizarraOscura, 0.5))
+  }
   return l
 }
 

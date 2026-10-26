@@ -1,4 +1,5 @@
 import { Application, Container, Graphics, Sprite, Text, type Texture } from 'pixi.js'
+import { etiquetaAmbito, type Tapadora } from '../alcance.ts'
 import { claveDeConjunto } from '../derivados.ts'
 import { t } from '../i18n/index.ts'
 import { gradoEtiqueta, nombreHilo, nombreSala, razonTexto } from '../texto.ts'
@@ -15,7 +16,16 @@ import {
   toScreen,
   WALL_H,
 } from './iso.ts'
-import { type Bahia, buildLayout, type Lomo, type RoomLayout, type Seat } from './layout.ts'
+import {
+  type Bahia,
+  buildLayout,
+  type Lomo,
+  type Rack,
+  type RoomLayout,
+  type Seat,
+  type Tarjeta,
+} from './layout.ts'
+import { mezcla } from './lienzo.ts'
 import { COLOR_AGENTE, P, SIN_COLOR, UI } from './paleta.ts'
 import {
   abrirAmbito,
@@ -28,6 +38,7 @@ import {
   lomo,
   mampara,
   paredLarga,
+  rack,
   sombra,
   sueloAlfombra,
   sueloRoble,
@@ -62,6 +73,9 @@ const GRADO_DE = ['unused', 'unused', 'tried', 'practicing', 'certified']
 
 /** Cuánto dura encendida una figura tras un evento en vivo. */
 const MS_DESTELLO = 2600
+
+/** Transparencia de lo que no se carga: tapado por otro ámbito o deshabilitado. */
+const ALFA_TENUE = 0.45
 
 interface Figura {
   seat: Seat
@@ -109,6 +123,7 @@ export class Escena {
   private figuras: Figura[] = []
   private lomos: Pieza[] = []
   private tarjetas: Pieza[] = []
+  private racks: Pieza[] = []
   private placas: Placa[] = []
   private motas: { g: Graphics; vx: number; vy: number; vida: number }[] = []
 
@@ -316,6 +331,7 @@ export class Escena {
     this.figuras = []
     this.lomos = []
     this.tarjetas = []
+    this.racks = []
     this.placas = []
     this.motas = []
 
@@ -469,18 +485,51 @@ export class Escena {
     }
     for (const l of b.lomos) this.lomo(l)
     for (const t of b.tarjetas) this.tarjetaEn(t)
+    for (const r of b.racks) this.rackEn(r)
+  }
+
+  /** El texto de la placa de un despacho, según lo que es. */
+  private textoPlaca(b: Bahia): string {
+    if (b.tipo === 'hub') return t('room.hub')
+    if (b.tipo === 'servers') return `${t('room.servers')}  ·  ${b.racks.length}`
+    if (b.tipo === 'plugin') return t('room.plugin', { name: b.nombre })
+    return `${nombreSala(b)}  ·  ${b.agentes.length}`
+  }
+
+  /** Lo que dice el tooltip al señalar la placa: el motivo de la agrupación, o qué es esta sala. */
+  private textoMotivo(b: Bahia): string {
+    if (b.tipo === 'hub') return t('room.hub.reason')
+    if (b.tipo === 'servers') return t('room.servers.reason')
+    if (b.tipo === 'plugin' && b.plugin) {
+      return t('room.plugin.reason', {
+        version: b.plugin.version,
+        marketplace: b.plugin.marketplace,
+        description: b.plugin.description ?? '',
+      })
+    }
+    return razonTexto(b)
   }
 
   /** La placa de la puerta: el nombre del despacho y cuánta gente hay. */
   private placa(b: Bahia): void {
     const esHub = b.tipo === 'hub'
     const p = toScreen((b.col0 + b.col1) / 2, b.row0)
+    // El ámbar es de los despachos del usuario; un plugin y la sala de servidores llevan su propio
+    // color de la paleta, el mismo que el minimapa, para reconocerlos de lejos.
+    const color =
+      b.tipo === 'plugin'
+        ? mezcla(P.ciruela, P.luz, 0.4)
+        : b.tipo === 'servers'
+          ? mezcla(P.cian, P.luz, 0.3)
+          : esHub
+            ? P.papel
+            : UI.ambar
     const placa = new Text({
-      text: esHub ? t('room.hub') : `${nombreSala(b)}  ·  ${b.agentes.length}`,
+      text: this.textoPlaca(b),
       style: {
         fontFamily: 'ui-monospace, monospace',
         fontSize: 11,
-        fill: esHub ? P.papel : UI.ambar,
+        fill: color,
         letterSpacing: 1,
         fontWeight: 'bold',
         stroke: { color: UI.noche, width: 4 },
@@ -499,10 +548,26 @@ export class Escena {
     placa.on('pointerover', () => {
       this.hover = b.id
       this.hoverBahia = b.id
-      this.mostrarTooltip(esHub ? t('room.hub.reason') : razonTexto(b))
+      this.mostrarTooltip(this.textoMotivo(b))
     })
     placa.on('pointerout', () => {
       if (this.hover === b.id) this.ocultarTooltip()
+    })
+    // La placa de un plugin lleva a su ficha: es la única entidad de la planta sin figura propia.
+    if (b.tipo === 'plugin' && b.plugin) {
+      const id = b.plugin.id
+      placa.on('pointertap', (e) => {
+        e.stopPropagation()
+        this.opciones.onSelect(id)
+      })
+    }
+  }
+
+  /** " · tapada por …", o vacío si la entidad se carga: lo que se añade al tooltip de lo tapado. */
+  private textoTapada(tapada?: Tapadora): string {
+    if (!tapada) return ''
+    return t('tip.shadowed', {
+      by: `${tapada.name} (${etiquetaAmbito({ scope: tapada.scope })})`,
     })
   }
 
@@ -534,7 +599,8 @@ export class Escena {
     // Desaturado = NUNCA DELEGADO. Son dos datos distintos y no pueden compartir canal: si el
     // gris dependiera de `color:`, como hoy no lo tiene ninguno saldrían todos en gris y se
     // perdería lo único que importa ver de entrada — quién ha trabajado y quién no.
-    const tex = seat.unused ? this.atlas.gris[seat.figura] : this.atlas.color[seat.figura]
+    const tex =
+      seat.unused || seat.tapada ? this.atlas.gris[seat.figura] : this.atlas.color[seat.figura]
     if (!tex) return
 
     const raiz = new Container()
@@ -546,6 +612,8 @@ export class Escena {
     const cuerpo = new Sprite(tex)
     cuerpo.anchor.set(0.5, 1)
     raiz.addChild(cuerpo)
+    // Lo tapado por otro ámbito no se carga: se queda en la planta, pero tenue.
+    if (seat.tapada) raiz.alpha = ALFA_TENUE
 
     // Placa de color a los pies: es donde vive el `color:` del frontmatter, porque el sprite ya
     // viene pintado. Sin `color:` no hay placa: no falta un adorno, falta un campo.
@@ -567,13 +635,13 @@ export class Escena {
       this.hover = seat.id
       this.hoverBahia = bahiaId
       this.mostrarTooltip(
-        seat.unused
+        (seat.unused
           ? t('tip.agent.never', { name: seat.name })
           : t('tip.agent', {
               name: seat.name,
               delegations: t('count.delegations', { n: seat.uses }),
               grade: gradoEtiqueta(seat.grade),
-            }),
+            })) + this.textoTapada(seat.tapada),
       )
     })
     cuerpo.on('pointerout', () => {
@@ -611,6 +679,7 @@ export class Escena {
     const p = toScreen(l.col, l.row)
     s.position.set(Math.round(p.x), Math.round(p.y + TILE.h / 2 - l.altura))
     s.zIndex = depthOf(l.col, l.row, -300)
+    if (l.tapada) s.alpha = ALFA_TENUE
     s.eventMode = 'static'
     s.cursor = 'pointer'
     s.on('pointertap', (e) => {
@@ -620,13 +689,14 @@ export class Escena {
     s.on('pointerover', () => {
       this.hover = l.id
       this.mostrarTooltip(
-        l.unused
+        (l.unused
           ? t('tip.skill.never', { name: l.name })
           : t('tip.skill', {
               name: l.name,
               uses: t('count.uses', { n: l.uses }),
               grade: gradoEtiqueta(GRADO_DE[l.grado]),
-            }) + (l.duenio ? t('tip.skill.owner', { owner: l.duenio }) : ''),
+            }) + (l.duenio ? t('tip.skill.owner', { owner: l.duenio }) : '')) +
+          this.textoTapada(l.tapada),
       )
     })
     s.on('pointerout', () => {
@@ -636,20 +706,14 @@ export class Escena {
     this.lomos.push({ id: l.id, sprite: s, baseY: s.y, destelloHasta: 0 })
   }
 
-  private tarjetaEn(tarj: {
-    id: string
-    name: string
-    col: number
-    row: number
-    altura: number
-    used: boolean
-  }): void {
+  private tarjetaEn(tarj: Tarjeta): void {
     const tex = cacheada(`tarjeta:${tarj.used}`, () => tarjeta(tarj.used, 26, 17))
     const s = new Sprite(tex)
     s.anchor.set(0.5, 0.5)
     const p = toScreen(tarj.col, tarj.row)
     s.position.set(Math.round(p.x - TILE.w / 4), Math.round(p.y + TILE.h / 4 - tarj.altura))
     s.zIndex = depthOf(tarj.col, tarj.row, -290)
+    if (tarj.tapada) s.alpha = ALFA_TENUE
     s.eventMode = 'static'
     s.cursor = 'pointer'
     s.on('pointertap', (e) => {
@@ -659,7 +723,8 @@ export class Escena {
     s.on('pointerover', () => {
       this.hover = tarj.id
       this.mostrarTooltip(
-        t(tarj.used ? 'tip.command.run' : 'tip.command.never', { name: tarj.name }),
+        t(tarj.used ? 'tip.command.run' : 'tip.command.never', { name: tarj.name }) +
+          this.textoTapada(tarj.tapada),
       )
     })
     s.on('pointerout', () => {
@@ -667,6 +732,51 @@ export class Escena {
     })
     this.capaObjetos.addChild(s)
     this.tarjetas.push({ id: tarj.id, sprite: s, baseY: s.y, destelloHasta: 0 })
+  }
+
+  /**
+   * Un servidor MCP. Las luces son el grado de uso (apagadas = nunca ha atendido nada) y un
+   * servidor deshabilitado se dibuja tenue, como lo tapado: no se carga.
+   */
+  private rackEn(r: Rack): void {
+    const tex = cacheada(`rack:${r.estado === 'off' ? 0 : r.luces}`, () =>
+      rack(r.estado === 'off' ? 0 : r.luces),
+    )
+    const s = new Sprite(tex)
+    s.anchor.set(0.5, 1)
+    const p = toScreen(r.col, r.row)
+    s.position.set(Math.round(p.x), Math.round(p.y + TILE.h / 2))
+    s.zIndex = depthOf(r.col, r.row)
+    if (r.estado === 'off') s.alpha = ALFA_TENUE
+    s.eventMode = 'static'
+    s.cursor = 'pointer'
+    s.on('pointertap', (e) => {
+      e.stopPropagation()
+      this.opciones.onSelect(r.id)
+    })
+    s.on('pointerover', () => {
+      this.hover = r.id
+      this.mostrarTooltip(
+        (r.uses > 0
+          ? t('tip.mcp', {
+              name: r.name,
+              uses: t('count.uses', { n: r.uses }),
+              grade: gradoEtiqueta(r.grade),
+            })
+          : t('tip.mcp.never', { name: r.name })) +
+          t('tip.mcp.transport', {
+            transport: r.transport,
+            scope: etiquetaAmbito({ scope: r.scope }),
+          }) +
+          (r.estado === 'off' ? t('tip.mcp.off') : ''),
+      )
+    })
+    s.on('pointerout', () => {
+      if (this.hover === r.id) this.ocultarTooltip()
+    })
+    this.capaObjetos.addChild(s)
+    this.sombraEn(r.col, r.row, 11)
+    this.racks.push({ id: r.id, sprite: s, baseY: s.y, destelloHasta: 0 })
   }
 
   /** El hilo principal: el único puesto de la planta que no sale de ningún archivo. */
@@ -746,7 +856,13 @@ export class Escena {
     this.minimapaSalas.poly(this.rombo(0, 0, l.cols, l.filas)).fill({ color: UI.maderaAlta })
     for (const b of l.bahias) {
       const color =
-        b.tipo === 'hub' ? UI.ambar : (COLOR_AGENTE[b.tono % COLOR_AGENTE.length] ?? P.roble)
+        b.tipo === 'hub'
+          ? UI.ambar
+          : b.tipo === 'plugin'
+            ? P.ciruela
+            : b.tipo === 'servers'
+              ? P.cian
+              : (COLOR_AGENTE[b.tono % COLOR_AGENTE.length] ?? P.roble)
       this.minimapaSalas
         .poly(this.rombo(b.col0, b.row0, b.col1, b.row1))
         .fill({ color, alpha: b.tipo === 'hub' ? 0.95 : 0.6 })
@@ -791,13 +907,18 @@ export class Escena {
   private posicionDe(id: string): { x: number; y: number } | null {
     const f = this.figuras.find((x) => x.seat.id === id)
     if (f) return { x: f.raiz.x, y: f.baseY - 20 }
-    for (const lista of [this.lomos, this.tarjetas]) {
+    for (const lista of [this.lomos, this.tarjetas, this.racks]) {
       const p = lista.find((x) => x.id === id)
       if (p)
         return {
           x: p.sprite.x,
           y: p.sprite.y - (p.sprite.anchor.y === 1 ? p.sprite.height / 2 : 0),
         }
+    }
+    // El despacho de un plugin se representa por su placa: se centra en el medio de la bahía.
+    const bahia = this.layout?.bahias.find((b) => b.plugin?.id === id)
+    if (bahia) {
+      return toScreen((bahia.col0 + bahia.col1) / 2, (bahia.row0 + bahia.row1) / 2)
     }
     return null
   }
@@ -1040,8 +1161,22 @@ export class Escena {
 
   /** Marco pulsante alrededor del lomo o la tarjeta seleccionados (las figuras llevan anillo). */
   private dibujarResalte(pulso: number): void {
-    const pieza = [...this.lomos, ...this.tarjetas].find((x) => x.id === this.seleccion)
-    if (!pieza) return
+    const pieza = [...this.lomos, ...this.tarjetas, ...this.racks].find(
+      (x) => x.id === this.seleccion,
+    )
+    if (!pieza) {
+      // Un plugin no tiene una pieza: lo que se marca es el contorno de su despacho.
+      const b = this.layout?.bahias.find((x) => x.plugin?.id === this.seleccion)
+      if (!b) return
+      const pts = [
+        toScreen(b.col0, b.row0),
+        toScreen(b.col1, b.row0),
+        toScreen(b.col1, b.row1),
+        toScreen(b.col0, b.row1),
+      ].flatMap((p) => [p.x, p.y])
+      this.resalte.poly(pts).stroke({ color: UI.resalte, width: 2, alpha: 0.45 + pulso * 0.35 })
+      return
+    }
     const s = pieza.sprite
     const x0 = s.x - s.width * s.anchor.x - 2
     const y0 = s.y - s.height * s.anchor.y - 2

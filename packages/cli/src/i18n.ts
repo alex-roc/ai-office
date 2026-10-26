@@ -73,6 +73,9 @@ const makeEn = () => {
       commands: 'custom commands',
       sinceWindow: (days: number) => `in the last ${n(days)} days`,
       sinceAll: 'in the available history',
+      inThisProject: 'in this project',
+      measuredOverProject: (sessions: number) =>
+        `usage measured only over this project: ${count('en', sessions, 'session', 'sessions')}`,
       agentsIdle: (k: number, since: string) => `${n(k)} have not worked ${since}`,
       allActive: 'all active',
       skillsIdle: (k: number, since: string) => `${n(k)} unused ${since}`,
@@ -233,6 +236,9 @@ const makeEs = (): Messages => {
       commands: 'comandos propios',
       sinceWindow: (days) => `en los últimos ${n(days)} días`,
       sinceAll: 'en el historial disponible',
+      inThisProject: 'en este proyecto',
+      measuredOverProject: (sessions) =>
+        `uso medido solo sobre este proyecto: ${count('es', sessions, 'sesión', 'sesiones')}`,
       agentsIdle: (k, since) => `${n(k)} no han trabajado ${since}`,
       allActive: 'todos activos',
       skillsIdle: (k, since) => `${n(k)} sin usar ${since}`,

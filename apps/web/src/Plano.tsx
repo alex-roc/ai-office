@@ -19,10 +19,11 @@ import {
   useRef,
   useState,
 } from 'react'
+import { esDePlugin, etiquetaAmbito, quienTapa, servidoresMcpDe } from './alcance.ts'
 import type { Clave } from './i18n/index.ts'
 import { useT } from './i18n/react.ts'
 import { conCodigo } from './Rico.tsx'
-import type { Edge, EdgeLayer, Snapshot } from './types.ts'
+import type { Edge, EdgeLayer, EntityBase, Snapshot } from './types.ts'
 import type { RefVista } from './vista.ts'
 
 /**
@@ -36,9 +37,15 @@ import type { RefVista } from './vista.ts'
 interface Node extends SimulationNodeDatum {
   id: string
   name: string
-  kind: 'agent' | 'skill' | 'command' | 'main'
+  kind: 'agent' | 'skill' | 'command' | 'mcp' | 'main'
   uses: number
   unused: boolean
+  /** Pieza de un plugin: lleva un anillo con el color de plugin. */
+  plugin: boolean
+  /** Lo que no se carga (tapado por otro ámbito, servidor deshabilitado): se dibuja tenue. */
+  tenue: boolean
+  /** La entidad del catálogo, para redactar su título (origen, quién la tapa) en el idioma actual. */
+  ref?: EntityBase
 }
 
 interface Link extends SimulationLinkDatum<Node> {
@@ -51,7 +58,7 @@ const LAYER_STYLE: Record<EdgeLayer, { color: string; dash: string; label: Clave
   proven: { color: 'var(--proven)', dash: '1 0', label: 'plano.layer.proven' },
 }
 
-const KINDS_IN_GRAPH = new Set(['agent-uses-skill', 'command-invokes-agent'])
+const KINDS_IN_GRAPH = new Set(['agent-uses-skill', 'command-invokes-agent', 'agent-uses-mcp'])
 
 const K_MIN = 0.35
 const K_MAX = 3
@@ -66,6 +73,15 @@ const shapeStyle = (fill: string, strokeWidth = 1, selected = false): CSSPropert
   strokeWidth: selected ? Math.max(strokeWidth, 2.5) : strokeWidth,
 })
 
+/** Los seis vértices de un hexágono de radio `r`, con una arista arriba: la forma de un servidor MCP. */
+const hexagono = (r: number): string =>
+  [0, 1, 2, 3, 4, 5]
+    .map((i) => {
+      const a = (Math.PI / 3) * i - Math.PI / 6
+      return `${Math.round(r * Math.cos(a) * 100) / 100},${Math.round(r * Math.sin(a) * 100) / 100}`
+    })
+    .join(' ')
+
 interface Disposicion {
   nodes: Node[]
   links: Link[]
@@ -75,6 +91,17 @@ interface Disposicion {
 /** Nodos y aristas que se dibujan, con las posiciones a cero. Puro: lo que se ve depende solo del snapshot. */
 const construirGrafo = (snapshot: Snapshot): { nodes: Node[]; links: Link[] } => {
   const act = snapshot.activity
+  /** Un nodo de catálogo. Lo de un plugin lleva su anillo y lo tapado se dibuja tenue. */
+  const entidad = (e: EntityBase, kind: 'agent' | 'skill' | 'command' | 'mcp'): Node => ({
+    id: e.id,
+    name: e.name,
+    kind,
+    uses: act[e.id]?.uses ?? 0,
+    unused: !act[e.id]?.uses,
+    plugin: esDePlugin(e),
+    tenue: e.status === 'shadowed',
+    ref: e,
+  })
   const nodes: Node[] = [
     {
       id: snapshot.mainThreadId,
@@ -84,29 +111,18 @@ const construirGrafo = (snapshot: Snapshot): { nodes: Node[]; links: Link[] } =>
       kind: 'main',
       uses: snapshot.stats.mainThreadSkills,
       unused: false,
+      plugin: false,
+      tenue: false,
     },
-    ...snapshot.catalog.agents.map((a) => ({
-      id: a.id,
-      name: a.name,
-      kind: 'agent' as const,
-      uses: act[a.id]?.uses ?? 0,
-      unused: !act[a.id]?.uses,
-    })),
-    ...snapshot.catalog.skills.map((sk) => ({
-      id: sk.id,
-      name: sk.name,
-      kind: 'skill' as const,
-      uses: act[sk.id]?.uses ?? 0,
-      unused: !act[sk.id]?.uses,
-    })),
+    ...snapshot.catalog.agents.map((a) => entidad(a, 'agent')),
+    ...snapshot.catalog.skills.map((sk) => entidad(sk, 'skill')),
     // Un comando "usado" es uno que el daemon ha visto ejecutarse: su actividad cuenta como la
     // de una skill. Antes se marcaba siempre como sin usar, aunque lo ejecutaras a diario.
-    ...snapshot.catalog.commands.map((c) => ({
-      id: c.id,
-      name: c.name,
-      kind: 'command' as const,
-      uses: act[c.id]?.uses ?? 0,
-      unused: !act[c.id]?.uses,
+    ...snapshot.catalog.commands.map((c) => entidad(c, 'command')),
+    // Un servidor deshabilitado (en el proyecto o por su plugin) sigue en el grafo, tenue.
+    ...servidoresMcpDe(snapshot).map((m) => ({
+      ...entidad(m, 'mcp'),
+      tenue: m.enabled === false || m.status === 'shadowed',
     })),
   ]
   const byId = new Map(nodes.map((n) => [n.id, n]))
@@ -136,9 +152,10 @@ const claveDeGrafo = (snapshot: Snapshot): string => {
  */
 const disponer = (snapshot: Snapshot, W: number, H: number): Disposicion => {
   const { nodes, links } = construirGrafo(snapshot)
-  // Semilla por columnas: comandos a la izquierda, agentes al centro, skills a la derecha.
+  // Semilla por columnas: comandos a la izquierda, agentes al centro, skills a la derecha y los
+  // servidores MCP en el borde derecho.
   const columna = (kind: Node['kind']) =>
-    kind === 'command' ? 0.12 : kind === 'skill' ? 0.85 : 0.5
+    kind === 'command' ? 0.12 : kind === 'skill' ? 0.8 : kind === 'mcp' ? 0.97 : 0.5
   const porTipo = new Map<Node['kind'], Node[]>()
   for (const n of nodes) porTipo.set(n.kind, [...(porTipo.get(n.kind) ?? []), n])
   for (const [kind, lista] of porTipo) {
@@ -471,8 +488,17 @@ const PlanoImpl = ({
           {nodes.map((n) => {
             if (n.x === undefined || n.y === undefined) return null
             const dim = connected && !connected.has(n.id)
-            const r = n.kind === 'main' ? 13 : n.kind === 'agent' ? 9 : 6
-            const fill = n.kind === 'main' ? 'var(--accent)' : n.unused ? 'var(--bg)' : 'var(--ink)'
+            const r = n.kind === 'main' ? 13 : n.kind === 'agent' ? 9 : n.kind === 'mcp' ? 9 : 6
+            // Un servidor en uso va del color de servidor; el resto, de tinta. Sin uso, hueco.
+            const fill =
+              n.kind === 'main'
+                ? 'var(--accent)'
+                : n.unused
+                  ? 'var(--bg)'
+                  : n.kind === 'mcp'
+                    ? 'var(--server)'
+                    : 'var(--ink)'
+            const tapa = n.ref ? quienTapa(n.ref) : undefined
             const esOrigen = n.kind === 'agent'
             const sel = n.id === selected
             return (
@@ -480,7 +506,7 @@ const PlanoImpl = ({
               <g
                 key={n.id}
                 transform={`translate(${n.x},${n.y})`}
-                opacity={dim ? 0.18 : 1}
+                opacity={dim ? 0.18 : n.tenue ? 0.45 : 1}
                 role="button"
                 tabIndex={0}
                 aria-label={t('plano.node.aria', { kind: t(`kind.${n.kind}`), name: nombreDe(n) })}
@@ -523,8 +549,24 @@ const PlanoImpl = ({
                   {n.kind === 'main'
                     ? t('count.skillsUsed', { n: n.uses })
                     : t('count.uses', { n: n.uses })}
+                  {n.plugin && n.ref ? ` · ${etiquetaAmbito(n.ref)}` : ''}
+                  {tapa
+                    ? t('tip.shadowed', {
+                        by: `${tapa.name} (${etiquetaAmbito({ scope: tapa.scope })})`,
+                      })
+                    : ''}
                 </title>
-                {n.kind === 'skill' ? (
+                {n.plugin && (
+                  // El anillo de plugin: un contorno aparte del nodo, que sigue contando su propio
+                  // estado (relleno = usado, hueco = sin usar).
+                  <circle
+                    r={r + 5}
+                    style={{ fill: 'none', stroke: 'var(--plugin)', strokeWidth: 1.5 }}
+                  />
+                )}
+                {n.kind === 'mcp' ? (
+                  <polygon points={hexagono(r)} style={shapeStyle(fill, 1, sel)} />
+                ) : n.kind === 'skill' ? (
                   <rect
                     x={-r}
                     y={-r}
@@ -589,6 +631,9 @@ const PlanoImpl = ({
             </button>
           ))}
         </div>
+        {nodes.some((n) => n.kind === 'mcp' || n.plugin) && (
+          <span className="leyenda-formas">{t('plano.legend.shapes')}</span>
+        )}
       </div>
     </div>
   )

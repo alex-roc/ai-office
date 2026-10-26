@@ -1,6 +1,8 @@
+import type { ConfigPatch, ConfigView } from './config.ts'
 import { apiError, errorDeCodigo } from './errores.ts'
 import { getLang, type Lang } from './i18n/index.ts'
 import type { LiveEvent, LiveSession } from './live.ts'
+import type { Show } from './show.ts'
 import type { Snapshot } from './types.ts'
 
 /**
@@ -19,14 +21,58 @@ export const DEMO = import.meta.env.VITE_DEMO === '1'
 export const urlInstalar = (lang: Lang): string =>
   `https://alex-roc.github.io/ai-office/${lang === 'es' ? '?lang=es' : ''}#install`
 
-let snapshot: Promise<Snapshot> | null = null
-
-export const demoSnapshot = (): Promise<Snapshot> => {
-  snapshot ??= fetch(`${import.meta.env.BASE_URL}demo/snapshot.json`).then((r) => {
-    if (!r.ok) throw new Error(`demo/snapshot.json: ${r.status}`)
+const cargar = (archivo: string): Promise<Snapshot> =>
+  fetch(`${import.meta.env.BASE_URL}demo/${archivo}`).then((r) => {
+    if (!r.ok) throw new Error(`demo/${archivo}: ${r.status}`)
     return r.json() as Promise<Snapshot>
   })
-  return snapshot
+
+/**
+ * La demo trae DOS snapshots: el del ámbito de usuario (`snapshot.json`, el de entrada) y el de un
+ * proyecto (`snapshot-project.json`). Cambiar de ámbito alterna entre ellos en memoria, sin daemon.
+ * Si el de proyecto no existe, el selector de ámbito queda deshabilitado y todo sigue igual.
+ */
+let usuario: Promise<Snapshot> | null = null
+let proyecto: Promise<Snapshot | null> | null = null
+let ambitoDemo: 'user' | 'project' = 'user'
+
+const snapshotProyecto = (): Promise<Snapshot | null> => {
+  proyecto ??= cargar('snapshot-project.json').catch(() => null)
+  return proyecto
+}
+
+export const demoSnapshot = async (): Promise<Snapshot> => {
+  usuario ??= cargar('snapshot.json')
+  if (ambitoDemo === 'project') return (await snapshotProyecto()) ?? usuario
+  return usuario
+}
+
+/** `Show` elegido en esta pestaña: la demo no puede escribir `config.json`, así que vive en memoria. */
+let showDemo: Partial<Show> = {}
+
+/**
+ * `GET`/`POST /api/config` de la demo. `show` se aplica en memoria (hasta recargar la página) y el
+ * ámbito alterna entre los dos snapshots; no hay daemon que reconstruya nada ni `config.json`.
+ */
+const configDemo = async (patch: ConfigPatch | undefined): Promise<ConfigView> => {
+  const hayProyecto = (await snapshotProyecto()) !== null
+  if (patch && (patch.scope !== undefined || patch.project !== undefined)) {
+    // Solo hay dos ámbitos y solo si existen los dos archivos; cualquier otra cosa no se puede.
+    if (!hayProyecto || (patch.scope !== 'user' && patch.scope !== 'project')) {
+      throw apiError('http', 'scope.demo', 403)
+    }
+    ambitoDemo = patch.scope
+  }
+  if (patch?.show) showDemo = { ...showDemo, ...patch.show }
+  const s = await demoSnapshot()
+  return {
+    scopeLocked: !hayProyecto,
+    config: { show: showDemo },
+    path: '~/.claude/ai-office/config.json',
+    scope: s.scope ?? { kind: 'user' },
+    scopeSource: 'config',
+    changed: false,
+  }
 }
 
 interface Paso {
@@ -71,6 +117,7 @@ const guion = (s: Snapshot): Paso[] => {
 export const demoPost = async (url: string, body: unknown): Promise<unknown> => {
   // El idioma de la petición manda; sin él, el de la interfaz.
   const lang = (body as { lang?: Lang } | undefined)?.lang ?? getLang()
+  if (url === '/api/config') return configDemo(body as ConfigPatch | undefined)
   if (url === '/api/flows/open' || url === '/api/flows/preview') {
     const [s, c] = await Promise.all([
       demoSnapshot(),

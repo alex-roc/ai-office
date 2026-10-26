@@ -1,6 +1,6 @@
 import { t } from './i18n/index.ts'
 import { shortPath } from './texto.ts'
-import type { Agent, Snapshot } from './types.ts'
+import type { Agent, MeasuredOver, Snapshot } from './types.ts'
 
 /**
  * Lecturas derivadas del snapshot que la interfaz necesita en varios sitios, y los campos
@@ -60,6 +60,8 @@ export const claveDeConjunto = (s: Snapshot): string =>
     s.catalog.agents.map((a) => a.id).join('|'),
     s.catalog.skills.map((k) => k.id).join('|'),
     s.catalog.commands.map((c) => c.id).join('|'),
+    (s.catalog.plugins ?? []).map((p) => p.id).join('|'),
+    (s.catalog.mcpServers ?? []).map((m) => m.id).join('|'),
     (s.planta?.salas ?? []).map((x) => `${x.id}:${x.agents.length}`).join('|'),
   ].join('#')
 
@@ -67,6 +69,17 @@ export const claveDeConjunto = (s: Snapshot): string =>
  * La fuente de toda cifra de uso, tal como se cita en los tooltips: los transcripts de la raíz de
  * Claude Code y los días que conservan. Una sola redacción para la cabecera y el Registro.
  */
+/** Sobre qué se midió la actividad; sin el campo (daemon antiguo), todo el historial. */
+export const medidoSobre = (s: Snapshot): MeasuredOver => s.measuredOver ?? { kind: 'all' }
+
+/** "this project · 24 sessions" o "all projects": lo que dice la etiqueta visible junto a las lecturas. */
+export const medidoTexto = (s: Snapshot): string => {
+  const m = medidoSobre(s)
+  return m.kind === 'project'
+    ? t('measure.project', { sessions: t('count.sessions', { n: m.sessions }) })
+    : t('measure.all')
+}
+
 export const fuenteTranscripts = (s: Snapshot): string => {
   const [dirAgentes = '~/.claude/agents'] = s.catalog.roots
   const raiz = shortPath(dirAgentes.replace(/[\\/]agents[\\/]?$/, ''))
@@ -77,5 +90,10 @@ export const fuenteTranscripts = (s: Snapshot): string => {
       : dias === null
         ? t('src.window.all')
         : t('src.window.days', { n: dias })
-  return t('src.transcripts', { root: raiz, window: ventana })
+  const m = medidoSobre(s)
+  const medido =
+    m.kind === 'project'
+      ? t('src.measured.project', { sessions: t('count.sessions', { n: m.sessions }) })
+      : ''
+  return t('src.transcripts', { root: raiz, window: ventana + medido })
 }

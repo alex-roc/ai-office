@@ -11,10 +11,14 @@ import { mcpResolver, parseMcpToolName, unknownMcpId } from './mcp.ts'
  * ninguna herramienta lo ve. Aquí se recupera, con la línea y el texto que lo justifican.
  */
 
-/** Frontera de token que admite guiones dentro del nombre: `release-tools` no casa dentro de `x-release-tools-y`. */
+/**
+ * Frontera de token que admite guiones dentro del nombre: `release-tools` no casa dentro de
+ * `x-release-tools-y`. Antes del nombre tampoco vale `:`, para que citar `plugin:lint` no cuente
+ * como citar la skill de usuario `lint`.
+ */
 const mentionRegex = (name: string): RegExp =>
   new RegExp(
-    `(?<![A-Za-z0-9_-])${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![A-Za-z0-9_-])`,
+    `(?<![A-Za-z0-9_:-])${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![A-Za-z0-9_-])`,
     'g',
   )
 
@@ -38,13 +42,16 @@ const findMentions = (text: string, name: string): Mention[] => {
       continue
     }
     if (inFence) continue
-    re.lastIndex = 0
-    const m = re.exec(line)
-    if (!m) continue
-    const idx = m.index
-    const around = line.slice(Math.max(0, idx - 2), idx + name.length + 2)
+    // Una línea es UNA mención aunque el nombre salga dos veces (`**plugin:x** — \`plugin:x\``, que
+    // es como se escribe la cita de una skill de plugin): es explícita si alguna aparición lo es.
+    const hits = [...line.matchAll(re)]
+    if (hits.length === 0) continue
+    const backticked = hits.some((m) => {
+      const around = line.slice(Math.max(0, m.index - 2), m.index + name.length + 2)
+      return /`/.test(around)
+    })
     const explicit =
-      /`/.test(around) || line.includes(`skills/${name}`) || line.includes(`/${name}/SKILL.md`)
+      backticked || line.includes(`skills/${name}`) || line.includes(`/${name}/SKILL.md`)
     out.push({
       line: i + 1,
       excerpt: line.trim().slice(0, 180),

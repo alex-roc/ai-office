@@ -62,7 +62,24 @@ export const DiffDialog = ({
   onConfirm: () => void
 }) => {
   const t = useT()
-  const bloques = lote && lote.length > 0 ? lote : [{ plan, title: '' }]
+  // Un plan que toca varios archivos trae `files`: se enseña un diff por archivo, como un lote. Los
+  // avisos son del plan entero y salen una sola vez, en el primero.
+  const porArchivo = plan.files?.map((f, i) => ({
+    plan: {
+      ...plan,
+      path: f.path,
+      diff: f.diff,
+      changed: f.changed,
+      ...(i > 0 ? { warnings: [], warningDetails: [] } : {}),
+    },
+    title: f.scope,
+  }))
+  const bloques =
+    lote && lote.length > 0
+      ? lote
+      : porArchivo && porArchivo.length > 0
+        ? porArchivo
+        : [{ plan, title: '' }]
   const hayCambios = bloques.some((b) => b.plan.changed)
   return (
     <Dialogo

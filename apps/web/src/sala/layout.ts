@@ -1,4 +1,15 @@
-import type { Activity, Agent, RazonSala, Sala, Snapshot, TipoSala } from '../types.ts'
+import { ambitoDe, estaTapada, quienTapa, type Tapadora } from '../alcance.ts'
+import type {
+  Activity,
+  Agent,
+  EntityScope,
+  McpServer,
+  Plugin,
+  RazonSala,
+  Sala,
+  Snapshot,
+  TipoSala,
+} from '../types.ts'
 import { type Archetype, archetypeOf } from './archetypes.ts'
 import { FIGURA_DE, type Mueble, type Persona } from './catalogo-sprites.ts'
 
@@ -15,7 +26,10 @@ import { FIGURA_DE, type Mueble, type Persona } from './catalogo-sprites.ts'
  * - el vestíbulo del centro es el hilo principal (tú), con el archivo de las skills que usa
  *   media planta y el depósito de las que no reclama nadie;
  * - un agente en gris nunca ha sido delegado; la altura del lomo de una skill es su grado;
- * - una skill en el depósito no es que se use poco: es que ningún agente la cita.
+ * - una skill en el depósito no es que se use poco: es que ningún agente la cita;
+ * - un despacho con la placa `plugin · nombre` es un plugin habilitado, con sus propias piezas;
+ * - la sala de servidores tiene un rack por servidor MCP: luces encendidas si se ha usado, apagadas
+ *   si nunca, y tenue si está deshabilitado.
  */
 
 /**
@@ -58,6 +72,8 @@ export interface Seat {
   grade: string
   /** Desfase de la animación de respiración, para que veinte figuras no respiren a la vez. */
   fase: number
+  /** Tapada por otra de mayor precedencia: se dibuja tenue y su tooltip lo dice. */
+  tapada?: Tapadora
 }
 
 export interface Lomo {
@@ -73,6 +89,7 @@ export interface Lomo {
   duenio: string | null
   unused: boolean
   uses: number
+  tapada?: Tapadora
 }
 
 export interface Tarjeta {
@@ -83,6 +100,36 @@ export interface Tarjeta {
   /** Altura sobre el suelo, en píxeles. */
   altura: number
   used: boolean
+  tapada?: Tapadora
+}
+
+/**
+ * Un rack de la sala de servidores: un servidor MCP. El estado es dato, no decoración:
+ * `busy` se ha usado, `idle` nunca, `off` está deshabilitado (en el proyecto o por su plugin).
+ */
+export interface Rack {
+  id: string
+  name: string
+  col: number
+  row: number
+  estado: 'busy' | 'idle' | 'off'
+  /** Luces encendidas de `LUCES_RACK`, según el grado de uso. */
+  luces: number
+  uses: number
+  grade: string
+  transport: McpServer['transport']
+  scope: McpServer['scope']
+}
+
+/** Cuántas luces tiene un rack. */
+export const LUCES_RACK = 5
+
+/** Luces encendidas por grado: lo usado enciende al menos una, y el techo es el techo. */
+const LUCES_POR_GRADO: Record<string, number> = {
+  unused: 0,
+  tried: 1,
+  practicing: 3,
+  certified: LUCES_RACK,
 }
 
 export interface Adorno {
@@ -95,7 +142,7 @@ export interface Adorno {
 export interface Bahia {
   id: string
   nombre: string
-  tipo: TipoSala | 'hub'
+  tipo: TipoSala | 'hub' | 'servers'
   /**
    * El texto de la placa NO se guarda aquí: depende del idioma y la planta se calcula una vez. Se
    * lleva el dato (`razon`, o el `motivo` ya redactado de un daemon antiguo) y la escena redacta.
@@ -110,6 +157,10 @@ export interface Bahia {
   agentes: Seat[]
   lomos: Lomo[]
   tarjetas: Tarjeta[]
+  /** Solo en la sala de servidores. */
+  racks: Rack[]
+  /** Solo en el despacho de un plugin: el plugin al que corresponde. */
+  plugin?: Plugin
   adornos: Adorno[]
   /** Índice de color de la moqueta, para distinguir un despacho del de al lado. */
   tono: number
@@ -195,6 +246,7 @@ export const buildLayout = (snapshot: Snapshot): RoomLayout => {
       uses: actividad?.uses ?? 0,
       grade: actividad?.grade ?? 'unused',
       fase: fasear(a.id),
+      tapada: quienTapa(a),
     }
   }
 
@@ -215,6 +267,7 @@ export const buildLayout = (snapshot: Snapshot): RoomLayout => {
       duenio: agente?.name ?? null,
       unused: !a?.uses,
       uses: a?.uses ?? 0,
+      tapada: quienTapa(s),
     }
   }
 
@@ -222,16 +275,37 @@ export const buildLayout = (snapshot: Snapshot): RoomLayout => {
     const c = cmdPorId.get(id)
     // "Ejecutado" = el daemon vio ese comando usarse (`activity[id].uses`). Antes iba fijo a
     // `false` y todas las tarjetas salían grises con la chincheta de "nunca ejecutado".
-    return c ? { id, name: c.name, col, row, altura, used: Boolean(act(id)?.uses) } : null
+    return c
+      ? { id, name: c.name, col, row, altura, used: Boolean(act(id)?.uses), tapada: quienTapa(c) }
+      : null
   }
 
   // --- La rejilla ---------------------------------------------------------------------------
 
   const salas = snapshot.planta?.salas ?? []
+  // Un despacho por plugin (los que llegan en el snapshot: `aplicarShow` ya dejó solo los
+  // habilitados) y una sala de servidores si hay alguno. Un plugin sin ninguna pieza dibujable
+  // —solo un servidor MCP, o sus piezas ocultas por "Show"— no ocupa una celda.
+  const hay = (id: string) => agentePorId.has(id) || skillPorId.has(id) || cmdPorId.has(id)
+  const despachosPlugin = (snapshot.catalog.plugins ?? [])
+    .map((p) => ({
+      plugin: p,
+      sala: {
+        id: p.id,
+        nombre: p.name,
+        tipo: 'plugin',
+        motivo: p.description ?? '',
+        agents: p.agents.filter(hay),
+        skills: p.skills.filter(hay),
+        commands: p.commands.filter(hay),
+      } satisfies Sala,
+    }))
+    .filter(({ sala }) => sala.agents.length + sala.skills.length + sala.commands.length > 0)
+  const servidores = snapshot.catalog.mcpServers ?? []
   // Una celda por despacho más una para el vestíbulo. Se busca una rejilla lo más cuadrada
   // posible: en isométrico una planta cuadrada da un rombo 2:1 en pantalla, que es la forma que
   // mejor aprovecha una ventana apaisada.
-  const celdas = salas.length + 1
+  const celdas = salas.length + despachosPlugin.length + (servidores.length > 0 ? 1 : 0) + 1
   // En isométrico el rombo mide (cols + filas) de ancho y la mitad de alto, así que la forma de
   // la rejilla NO cambia la proporción en pantalla: solo el tamaño. La planta más pequeña es
   // entonces la que minimiza `cols + filas`, y como una celda es más ancha que alta, eso NO es
@@ -336,7 +410,62 @@ export const buildLayout = (snapshot: Snapshot): RoomLayout => {
       agentes,
       lomos,
       tarjetas,
+      racks: [],
       adornos,
+      tono,
+      puerta: puertaDe(col0, col1),
+    }
+  }
+
+  // --- La sala de servidores ----------------------------------------------------------------
+
+  const construirServidores = (indiceCelda: number, tono: number): Bahia => {
+    const { col0, row0 } = celda(indiceCelda)
+    const col1 = col0 + CELDA.cols
+    const row1 = row0 + CELDA.rows
+    const x0 = col0 + MARGEN
+    const y0 = row0 + MARGEN
+    const anchoUtil = CELDA.cols - MARGEN * 2
+    const altoUtil = CELDA.rows - MARGEN * 2
+
+    // Los racks van en filas de hasta cinco, de izquierda a derecha, como en un cuarto de máquinas.
+    // Con muchos servidores se aprieta el paso en vez de desbordar la mampara.
+    const porFila = Math.min(5, Math.max(1, servidores.length))
+    const filasRack = Math.ceil(servidores.length / porFila)
+    const pasoCol = anchoUtil / porFila
+    const pasoRow = Math.min(2.2, (altoUtil - 1) / Math.max(1, filasRack))
+    const racks: Rack[] = servidores.map((m, i) => {
+      const a = act(m.id)
+      const grade = a?.grade ?? 'unused'
+      const apagado = m.enabled === false || estaTapada(m)
+      return {
+        id: m.id,
+        name: m.name,
+        col: x0 + pasoCol * ((i % porFila) + 0.5),
+        row: y0 + 1.2 + pasoRow * Math.floor(i / porFila),
+        estado: apagado ? 'off' : a?.uses ? 'busy' : 'idle',
+        luces: LUCES_POR_GRADO[grade] ?? 0,
+        uses: a?.uses ?? 0,
+        grade,
+        transport: m.transport,
+        scope: m.scope,
+      }
+    })
+
+    return {
+      id: 'servers',
+      nombre: 'servers',
+      tipo: 'servers',
+      motivo: '',
+      col0,
+      row0,
+      col1,
+      row1,
+      agentes: [],
+      lomos: [],
+      tarjetas: [],
+      racks,
+      adornos: [{ mueble: 'planta', col: col1 - 0.8, row: row1 - 0.8 }],
       tono,
       puerta: puertaDe(col0, col1),
     }
@@ -363,7 +492,15 @@ export const buildLayout = (snapshot: Snapshot): RoomLayout => {
       const l = lomo(id, x0 + pasoComun * (i + 0.5), row0 + 0.12, BALDA_ARCHIVO)
       if (l) lomos.push(l)
     })
-    const olvidadas = planta?.deposito ?? []
+    // Lo tapado por otro ámbito no está en ningún despacho —no se carga—, pero tampoco se esconde:
+    // va al vestíbulo, tenue, con su tooltip diciendo quién lo tapa. Lo de un plugin se queda en
+    // el despacho de su plugin.
+    const tapadas = <T extends { id: string; status: string; scope?: EntityScope }>(l: T[]) =>
+      l.filter((e) => estaTapada(e) && ambitoDe(e) !== 'plugin')
+    const olvidadas = [
+      ...(planta?.deposito ?? []),
+      ...tapadas(snapshot.catalog.skills).map((k) => k.id),
+    ]
     const pasoDep = anchoUtil / Math.max(1, olvidadas.length)
     olvidadas.forEach((id, i) => {
       const l = lomo(id, x0 + pasoDep * (i + 0.5), row0 + 0.12, BALDA_ARCHIVO - 40)
@@ -372,7 +509,11 @@ export const buildLayout = (snapshot: Snapshot): RoomLayout => {
 
     // Tablón del pasillo: los comandos que cruzan varias salas y los que no convocan a nadie.
     const tarjetas: Tarjeta[] = []
-    const sueltos = [...(planta?.tablonComun ?? []), ...(planta?.tablonHuerfano ?? [])]
+    const sueltos = [
+      ...(planta?.tablonComun ?? []),
+      ...(planta?.tablonHuerfano ?? []),
+      ...tapadas(snapshot.catalog.commands).map((c) => c.id),
+    ]
     const porNivel = Math.max(1, Math.ceil(sueltos.length / 2))
     const pasoT = altoUtil / porNivel
     sueltos.forEach((id, i) => {
@@ -385,6 +526,13 @@ export const buildLayout = (snapshot: Snapshot): RoomLayout => {
       if (t) tarjetas.push(t)
     })
 
+    // Los agentes tapados esperan en la esquina de delante, sin despacho, apartados del puesto del
+    // hilo principal (que ocupa el centro): hasta tres por fila, de derecha a izquierda.
+    const banquillo = tapadas(snapshot.catalog.agents).filter((a) => !a.archived)
+    const agentesTapados = banquillo.map((a, i) =>
+      asiento(a, col1 - 1.5 - (i % 3) * 1.5, row1 - 1.3 - Math.floor(i / 3) * 1.4),
+    )
+
     return {
       id: 'hub',
       // Nombre y motivo del vestíbulo salen del catálogo de idiomas al rotular (ver `Escena.placa`).
@@ -395,9 +543,10 @@ export const buildLayout = (snapshot: Snapshot): RoomLayout => {
       row0,
       col1,
       row1,
-      agentes: [],
+      agentes: agentesTapados,
       lomos,
       tarjetas,
+      racks: [],
       adornos: [
         { mueble: 'dispensador', col: col1 - 0.7, row: row0 + 0.8 },
         { mueble: 'planta', col: col0 + 0.7, row: row1 - 0.7 },
@@ -407,11 +556,15 @@ export const buildLayout = (snapshot: Snapshot): RoomLayout => {
     }
   }
 
-  for (const sala of salas) {
+  const celdaLibre = (): number => {
     if (siguiente === iHub) siguiente++
-    bahias.push(construirBahia(sala, siguiente, bahias.length))
-    siguiente++
+    return siguiente++
   }
+  for (const sala of salas) bahias.push(construirBahia(sala, celdaLibre(), bahias.length))
+  for (const { plugin, sala } of despachosPlugin) {
+    bahias.push({ ...construirBahia(sala, celdaLibre(), bahias.length), plugin })
+  }
+  if (servidores.length > 0) bahias.push(construirServidores(celdaLibre(), bahias.length))
   const hub = construirHub()
   bahias.push(hub)
 

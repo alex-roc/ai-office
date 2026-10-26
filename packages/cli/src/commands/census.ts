@@ -17,6 +17,7 @@ import {
   scanCatalogReport,
   scanHistory,
   scanTranscripts,
+  scopeHistory,
   skillStats,
   vocabularyGap,
 } from '@ai-office/providers'
@@ -50,20 +51,29 @@ export const census = async (
   // tapado por otro ámbito, ni lo de plugins (eso va en su propia sección).
   const catalog = ownCatalog(full)
   const declared = buildDeclaredGraph(full)
-  const proven = buildProvenGraph(scan.invocations, full)
+  // En ámbito de proyecto solo cuenta lo ocurrido dentro de él (en el de usuario, todo el historial).
+  const measured = scopeHistory(scan, history, resolved.scope)
+  const proven = buildProvenGraph(measured.invocations, full)
   // Los slash commands no dejan rastro como herramienta: se miran en el historial tecleado, y en
   // la herramienta Skill cuando el modelo los invoca.
-  const activity = activityByTarget(scan.invocations, full, { commandUse: history.commandUse })
+  const activity = activityByTarget(measured.invocations, full, {
+    commandUse: measured.commandUse,
+    singleProject: resolved.scope.kind === 'project',
+  })
 
   const sk = skillStats(catalog, activity)
   const agentsUnused = catalog.agents.filter((a) => !activity.get(a.id)?.uses)
   const commandsUsed = catalog.commands.filter((c) => activity.get(c.id)?.uses)
   // "Nunca" solo vale dentro de lo que Claude Code conserva de las sesiones.
-  const since = windowDays ? t.sinceWindow(windowDays) : t.sinceAll
+  const window = windowDays ? t.sinceWindow(windowDays) : t.sinceAll
+  const since = measured.measuredOver.kind === 'project' ? `${window} ${t.inThisProject}` : window
 
   console.log()
   console.log(bold(`  ${t.title}`))
   console.log(dim(`  ${scopeLine(resolved, ctx.t)}`))
+  if (measured.measuredOver.kind === 'project') {
+    console.log(dim(`  ${t.measuredOverProject(measured.measuredOver.sessions)}`))
+  }
   console.log(dim(`  ${catalog.roots.join('\n  ')}`))
   console.log()
   console.log(

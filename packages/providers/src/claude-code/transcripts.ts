@@ -41,6 +41,11 @@ export interface TranscriptScan {
   filesRead: number
   bytesRead: number
   sessions: Set<string>
+  /**
+   * Directorio de trabajo con el que arrancó cada sesión (el primer `cwd` que trae su archivo
+   * principal). Permite saber en qué proyecto estuvo una sesión aunque no haya invocado nada.
+   */
+  sessionCwd: Map<string, string>
   errors: string[]
 }
 
@@ -133,12 +138,26 @@ const parseLine = (
   }
 }
 
+/** El primer `"cwd":"…"` de una línea, sin parsear la línea entera (la mayoría no se parsea). */
+const firstCwd = (line: string): string | null => {
+  if (!line.includes('"cwd":"')) return null
+  const m = /"cwd":"((?:[^"\\]|\\.)*)"/.exec(line)
+  if (!m?.[1]) return null
+  try {
+    return JSON.parse(`"${m[1]}"`) as string
+  } catch {
+    return null
+  }
+}
+
 const readJsonl = async (
   path: string,
   projectSlug: string,
   actor: Actor,
   scan: TranscriptScan,
   seen: Set<string>,
+  /** Solo para el archivo principal de una sesión: se anota con qué `cwd` arrancó. */
+  sessionId?: string,
 ): Promise<void> => {
   try {
     const st = await stat(path)
@@ -148,7 +167,15 @@ const readJsonl = async (
       input: createReadStream(path, { encoding: 'utf8' }),
       crlfDelay: Number.POSITIVE_INFINITY,
     })
+    let needCwd = sessionId !== undefined
     for await (const line of rl) {
+      if (needCwd && sessionId) {
+        const cwd = firstCwd(line)
+        if (cwd) {
+          scan.sessionCwd.set(sessionId, cwd)
+          needCwd = false
+        }
+      }
       if (!isCandidate(line)) continue
       parseLine(line, projectSlug, actor, scan.invocations, seen, path)
     }
@@ -179,6 +206,7 @@ export const scanTranscripts = async (
     filesRead: 0,
     bytesRead: 0,
     sessions: new Set(),
+    sessionCwd: new Map(),
     errors: [],
   }
   const seen = new Set<string>()
@@ -201,8 +229,16 @@ export const scanTranscripts = async (
     }
     for (const entry of entries) {
       if (entry.endsWith('.jsonl')) {
-        scan.sessions.add(basename(entry, '.jsonl'))
-        await readJsonl(join(projectDir, entry), projectSlug, { kind: 'main' }, scan, seen)
+        const sessionId = basename(entry, '.jsonl')
+        scan.sessions.add(sessionId)
+        await readJsonl(
+          join(projectDir, entry),
+          projectSlug,
+          { kind: 'main' },
+          scan,
+          seen,
+          sessionId,
+        )
         continue
       }
       // Un directorio con el nombre de la sesión contiene los subagentes de esa sesión.

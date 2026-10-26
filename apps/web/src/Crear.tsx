@@ -1,21 +1,26 @@
 import { useId, useState } from 'react'
+import { ambitoActivo, ambitoDe, nombreDeProyecto } from './alcance.ts'
 import { type ErrorNombre, validarNombre } from './campos.ts'
 import { DialogoEdicion } from './Edicion.tsx'
 import { useT } from './i18n/react.ts'
 import type { CreateRequest } from './mutations.ts'
+import { shortPath } from './texto.ts'
 import type { Snapshot } from './types.ts'
 
 /**
- * Nombres que ya existen de cada tipo. En los agentes cuentan también los archivados: restaurarlo
- * después chocaría con el nuevo (el daemon lo rechaza igual, pero aquí se ve antes de teclear más).
+ * Nombres que ya existen de cada tipo EN EL ÁMBITO donde se va a crear: un agente de usuario y uno
+ * de proyecto del mismo nombre no chocan en disco (uno tapa al otro), y lo de un plugin lleva su
+ * propio prefijo. En los agentes cuentan también los archivados: restaurarlo después chocaría con
+ * el nuevo (el daemon lo rechaza igual, pero aquí se ve antes de teclear más).
  */
-const existentes = (s: Snapshot, kind: CreateRequest['kind']): string[] =>
-  (kind === 'agent'
-    ? s.catalog.agents
-    : kind === 'skill'
-      ? s.catalog.skills
-      : s.catalog.commands
-  ).map((e) => e.name)
+const existentes = (
+  s: Snapshot,
+  kind: CreateRequest['kind'],
+  ambito: 'user' | 'project',
+): string[] =>
+  (kind === 'agent' ? s.catalog.agents : kind === 'skill' ? s.catalog.skills : s.catalog.commands)
+    .filter((e) => ambitoDe(e) === ambito)
+    .map((e) => e.name)
 
 const MENSAJE: Record<
   ErrorNombre,
@@ -51,7 +56,12 @@ export const Crear = ({
   const [body, setBody] = useState('')
   const idNombre = useId()
   const idAyuda = useId()
-  const error = validarNombre(name, existentes(snapshot, kind))
+  // Con un proyecto abierto se elige dónde nace; sin él solo hay usuario y no se pregunta.
+  const proyecto = nombreDeProyecto(ambitoActivo(snapshot))
+  const [ambito, setAmbito] = useState<'user' | 'project'>(proyecto ? 'project' : 'user')
+  const [dirAgentes = '~/.claude/agents'] = snapshot.catalog.roots
+  const raiz = shortPath(dirAgentes.replace(/[\\/]agents[\\/]?$/, ''))
+  const error = validarNombre(name, existentes(snapshot, kind, ambito))
   const valido = error === null && description.trim() !== ''
   const sucio = name !== '' || description !== '' || body !== ''
   return (
@@ -66,6 +76,7 @@ export const Crear = ({
           name,
           description: description.trim(),
           ...(body.trim() ? { body } : {}),
+          ...(proyecto ? { scope: ambito } : {}),
         })
       }
       claseModal="edicion"
@@ -77,6 +88,26 @@ export const Crear = ({
             {t('create.command.flowLink')}
           </button>
         </p>
+      )}
+      {proyecto && (
+        <fieldset className="campo-ambito">
+          <legend>{t('create.scope')}</legend>
+          {(['project', 'user'] as const).map((a) => (
+            <label key={a} className="casilla simple">
+              <input
+                type="radio"
+                name={`${idNombre}-ambito`}
+                checked={ambito === a}
+                onChange={() => setAmbito(a)}
+              />
+              <span>
+                {a === 'project'
+                  ? t('create.scope.project', { name: proyecto })
+                  : t('create.scope.user', { root: raiz })}
+              </span>
+            </label>
+          ))}
+        </fieldset>
       )}
       <div className="campo-texto">
         <label htmlFor={idNombre}>{t('create.name')}</label>

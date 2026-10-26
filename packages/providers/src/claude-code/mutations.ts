@@ -12,7 +12,7 @@ import {
 } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, dirname, join, resolve, sep } from 'node:path'
-import { type Lang, makeId, type ScopeSelection } from '@ai-office/core'
+import { type Lang, makeId, type Scope, type ScopeSelection } from '@ai-office/core'
 import { stringify } from 'yaml'
 import { removeSection, upsertSection } from './body-sections.ts'
 import { OfficeError } from './errors.ts'
@@ -626,17 +626,43 @@ export const applySetAgentPreloadedSkills = (
 
 const SKILL_MENTIONS_SECTION = 'skills'
 
-const renderSkillMentions = (skillNames: string[]): string =>
-  skillNames.map((name) => `- **${name}** — \`~/.claude/skills/${name}/SKILL.md\``).join('\n')
+/** Lo que hace falta saber de una skill para citarla donde de verdad vive. */
+export interface SkillCitationRef {
+  name: string
+  scope: Scope
+  status?: string
+}
+
+/**
+ * Cómo se cita una skill: como se invoca y donde vive. De usuario, su ruta bajo `~/.claude`; de
+ * proyecto, la ruta relativa al proyecto; de plugin, su nombre invocable `<plugin>:<nombre>` y sin
+ * ruta, porque los archivos de un plugin cambian de carpeta con cada versión. Una skill que el
+ * catálogo no conoce se cita como de usuario (lo que se escribía antes). Si el nombre existe en
+ * varios ámbitos se cita la que Claude Code carga, no la tapada.
+ */
+export const skillCitation = (name: string, skills: SkillCitationRef[]): string => {
+  const named = skills.filter((s) => s.name === name)
+  const found = named.find((s) => s.status !== 'shadowed') ?? named[0]
+  if (found?.scope === 'plugin') return `\`${name}\``
+  if (found?.scope === 'project') return `\`.claude/skills/${name}/SKILL.md\``
+  return `\`~/.claude/skills/${name}/SKILL.md\``
+}
+
+const renderSkillMentions = (skillNames: string[], skills: SkillCitationRef[]): string =>
+  skillNames.map((name) => `- **${name}** — ${skillCitation(name, skills)}`).join('\n')
 
 const computeSetAgentSkillMentions =
-  (skillNames: string[]): ComputeFn =>
+  (skillNames: string[], skills: SkillCitationRef[]): ComputeFn =>
   (before) => {
     const parsed = parseMarkdownDoc(before)
     const newBody =
       skillNames.length === 0
         ? removeSection(parsed.body, SKILL_MENTIONS_SECTION)
-        : upsertSection(parsed.body, SKILL_MENTIONS_SECTION, renderSkillMentions(skillNames))
+        : upsertSection(
+            parsed.body,
+            SKILL_MENTIONS_SECTION,
+            renderSkillMentions(skillNames, skills),
+          )
     if (newBody === parsed.body) return { after: before, changed: false, warnings: [] }
     return { after: before.slice(0, parsed.bodyOffset) + newBody, changed: true, warnings: [] }
   }
@@ -645,7 +671,8 @@ export const planSetAgentSkillMentions = (
   path: string,
   before: string,
   skillNames: string[],
-): MutationPlan => planTextChange(path, before, computeSetAgentSkillMentions(skillNames))
+  skills: SkillCitationRef[] = [],
+): MutationPlan => planTextChange(path, before, computeSetAgentSkillMentions(skillNames, skills))
 
 export const applySetAgentSkillMentions = (
   agentName: string,
@@ -653,6 +680,7 @@ export const applySetAgentSkillMentions = (
   skillNames: string[],
   etag: string,
   opts?: MutationOptions,
+  skills: SkillCitationRef[] = [],
 ): Promise<ApplyResult> =>
   applyTextMutation({
     kind: 'agent',
@@ -660,7 +688,7 @@ export const applySetAgentSkillMentions = (
     action: 'setAgentSkillMentions',
     visiblePath,
     etag,
-    compute: computeSetAgentSkillMentions(skillNames),
+    compute: computeSetAgentSkillMentions(skillNames, skills),
     extraAllowedRoots: opts?.extraAllowedRoots,
     entityScope: opts?.entityScope,
   })

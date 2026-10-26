@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { readFile, stat } from 'node:fs/promises'
 import type {
   Agent,
@@ -13,6 +14,7 @@ import type {
 import {
   AGENT_COLORS,
   type AgentColor,
+  type ApplyResult,
   applyArchiveAgent,
   applyRetireSkill,
   applySetAgentBody,
@@ -32,6 +34,7 @@ import {
   applySetSkillDescription,
   applyUnarchiveAgent,
   applyUnretireSkill,
+  ConflictError,
   claudeJsonProjectKey,
   etagOf,
   type MutationPlan,
@@ -84,12 +87,16 @@ export type MutationKind =
   | 'command.body'
   | 'command.argumentHint'
   | 'agent.archive'
-  /** Restaura un agente de `agents/.archivo/`. Misma petición que `agent.archive`. */
+  /** Restaura un agente de `agents/.archive/` (o del `.archivo/` heredado). Misma petición que `agent.archive`. */
   | 'agent.unarchive'
   /** `value: { scope: 'user' | 'project' | 'local' }` (por defecto `user`): qué settings se escribe. */
   | 'plugin.enable'
   | 'plugin.disable'
-  /** Solo con ámbito de proyecto. `value: { scope }` solo elige el settings de un servidor de `.mcp.json`. */
+  /**
+   * Solo con ámbito de proyecto. `value: { scope }` solo elige el settings de un servidor de
+   * `.mcp.json`. `mcp.enable` SIN `value.scope` lo quita de TODOS los settings (user, project, local)
+   * donde esté desactivado: el plan trae entonces `files` y un `etag` compuesto (ver `PlanResponse`).
+   */
   | 'mcp.enable'
   | 'mcp.disable'
 
@@ -111,8 +118,31 @@ export interface MutationRequest {
   lang?: Lang
 }
 
+/** Un archivo de un plan que escribe en varios. */
+export interface PlanFile {
+  scope: PluginSettingsScope
+  path: string
+  diff: string
+  changed: boolean
+}
+
+/**
+ * Casi siempre un plan escribe UN archivo: `path`, `diff` y `etag` son los suyos. Solo `mcp.enable`
+ * de un servidor de `.mcp.json` desactivado en varios settings escribe en más de uno; entonces:
+ *  - `files` lista un elemento por archivo (de menor a mayor precedencia: user, project, local);
+ *  - `path` es el del primero, `diff` es la concatenación de los diffs de todos y `changed` es que
+ *    cambie alguno;
+ *  - `etag` es COMPUESTO (`multi:<hash>` de las rutas y etags de todos): el cliente lo devuelve tal
+ *    cual al aplicar y el daemon lo recalcula; si algún archivo cambió, es un `conflict`.
+ */
 export interface PlanResponse extends Omit<MutationPlan, 'before' | 'after'> {
   etag: string
+  files?: PlanFile[]
+}
+
+/** Resultado de aplicar. Con varios archivos, `files` trae el de cada uno, en el orden aplicado. */
+export interface ApplyResponse extends ApplyResult {
+  files?: ApplyResult[]
 }
 
 const asStringArray = (v: unknown): string[] =>
@@ -123,6 +153,10 @@ const bodyOf = (v: unknown): string => {
   if (typeof v !== 'string') throw new OfficeError('invalid-body', 'the body must be text')
   return v
 }
+
+/** De dónde es cada skill, para que la sección de citas diga la ruta (o el nombre) correcta. */
+const citationRefs = (catalog: Catalog) =>
+  catalog.skills.map((s) => ({ name: s.name, scope: s.scope, status: s.status }))
 
 const findEntity = (
   catalog: Catalog,
@@ -226,7 +260,12 @@ export const planMutation = async (
           catalog.skills.map((s) => ({ name: s.name, body: s.body })),
         )
       case 'agent.skillMentions':
-        return planSetAgentSkillMentions(path, text, asStringArray(req.value))
+        return planSetAgentSkillMentions(
+          path,
+          text,
+          asStringArray(req.value),
+          citationRefs(catalog),
+        )
       case 'agent.description':
         return planSetAgentDescription(path, text, String(req.value ?? ''))
       case 'agent.body':
@@ -263,7 +302,7 @@ export const applyMutation = async (
   catalog: Catalog,
   req: MutationRequest & { etag: string },
   ctx: MutationContext = USER_CONTEXT,
-): Promise<{ path: string; etag: string; backup: string }> => {
+): Promise<ApplyResponse> => {
   if (typeof req?.kind === 'string' && req.kind.startsWith('plugin.')) {
     return applyPlugin(catalog, req, ctx)
   }
@@ -315,7 +354,14 @@ export const applyMutation = async (
         opts,
       )
     case 'agent.skillMentions':
-      return applySetAgentSkillMentions(name, visiblePath, asStringArray(req.value), req.etag, opts)
+      return applySetAgentSkillMentions(
+        name,
+        visiblePath,
+        asStringArray(req.value),
+        req.etag,
+        opts,
+        citationRefs(catalog),
+      )
     case 'agent.description':
       return applySetAgentDescription(name, visiblePath, String(req.value ?? ''), req.etag, opts)
     case 'agent.body':
@@ -473,10 +519,17 @@ const mcpTarget = async (catalog: Catalog, req: MutationRequest, ctx: MutationCo
   }
   const disabled = req.kind === 'mcp.disable'
   if (server.scope === 'project') {
-    // Al activar, se quita de donde está desactivado; al desactivar, `settings.local.json` (el que no se comparte).
-    const where = server.disabledIn?.find((s) => s === 'local') ?? server.disabledIn?.[0] ?? 'local'
-    const choice = settingsChoice(req.value, ctx, disabled ? 'local' : where)
-    return { server, disabled, file: 'settings' as const, ...choice }
+    // Al desactivar, `settings.local.json` (el que no se comparte), salvo que `value.scope` elija otro.
+    // Al activar, se quita de TODOS los settings donde esté desactivado: dejarlo en uno solo lo
+    // dejaría apagado por el otro, sin que nada lo avisara. `value.scope` limita a uno.
+    const explicit = scopeInValue(req.value) !== undefined
+    const wheres = [...new Set(server.disabledIn ?? [])]
+    if (disabled || explicit || wheres.length === 0) {
+      const choice = settingsChoice(req.value, ctx, 'local')
+      return { server, disabled, file: 'settings' as const, targets: [choice] }
+    }
+    const targets = wheres.map((source) => settingsChoice({ scope: source }, ctx, 'local'))
+    return { server, disabled, file: 'settings' as const, targets }
   }
   return {
     server,
@@ -485,6 +538,26 @@ const mcpTarget = async (catalog: Catalog, req: MutationRequest, ctx: MutationCo
     path: paths().usageJson,
     projectPath: ctx.scope.path,
   }
+}
+
+const scopeInValue = (value: unknown): unknown =>
+  value !== null && typeof value === 'object' ? (value as { scope?: unknown }).scope : undefined
+
+/** Etag de un conjunto de archivos: cambia si cambia cualquiera de ellos. */
+const compositeEtag = (parts: { path: string; etag: string }[]): string =>
+  `multi:${createHash('sha256')
+    .update(parts.map((p) => `${p.path}\n${p.etag}`).join('\n'))
+    .digest('hex')
+    .slice(0, 16)}`
+
+/** Lee cada settings una sola vez: dos rutas que acaban en el mismo archivo real no se escriben dos veces. */
+const readTargets = async (targets: { source: PluginSettingsScope; path: string }[]) => {
+  const out: (Awaited<ReturnType<typeof readJsonTarget>> & { source: PluginSettingsScope })[] = []
+  for (const t of targets) {
+    const read = await readJsonTarget(t.path)
+    if (!out.some((o) => o.path === read.path)) out.push({ ...read, source: t.source })
+  }
+  return out
 }
 
 /** La clave de `projects` de `~/.claude.json` y el nombre con el que se anota el servidor. */
@@ -513,14 +586,34 @@ const planMcp = async (
   ctx: MutationContext,
 ): Promise<PlanResponse> => {
   const t = await mcpTarget(catalog, req, ctx)
-  const target = await readJsonTarget(t.path)
-  let plan: MutationPlan
   if (t.file === 'settings') {
-    plan = planSetMcpjsonDisabled(target.path, target.text, t.server.name, t.disabled)
-  } else {
-    const { projectKey, name } = await claudeJsonKeys(target.text, t.server, t.projectPath)
-    plan = planSetClaudeJsonMcpDisabled(target.path, target.text, projectKey, name, t.disabled)
+    const reads = await readTargets(t.targets)
+    const plans = reads.map((r) =>
+      planSetMcpjsonDisabled(r.path, r.text, t.server.name, t.disabled),
+    )
+    const [first, ...others] = plans
+    if (!first || !others.length) {
+      const { before: _b, after: _a, ...rest } = first as MutationPlan
+      return { ...rest, etag: reads[0]?.etag ?? '' }
+    }
+    return {
+      path: first.path,
+      diff: plans.map((p) => p.diff).join(''),
+      changed: plans.some((p) => p.changed),
+      warnings: plans.flatMap((p) => p.warnings),
+      warningDetails: plans.flatMap((p) => p.warningDetails),
+      etag: compositeEtag(reads),
+      files: plans.map((p, i) => ({
+        scope: reads[i]?.source ?? 'local',
+        path: p.path,
+        diff: p.diff,
+        changed: p.changed,
+      })),
+    }
   }
+  const target = await readJsonTarget(t.path)
+  const { projectKey, name } = await claudeJsonKeys(target.text, t.server, t.projectPath)
+  const plan = planSetClaudeJsonMcpDisabled(target.path, target.text, projectKey, name, t.disabled)
   const { before: _b, after: _a, ...rest } = plan
   return { ...rest, etag: target.etag }
 }
@@ -532,9 +625,35 @@ const applyMcp = async (
 ) => {
   const t = await mcpTarget(catalog, req, ctx)
   if (t.file === 'settings') {
-    return applySetMcpjsonDisabled(t.server.name, t.server.id, t.path, t.disabled, req.etag, {
-      extraAllowedRoots: scopeRoots(ctx.scope),
-    })
+    const opts = { extraAllowedRoots: scopeRoots(ctx.scope) }
+    const reads = await readTargets(t.targets)
+    const [only, ...others] = reads
+    if (only && !others.length) {
+      return applySetMcpjsonDisabled(
+        t.server.name,
+        t.server.id,
+        only.path,
+        t.disabled,
+        req.etag,
+        opts,
+      )
+    }
+    // Varios archivos: el etag compuesto dice que ninguno cambió desde el plan. Se aplican en orden,
+    // cada uno con su propio etag; no hay transacción: si uno falla, los anteriores quedan escritos.
+    const now = compositeEtag(reads)
+    if (now !== req.etag) throw new ConflictError(only?.path ?? '', now, '')
+    const results: ApplyResult[] = []
+    for (const r of reads) {
+      results.push(
+        await applySetMcpjsonDisabled(t.server.name, t.server.id, r.path, t.disabled, r.etag, opts),
+      )
+    }
+    return {
+      path: results[0]?.path ?? '',
+      etag: compositeEtag(results),
+      backup: results[0]?.backup ?? '',
+      files: results,
+    }
   }
   const target = await readJsonTarget(t.path)
   const { projectKey, name } = await claudeJsonKeys(target.text, t.server, t.projectPath)

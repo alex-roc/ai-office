@@ -198,6 +198,8 @@ export interface EntityActivity {
 }
 
 export interface ActivityOptions {
+  /** Se mide un solo proyecto: el grado acreditado pide semanas distintas en vez de proyectos. */
+  singleProject?: boolean
   /** Comandos tecleados (de `history.jsonl`): los slash commands no dejan rastro como herramienta. */
   commandUse?: HistoryScan['commandUse']
   now?: number
@@ -265,8 +267,15 @@ export const activityByTarget = (
   for (const [id, b] of buckets) {
     const lastUsedAt = b.lastUsedAt || null
     const grade = gradeOf(
-      { uses: b.uses, sessions: b.sessions.size, projects: b.projects.size, lastUsedAt },
+      {
+        uses: b.uses,
+        sessions: b.sessions.size,
+        projects: b.projects.size,
+        lastUsedAt,
+        weeks: b.weekly.filter((n) => n > 0).length,
+      },
       now,
+      { singleProject: opts.singleProject },
     )
     map.set(id, {
       id,

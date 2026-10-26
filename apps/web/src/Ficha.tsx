@@ -1,6 +1,19 @@
-import { memo, type ReactNode } from 'react'
-import { type CapaUso, entidadDeRuta, quienUsa } from './campos.ts'
-import { agentesArchivados, estaArchivado, fuenteTranscripts } from './derivados.ts'
+import { memo } from 'react'
+import {
+  ambitoDe,
+  esDePlugin,
+  esSoloLectura,
+  estaTapada,
+  etiquetaAmbito,
+  nombreDePlugin,
+  pluginDe,
+  pluginsDe,
+  quienTapa,
+  servidoresMcpDe,
+} from './alcance.ts'
+import { type CapaUso, quienUsa } from './campos.ts'
+import { agentesArchivados, estaArchivado } from './derivados.ts'
+import { ActividadFilas, Aviso, Cita, Evidence, PorProyecto } from './FichaComun.tsx'
 import {
   AccionesAgente,
   AccionesComando,
@@ -8,13 +21,12 @@ import {
   type PedirLote,
   type PedirMutacion,
 } from './FichaEdicion.tsx'
-import { fmtNum } from './i18n/index.ts'
+import { FichaMcp, FichaPlugin } from './FichaPlugins.tsx'
 import { useT } from './i18n/react.ts'
-import { porProyecto, semanal } from './ledger.ts'
+import { porProyecto } from './ledger.ts'
 import { conCodigo } from './Rico.tsx'
-import { Sparkline } from './Sparkline.tsx'
-import { detalleTexto, gradoEtiqueta, nombreHilo, relDate, shortPath } from './texto.ts'
-import type { Agent, Command, Edge, Skill, Snapshot } from './types.ts'
+import { detalleTexto, nombreHilo, relDate, shortPath } from './texto.ts'
+import type { Agent, Command, Skill, Snapshot } from './types.ts'
 import { VisorArchivo } from './VisorArchivo.tsx'
 
 const COLORES = ['red', 'blue', 'green', 'yellow', 'purple', 'orange', 'pink', 'cyan']
@@ -38,66 +50,6 @@ export interface EstadoVisor {
  */
 const opcionesCon = (lista: string[], actual: string | null): string[] =>
   actual && !lista.includes(actual) ? [...lista, actual] : lista
-
-/**
- * Una cita `archivo:línea`. Si el archivo es de una entidad del catálogo se puede pulsar y abre el
- * visor en esa línea; si no (un transcript, por ejemplo) es solo texto.
- */
-const Cita = ({
-  snapshot,
-  ev,
-  onVisor,
-}: {
-  snapshot: Snapshot
-  ev: Edge['evidence'][number]
-  onVisor?: (id: string, linea?: number) => void
-}) => {
-  const t = useT()
-  const texto = `${shortPath(ev.path)}${ev.line ? `:${ev.line}` : ''}${
-    ev.field ? t('detail.ev.field', { field: ev.field }) : ''
-  }`
-  const dueno = entidadDeRuta(snapshot, ev.path)
-  if (!dueno || !onVisor) return <code>{texto}</code>
-  return (
-    <button
-      type="button"
-      className="cita"
-      title={t('detail.cite.title')}
-      onClick={() => onVisor(dueno.id, ev.line)}
-    >
-      {texto}
-    </button>
-  )
-}
-
-const Evidence = ({
-  snapshot,
-  edges,
-  title,
-  onVisor,
-}: {
-  snapshot: Snapshot
-  edges: Edge[]
-  title: ReactNode
-  onVisor?: (id: string, linea?: number) => void
-}) => {
-  if (edges.length === 0) return null
-  return (
-    <section>
-      <h3>{title}</h3>
-      {edges.slice(0, 12).map((e) => {
-        const ev = e.evidence[0]
-        return (
-          <div className="evidence" key={`${e.from}-${e.to}-${e.kind}-${e.layer}`}>
-            <div>{e.to.split('/').pop() ?? e.to}</div>
-            {ev?.excerpt && <div className="quote">“{ev.excerpt}”</div>}
-            {ev && <Cita snapshot={snapshot} ev={ev} onVisor={onVisor} />}
-          </div>
-        )
-      })}
-    </section>
-  )
-}
 
 const NOMBRE_CAPA = {
   proven: 'detail.who.proven',
@@ -165,30 +117,6 @@ const QuienUsa = ({
             })}
         </div>
       ))}
-    </section>
-  )
-}
-
-/** Reparto por proyecto: las barras son relativas al proyecto con más usos. */
-const PorProyecto = ({ datos }: { datos: [string, number][] }) => {
-  const t = useT()
-  if (datos.length === 0) return null
-  const max = Math.max(...datos.map(([, n]) => n), 1)
-  return (
-    <section>
-      <h3>{t('detail.byProject')}</h3>
-      {datos.slice(0, 8).map(([proyecto, n]) => (
-        <div className="fila-proyecto" key={proyecto} title={proyecto}>
-          <span className="nombre-proyecto">{proyecto}</span>
-          <span className="barra-proyecto" aria-hidden="true">
-            <span style={{ width: `${Math.max(4, (n / max) * 100)}%` }} />
-          </span>
-          <span className="cifra-proyecto">{fmtNum(n)}</span>
-        </div>
-      ))}
-      {datos.length > 8 && (
-        <p className="nota">{t('detail.byProject.more', { n: datos.length - 8 })}</p>
-      )}
     </section>
   )
 }
@@ -272,6 +200,7 @@ const FichaImpl = ({
   onMutate,
   onLote,
   onSelect,
+  onAmbito,
   visor,
   onVisor,
   onCerrarVisor,
@@ -285,6 +214,8 @@ const FichaImpl = ({
   /** Varias ediciones de una vez (asignar una skill a varios agentes): un solo diff combinado. */
   onLote?: PedirLote
   onSelect?: (id: string) => void
+  /** Cambia el ámbito de trabajo (usuario o un proyecto): lo usa la ficha de un servidor MCP. */
+  onAmbito?: (valor: string) => void
   visor?: EstadoVisor | null
   onVisor?: (id: string, linea?: number) => void
   onCerrarVisor?: () => void
@@ -292,6 +223,35 @@ const FichaImpl = ({
   const t = useT()
   if (!id) {
     return <FichaVacia snapshot={snapshot} vista={vista} onMutate={onMutate} onSelect={onSelect} />
+  }
+
+  // Un plugin y un servidor MCP tienen ficha propia: no son archivos que se editen con las
+  // acciones de un agente, una skill o un comando.
+  const plugin = pluginsDe(snapshot).find((p) => p.id === id)
+  if (plugin) {
+    return (
+      <FichaPlugin
+        key={plugin.id}
+        snapshot={snapshot}
+        plugin={plugin}
+        onSelect={onSelect}
+        onMutate={onMutate}
+      />
+    )
+  }
+  const servidor = servidoresMcpDe(snapshot).find((m) => m.id === id)
+  if (servidor) {
+    return (
+      <FichaMcp
+        key={servidor.id}
+        snapshot={snapshot}
+        servidor={servidor}
+        onSelect={onSelect}
+        onMutate={onMutate}
+        onAmbito={onAmbito}
+        onVisor={onVisor}
+      />
+    )
   }
 
   const entity: Agent | Skill | Command | undefined =
@@ -327,15 +287,42 @@ const FichaImpl = ({
       )
     : undefined
   const archivado = agente ? estaArchivado(agente) : false
+  // Lo de un plugin son copias que una actualización sobrescribe, y lo tapado no se carga: en los
+  // dos casos no se ofrecen las acciones de edición, y la ficha lo dice con su enlace.
+  const soloLectura = entity ? esSoloLectura(entity) : false
+  const duenoPlugin = entity ? pluginDe(snapshot, entity) : undefined
+  const tapa = entity ? quienTapa(entity) : undefined
+  const tapadora = entity?.shadowedBy
 
   return (
     <aside className="side" aria-label={t('detail.aria.of', { name })}>
       <div className="kind">
         {kind}
+        {entity && ambitoDe(entity) !== 'user' ? ` · ${etiquetaAmbito(entity)}` : ''}
         {archivado ? t('detail.archivedTag') : ''}
       </div>
       <h2>{name}</h2>
       {entity?.description && <p className="desc">{entity.description.slice(0, 400)}</p>}
+
+      {entity && esDePlugin(entity) && (
+        <Aviso
+          enlace={duenoPlugin ? t('detail.plugin.open') : undefined}
+          onEnlace={duenoPlugin ? () => onSelect?.(duenoPlugin.id) : undefined}
+        >
+          {t('detail.fromPlugin', { plugin: nombreDePlugin(entity.plugin ?? '?') })}
+        </Aviso>
+      )}
+      {entity && estaTapada(entity) && (
+        <Aviso
+          clase="tapada"
+          enlace={tapadora ? t('detail.shadowed.open') : undefined}
+          onEnlace={tapadora ? () => onSelect?.(tapadora) : undefined}
+        >
+          {t('detail.shadowed', {
+            by: tapa ? `${tapa.name} (${etiquetaAmbito({ scope: tapa.scope })})` : '?',
+          })}
+        </Aviso>
+      )}
 
       {entity && entity.problems.length > 0 && (
         <section>
@@ -356,46 +343,12 @@ const FichaImpl = ({
             <span>{snapshot.stats.mainThreadSkills}</span>
           </div>
         ) : (
-          <>
-            <div className="row">
-              <span>{t('detail.uses')}</span>
-              <span>{act?.uses ?? 0}</span>
-            </div>
-            <div className="row">
-              <span>{t('detail.sessionsProjects')}</span>
-              <span>
-                {act?.sessions ?? 0} · {act?.projects ?? 0}
-              </span>
-            </div>
-            <div className="row">
-              <span>{t('detail.lastUsed')}</span>
-              <span>{relDate(act?.lastUsedAt)}</span>
-            </div>
-            <div className="row">
-              <span>{t('detail.grade')}</span>
-              <span>
-                <span className={`badge ${act?.grade ?? 'unused'}`}>
-                  {gradoEtiqueta(act?.grade)}
-                </span>
-              </span>
-            </div>
-            {semanal(act) && (
-              <div
-                className="row"
-                title={t('detail.trend.src', { transcripts: fuenteTranscripts(snapshot) })}
-              >
-                <span>{t('detail.trend')}</span>
-                <span>
-                  <Sparkline valores={semanal(act) ?? []} />
-                </span>
-              </div>
-            )}
-          </>
+          <ActividadFilas snapshot={snapshot} act={act} />
         )}
       </section>
       <PorProyecto datos={porProyecto(act)} />
 
-      {agente && onMutate && !archivado && (
+      {agente && onMutate && !archivado && !soloLectura && (
         <section>
           <h3>{t('detail.edit')}</h3>
           <AccionesAgente agente={agente} snapshot={snapshot} onMutate={onMutate} />
@@ -456,7 +409,7 @@ const FichaImpl = ({
         </section>
       )}
 
-      {agente && onMutate && archivado && (
+      {agente && onMutate && archivado && !soloLectura && (
         <section>
           <h3>{t('detail.archived')}</h3>
           <button
@@ -475,7 +428,7 @@ const FichaImpl = ({
         </section>
       )}
 
-      {entity?.kind === 'skill' && onMutate && onLote && (
+      {entity?.kind === 'skill' && onMutate && onLote && !soloLectura && (
         <section>
           <h3>{t('detail.edit')}</h3>
           <AccionesSkill
@@ -565,7 +518,7 @@ const FichaImpl = ({
         </section>
       )}
 
-      {entity?.kind === 'command' && (onMutate || onEditFlow) && (
+      {entity?.kind === 'command' && (onMutate || onEditFlow) && !soloLectura && (
         <section>
           <h3>{t('detail.edit')}</h3>
           {onMutate && (
@@ -593,6 +546,12 @@ const FichaImpl = ({
         snapshot={snapshot}
         edges={out.filter((e) => e.layer === 'proven')}
         title={t('detail.ev.proven')}
+        onVisor={onVisor}
+      />
+      <Evidence
+        snapshot={snapshot}
+        edges={out.filter((e) => e.layer === 'declared' && e.kind === 'agent-uses-mcp')}
+        title={conCodigo(t('detail.ev.mcp'))}
         onVisor={onVisor}
       />
       <Evidence

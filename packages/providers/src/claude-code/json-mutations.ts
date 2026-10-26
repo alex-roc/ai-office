@@ -175,7 +175,8 @@ export const planSetMcpjsonDisabled = (
 ): MutationPlan => planOf(path, before, computeSetMcpjsonDisabled(path, name, disabled))
 
 /**
- * `~/.claude.json` → `projects[<ruta>].disabledMcpServers`. Claude Code reescribe ese archivo a
+ * `~/.claude.json` → `projects[<ruta>].disabledMcpServers`. Si no existe se rechaza
+ * (`claude-json-missing`): lo crea Claude Code. Claude Code reescribe ese archivo a
  * menudo y es estado suyo, no configuración: se parsea, se toca SOLO esa lista y se serializa con
  * dos espacios. Si el original no es exactamente lo que `JSON.stringify(_, null, 2)` produciría (otro
  * formato, números que no sobreviven al viaje, escapes), se rechaza en vez de reformatearlo.
@@ -183,7 +184,16 @@ export const planSetMcpjsonDisabled = (
 const computeSetClaudeJsonMcpDisabled =
   (path: string, projectKey: string, name: string, disabled: boolean): Compute =>
   (before) => {
-    const text = before ?? '{}\n'
+    // Ese archivo lo crea Claude Code, no nosotros: si no existe, aún no ha corrido ninguna sesión y
+    // inventarlo con solo esta lista sería escribir estado suyo desde cero.
+    if (before === null) {
+      throw new OfficeError(
+        'claude-json-missing',
+        `${path} does not exist yet: Claude Code has not created it. Open a Claude Code session first`,
+        { kind: 'not-found', params: { path } },
+      )
+    }
+    const text = before
     const doc = parseObject(text, path)
     const canonical = JSON.stringify(doc, null, 2)
     if (text !== `${canonical}\n` && text !== canonical) {

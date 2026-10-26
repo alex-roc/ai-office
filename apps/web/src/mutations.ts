@@ -19,7 +19,10 @@ export interface MutationPlan {
   warnings: string[]
   /** Los mismos avisos con `code` y parámetros, en el mismo orden; opcional según la versión del daemon. */
   warningDetails?: DetalleCodigo[]
+  /** `'absent'` si el archivo aún no existe, o `multi:…` si el plan toca varios: se devuelve tal cual al aplicar. */
   etag: string
+  /** Un plan que toca varios archivos (`mcp.enable` de un servidor desactivado en varios ajustes): `diff` es la suma. */
+  files?: { scope: string; path: string; diff: string; changed: boolean }[]
 }
 
 export type MutationKind =
@@ -39,11 +42,20 @@ export type MutationKind =
   | 'skill.unretire'
   | 'agent.archive'
   | 'agent.unarchive'
+  | 'plugin.enable'
+  | 'plugin.disable'
+  | 'mcp.enable'
+  | 'mcp.disable'
 
 export interface MutationRequest {
   kind: MutationKind
   entityId: string
   value?: unknown
+}
+
+/** El `value` de un plugin o de un servidor MCP de `.mcp.json`: en qué ajustes se escribe. */
+export interface ValorAjustes {
+  scope: 'user' | 'project' | 'local'
 }
 
 export const planMutation = (req: MutationRequest): Promise<MutationPlan> =>
@@ -52,12 +64,14 @@ export const planMutation = (req: MutationRequest): Promise<MutationPlan> =>
 export const applyMutation = (req: MutationRequest & { etag: string }): Promise<{ etag: string }> =>
   apiPost<{ etag: string }>('/api/mutations/apply', { ...req, lang: getLang() })
 
-/** Lo que se crea desde la interfaz: un archivo nuevo en la carpeta de usuario. */
+/** Lo que se crea desde la interfaz: un archivo nuevo en la carpeta de usuario o en la del proyecto activo. */
 export interface CreateRequest {
   kind: 'agent' | 'skill' | 'command'
   name: string
   description: string
   body?: string
+  /** Dónde nace; sin él, en el usuario. `project` exige un ámbito de proyecto abierto. */
+  scope?: 'user' | 'project'
 }
 
 /** Crear no tiene etag que comprobar (el archivo aún no existe): es el plan de una mutación sin él. */

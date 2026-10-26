@@ -40,3 +40,20 @@ test('las etiquetas de grado existen en los dos idiomas y cubren los mismos grad
   assert.equal(GRADE_LABELS.en.certified, 'certified')
   assert.equal(GRADE_LABELS.es.certified, 'acreditada')
 })
+
+const DIA = 24 * 60 * 60 * 1000
+const ahora = Date.UTC(2026, 9, 26)
+
+test('midiendo un proyecto, acreditada pide dos semanas distintas en vez de dos proyectos', () => {
+  const base = { uses: 5, sessions: 4, projects: 1, lastUsedAt: ahora - DIA }
+  assert.equal(gradeOf({ ...base, weeks: 1 }, ahora, { singleProject: true }), 'practicing')
+  assert.equal(gradeOf({ ...base, weeks: 2 }, ahora, { singleProject: true }), 'certified')
+  // Sin medir un proyecto, sigue mandando el número de proyectos.
+  assert.equal(gradeOf({ ...base, weeks: 5 }, ahora), 'practicing')
+  assert.equal(gradeOf({ ...base, projects: 2 }, ahora), 'certified')
+})
+
+test('caducada no se acredita ni midiendo un proyecto', () => {
+  const viejo = { uses: 9, sessions: 9, projects: 1, weeks: 6, lastUsedAt: ahora - 120 * DIA }
+  assert.equal(gradeOf(viejo, ahora, { singleProject: true }), 'practicing')
+})

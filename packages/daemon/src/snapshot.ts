@@ -14,6 +14,7 @@ import {
   type EntityActivity,
   type HistoryScan,
   MAIN_THREAD_ID,
+  type MeasuredOver,
   ownCatalog,
   pluginStats,
   readHistoryWindowDays,
@@ -22,6 +23,7 @@ import {
   scanHistory,
   scanKnownProjects,
   scanTranscripts,
+  scopeHistory,
   skillStats,
   type TranscriptScan,
   vocabularyGap,
@@ -42,6 +44,12 @@ export interface Snapshot {
   activity: Record<string, EntityActivity>
   /** El ámbito con el que se construyó: solo lo del usuario, o además lo de un proyecto. */
   scope: ScopeSelection
+  /**
+   * De qué se mide la actividad: `all` (ámbito de usuario: todo el historial) o `project` (solo las
+   * invocaciones con directorio de trabajo dentro del proyecto, y cuántas sesiones lo componen).
+   * Con `project`, "sin uso" quiere decir "sin uso en este proyecto".
+   */
+  measuredOver: MeasuredOver
   /** Proyectos conocidos (de `~/.claude.json` y de los transcripts); los que existen, primero. */
   knownProjects: KnownProject[]
   /** Archivos del catálogo que no se pudieron leer (symlink roto, .md ilegible), con el motivo. */
@@ -66,7 +74,9 @@ export interface Snapshot {
     pluginsUnused: number
     /** Tokens de las descriptions de las skills de plugins HABILITADOS (aparte de `descriptionTokens`). */
     pluginDescriptionTokens: number
-    /** Servidores MCP que se cargan (ni tapados, ni desactivados, ni de un plugin apagado) y los sin uso. */
+    /** Servidores MCP y los sin uso. En ámbito de proyecto son los que se CARGAN (ni tapados, ni
+     * desactivados, ni de un plugin apagado); en ámbito de usuario el estado por proyecto no se
+     * conoce y cuenta como cargado todo lo que no está tapado: son los CONFIGURADOS. */
     mcpServers: number
     mcpUnused: number
     descriptionTokens: number
@@ -123,11 +133,15 @@ export const assembleSnapshot = (
   const own = ownCatalog(catalog)
   const liveAgents = own.agents
 
+  // La actividad se mide solo sobre lo ocurrido dentro del ámbito (todo, o el proyecto). Se filtra
+  // lo ya escaneado: el transcript no se vuelve a leer al cambiar de ámbito.
+  const measured = scopeHistory(scan, history, scope)
   const declared = buildDeclaredGraph(catalog)
-  const proven = buildProvenGraph(scan.invocations, catalog)
+  const proven = buildProvenGraph(measured.invocations, catalog)
   const edges = [...declared, ...proven]
-  const activityMap = activityByTarget(scan.invocations, catalog, {
-    commandUse: history.commandUse,
+  const activityMap = activityByTarget(measured.invocations, catalog, {
+    commandUse: measured.commandUse,
+    singleProject: scope.kind === 'project',
   })
 
   const agentsUnused = liveAgents.filter((a) => !activityMap.get(a.id)?.uses)
@@ -145,6 +159,7 @@ export const assembleSnapshot = (
     edges,
     activity: Object.fromEntries(activityMap),
     scope,
+    measuredOver: measured.measuredOver,
     knownProjects,
     scanErrors: errors,
     vocabularyGaps,

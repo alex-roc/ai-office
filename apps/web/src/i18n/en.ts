@@ -169,7 +169,8 @@ export const en = {
   'help.keys.title': 'Keyboard shortcuts',
   'help.key.office': 'show the Office',
   'help.key.blueprint': 'show the Blueprint',
-  'help.key.search': 'search for an agent, skill or command and take the view to it',
+  'help.key.search':
+    'search for an agent, skill, command, plugin or MCP server and take the view to it',
   'help.key.zoom': 'zoom in or out',
   'help.key.fit': 'fit everything',
   'help.key.esc': 'close the open dialog or clear the selection',
@@ -266,7 +267,7 @@ export const en = {
   'detail.visibleAs': 'visible as {path}',
 
   // --- Buscador -----------------------------------------------------------------------------
-  'search.title': 'Search agent, skill or command',
+  'search.title': 'Search agent, skill, command, plugin or MCP server',
   'search.label': 'Name of what you are looking for',
   'search.placeholder': 'type a name…',
   'search.results': 'Results',
@@ -415,7 +416,8 @@ export const en = {
   'header.new.command': 'new command',
   'spark.title': 'Uses per week, last {n} weeks (oldest to current): {values}',
 
-  'ledger.aria': 'Ledger: every agent, skill and command with what it has really done',
+  'ledger.aria':
+    'Ledger: every agent, skill, command, plugin and MCP server with what it has really done',
   'ledger.filter.type': 'Filter by kind',
   'ledger.filter.all': 'all',
   'ledger.filter.agents': 'agents',
@@ -439,8 +441,10 @@ export const en = {
   'ledger.col.cost': 'description cost',
   'ledger.col.cites': 'skills cited / proven',
   'ledger.col.calls': 'agents it calls',
-  'ledger.src.name': 'Name of the file in {agents}, {skills} or {commands}',
-  'ledger.src.kind': 'Which folder the file lives in: agents/, skills/ or commands/',
+  'ledger.src.name':
+    'Name of the file in {agents}, {skills} or {commands}; a plugin is named name@marketplace and a server by its key in .mcp.json or ~/.claude.json',
+  'ledger.src.kind':
+    'Which folder the file lives in: agents/, skills/ or commands/; or a plugin or an MCP server',
   'ledger.src.grade':
     'Grade from uses, sessions and projects (it expires after 90 days). Source: {transcripts}',
   'ledger.src.uses':
@@ -451,7 +455,7 @@ export const en = {
   'ledger.src.trend':
     'Uses per week over the last 12 weeks, oldest first; the dot is the current week. Source: {transcripts}',
   'ledger.src.cost':
-    'Skills only: estimated tokens of its description, loaded in every session. Source: `description` in SKILL.md',
+    'Skills and plugins: estimated tokens of the description (a plugin adds up those of its skills), loaded in every session. Source: `description` in SKILL.md',
   'ledger.src.cites':
     'Agents only: skills its prompt cites or preloads (agents/*.md) over skills it has really invoked ({transcripts})',
   'ledger.src.calls':
@@ -576,7 +580,7 @@ export const en = {
   'help.key.ledger': 'show the Ledger',
   'help.ledger.title': 'How to read the Ledger',
   'help.ledger.table':
-    'One row per agent, skill and command. Click a column title to sort, and a row to open its details on the right. Each column title says which file or field its figure comes from.',
+    'One row per agent, skill, command, plugin and MCP server, with filters by kind and by scope. Click a column title to sort, and a row to open its details on the right. Each column title says which file or field its figure comes from.',
   'help.ledger.filters':
     'Filter by kind, tick **only unused** to get your clean-up list, or search by name.',
   'help.ledger.trend':
@@ -600,4 +604,205 @@ export const en = {
   'err.reason.invalid-body': 'The text to write is not valid: it must be plain text.',
   'err.reason.wrong-entity-kind':
     'That change does not apply to this kind of entity ({kind} on a {entityKind}). The interface and the daemon may be out of sync.',
+
+  // --- Ámbito, "Show", plugins y servidores MCP ---------------------------------------------
+  'count.sessions_one': '{n} session',
+  'count.sessions_other': '{n} sessions',
+  'kind.plugin': 'plugin',
+
+  'scope.label': 'scope',
+  'scope.title':
+    'What ai-office reads: only your user files, or also the .claude/ folder and .mcp.json of a project. Changing it rebuilds everything.',
+  'scope.option.user': 'User ({root})',
+  'scope.group.claude': 'Projects with a .claude/ folder',
+  'scope.group.other': 'Other projects you have worked in',
+  'scope.missing': 'folder missing',
+  'scope.current': 'current',
+  'scope.demo':
+    'The static demo cannot switch scope: it was built for one fictional project. Install ai-office to switch between your own.',
+  'scope.user': 'user',
+  'scope.project': 'project',
+  'scope.plugin': 'plugin {name}',
+  'scope.local': 'local',
+  'scope.managed': 'managed',
+  'scope.builtin': 'built-in',
+  'settings.user': 'user (your settings.json, every project)',
+  'settings.project': 'project (.claude/settings.json, shared with the team)',
+  'settings.local': 'local (.claude/settings.local.json, private)',
+  'settings.user.short': 'user settings',
+  'settings.project.short': 'project settings',
+  'settings.local.short': 'local settings',
+  'settings.managed.short': 'managed settings',
+
+  'show.button': 'show',
+  'show.title':
+    'Choose what the Office and the Blueprint draw. The Ledger always lists everything.',
+  'show.legend': 'Show in the Office and the Blueprint',
+  'show.agents': 'Agents',
+  'show.skills': 'Skills',
+  'show.commands': 'Commands',
+  'show.plugins': 'Plugins',
+  'show.mcp': 'MCP servers',
+  'show.note': 'Saved in {path}. The Ledger ignores this and always shows everything.',
+  'show.note.demo': 'Kept only in this tab. The Ledger ignores this and always shows everything.',
+
+  'read.plugins': 'plugins on',
+  'read.plugins.src':
+    'Enabled plugins over installed ones ({path} plus the enabledPlugins of your settings). {unused} unused; the descriptions of the skills of the enabled ones cost ~{tokens} tokens in every session.',
+  'read.mcp': 'mcp servers',
+  'read.mcp.src': 'Servers declared in {files}',
+  'read.mcp.unused': 'mcp unused',
+  'read.mcp.unused.src': 'MCP servers with not a single call in the {transcripts}',
+
+  'room.servers': 'servers',
+  'room.servers.reason':
+    'One rack per MCP server. Lit lights: it has been used (more lights, more use). Dark: never. Faded: disabled.',
+  'room.plugin': 'plugin · {name}',
+  'room.plugin.reason': 'Plugin v{version} from {marketplace}. {description} Click to open it.',
+  'tip.mcp': '{name} · MCP · {uses} · {grade}',
+  'tip.mcp.never': '{name} · MCP · never used',
+  'tip.mcp.transport': ' · {transport} · {scope}',
+  'tip.mcp.off': ' · disabled',
+  'tip.shadowed': ' · shadowed by {by}',
+  'office.legend.plugin':
+    '**Room plate `plugin · name`**: an enabled plugin, with its own agents and skills. Click the plate to open it.',
+  'office.legend.rack':
+    '**Server room**: one rack per MCP server. Lit lights mean it has been used, dark ones that it never was, and faded means disabled.',
+  'office.legend.shadowed':
+    '**Faded in the lobby**: something another scope shadows (a project agent with the same name as yours, for example). Claude Code does not load it.',
+
+  'help.config.title': 'Scope, plugins and MCP',
+  'help.config.scope':
+    '**Scope** (header): User reads only your own files; picking a project also reads its `.claude/` folder and `.mcp.json`. Switching rebuilds everything and is remembered.',
+  'help.config.show':
+    '**Show** (header): tick which families the Office and the Blueprint draw. Plugins start on only when they bring few items. The Ledger always lists everything.',
+  'help.config.plugins':
+    '**Plugins** are rooms named `plugin · name` in the Office and carry a purple ring in the Blueprint. Their files are read-only because an update overwrites them; enable or disable one from its details.',
+  'help.config.mcp':
+    '**MCP servers** are racks in the server room and hexagons in the Blueprint. Lit lights mean used, dark never, faded disabled. Only the names of environment variables are shown, never their values.',
+  'welcome.config':
+    '**Scope and Show** (header): pick User or a project, and choose what the Office and the Blueprint draw. Plugins get their own rooms and MCP servers their own racks.',
+
+  'plano.legend.shapes':
+    'hexagon = MCP server; purple ring = piece of a plugin; faded = not loaded',
+
+  'ledger.filter.plugins': 'plugins',
+  'ledger.filter.mcp': 'MCP',
+  'ledger.filter.scope': 'Filter by scope',
+  'ledger.scope.all': 'any scope',
+  'ledger.scope.user': 'user',
+  'ledger.scope.project': 'project',
+  'ledger.scope.plugin': 'plugin',
+  'ledger.col.scope': 'scope',
+  'ledger.col.enabled': 'enabled',
+  'ledger.src.scope':
+    'Where it comes from: your user folder, the project (.claude/ or .mcp.json) or a plugin',
+  'ledger.src.enabled':
+    'Plugins and servers: whether they are on (enabledPlugins, disabledMcpServers). Others: loaded, that is, not shadowed and not from a disabled plugin',
+  'ledger.enabled.perProject.short': 'per project',
+  'ledger.enabled.perProject':
+    'Claude Code decides this per project. Open a project scope to see it.',
+  'ledger.shadowed': '(shadowed)',
+  'ledger.shadowed.title': 'Another scope shadows it: Claude Code does not load it',
+  'ledger.cost.disabled': 'Disabled: its description is not loaded, so it costs nothing now.',
+  'ledger.tools': 'Most used tools: {tools}',
+
+  'detail.fromPlugin': 'From plugin {plugin} · read-only (plugin files are overwritten on update).',
+  'detail.plugin.open': 'open the plugin',
+  'detail.shadowed': 'Shadowed by {by}: Claude Code does not load this one.',
+  'detail.shadowed.open': 'open it',
+  'detail.ev.mcp': 'MCP servers its `tools:` names',
+  'detail.ev.mcpName': 'MCP · {name}',
+  'detail.ev.dangling': '(not configured)',
+  'detail.byTool': 'tools it called',
+  'detail.byTool.more_one': '+{n} more tool',
+  'detail.byTool.more_other': '+{n} more tools',
+  'detail.byTool.src': 'Calls per tool (mcp__server__tool) in the {transcripts}',
+
+  'detail.plugin.about': 'plugin',
+  'detail.plugin.version': 'version',
+  'detail.plugin.marketplace': 'marketplace',
+  'detail.plugin.enabled': 'enabled',
+  'detail.plugin.source': 'decided by',
+  'detail.plugin.source.src':
+    'The settings file whose enabledPlugins names it with the highest precedence. Installed list: {root}/plugins/installed_plugins.json',
+  'detail.plugin.source.none': 'no settings name it',
+  'detail.plugin.cost': 'description cost',
+  'detail.plugin.cost.off': 'not loaded now',
+  'detail.plugin.cost.src':
+    'Estimated tokens of the descriptions of its skills, loaded in every session while it is enabled',
+  'detail.plugin.agents_one': '{n} agent',
+  'detail.plugin.agents_other': '{n} agents',
+  'detail.plugin.skills_one': '{n} skill',
+  'detail.plugin.skills_other': '{n} skills',
+  'detail.plugin.commands_one': '{n} command',
+  'detail.plugin.commands_other': '{n} commands',
+  'detail.plugin.mcp_one': '{n} MCP server',
+  'detail.plugin.mcp_other': '{n} MCP servers',
+  'detail.plugin.enable': 'enable plugin',
+  'detail.plugin.disable': 'disable plugin',
+  'detail.plugin.reload':
+    'Claude Code only re-reads plugins on reload: run `/reload-plugins` in your open sessions after saving.',
+  'detail.plugin.managed':
+    'A managed settings file also names this plugin. It takes precedence over whatever you write here.',
+  'detail.plugin.userOnly':
+    'Only your user settings are available. Open a project scope to write to its project or local settings.',
+  'detail.plugin.readonly':
+    'Plugin files are copies that updates overwrite, so ai-office only reads them.',
+  'detail.settings.where': 'write it in',
+  'diff.title.plugin.enable': 'enable plugin {name} in the {where}',
+  'diff.title.plugin.disable': 'disable plugin {name} in the {where}',
+
+  'detail.mcp.about': 'server',
+  'detail.mcp.scope': 'declared in',
+  'detail.mcp.transport': 'transport',
+  'detail.mcp.command': 'command',
+  'detail.mcp.host': 'host',
+  'detail.mcp.enabled': 'enabled here',
+  'detail.mcp.disabledIn': 'disabled in',
+  'detail.mcp.keys': 'configuration keys',
+  'detail.mcp.env': 'environment variables',
+  'detail.mcp.headers': 'headers',
+  'detail.mcp.keys.note': 'Only the names are shown: ai-office never shows the values.',
+  'detail.mcp.who.declared': 'its `tools:` names it (declared)',
+  'detail.mcp.who.none': 'No agent names it and the history shows no call.',
+  'detail.mcp.enable': 'enable server',
+  'detail.mcp.disable': 'disable server',
+  'detail.mcp.perProject':
+    'Claude Code keeps which servers are off **per project**: this changes only the open project.',
+  'detail.mcp.needsProject':
+    'Claude Code decides which MCP servers are on **per project**, so there is nothing to switch at user scope. Open a project to enable or disable it.',
+  'detail.mcp.fileNote':
+    'Never edited line by line: only its on/off state is changed, with a diff.',
+  'diff.title.mcp.enable': 'enable MCP server {name} in {project}',
+  'diff.title.mcp.disable': 'disable MCP server {name} in {project}',
+
+  'create.scope': 'where',
+  'create.scope.project': 'in the project {name} (its .claude/ folder)',
+  'create.scope.user': 'for you, in {root}',
+
+  // --- Avisos y errores nuevos del daemon ---------------------------------------------------
+  'warn.reload-needed':
+    'Claude Code only re-reads plugins on reload: run /reload-plugins in your open sessions (or start a new one) to pick up the change.',
+  'warn.overridden':
+    'The {source} settings set this the other way and take precedence: the change is written but has no effect until that is removed.',
+  'err.reason.read-only':
+    '{name} is read-only: it comes from a plugin (or managed settings), and an update would overwrite any edit.',
+  'err.reason.unexpected-format':
+    '{path} does not have a shape ai-office can safely rewrite, so it was left untouched.',
+  'err.reason.unreadable-json': '{path} is not valid JSON, so it was left untouched.',
+  'err.reason.invalid-scope': 'Invalid scope "{scope}".',
+  'err.reason.needs-project': 'That needs a project scope: choose a project in the header first.',
+  'err.reason.project-not-found': 'The project folder does not exist: {path}',
+  'err.reason.invalid-config': 'The configuration is not valid ({key}).',
+
+  // --- Sobre qué se mide la actividad -------------------------------------------------------
+  'measure.label': 'measured over',
+  'measure.all': 'all projects',
+  'measure.project': 'this project · {sessions}',
+  'measure.title':
+    'Uses, grades and "unused" are counted over this: in a project scope, only the sessions that ran inside it. Source: {transcripts}',
+  'src.measured.project': ', only this project ({sessions})',
+  'err.reason.claude-json-missing':
+    'Claude Code has not created ~/.claude.json yet: open a session first.',
 } satisfies Record<string, string>

@@ -145,9 +145,13 @@ export const resolveScope = async (req: ScopeRequest = {}): Promise<ResolvedScop
   return { scope: { kind: 'user' }, source: 'default' }
 }
 
-/** Raíces donde las escrituras de ESTE ámbito tienen permitido caer, además de `~/.claude`. */
+/**
+ * Raíces donde las escrituras de ESTE ámbito tienen permitido caer, además de `~/.claude`. Solo
+ * `<proyecto>/.claude`: ninguna mutación escribe `<proyecto>/.mcp.json` (los servidores nunca se
+ * crean ni se editan; su estado va a los settings), así que no se autoriza (mínimo privilegio).
+ */
 export const scopeRoots = (scope: ScopeSelection): string[] =>
-  scope.kind === 'project' ? [join(scope.path, '.claude'), join(scope.path, '.mcp.json')] : []
+  scope.kind === 'project' ? [join(scope.path, '.claude')] : []
 
 /**
  * Lo que una petición de `config.json` exige además de ser válida de forma: que un ámbito de

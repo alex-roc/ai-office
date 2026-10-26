@@ -10,7 +10,11 @@ import { writeDemoHome } from '../src/demo/synth.ts'
  * una planta gris. Estas pruebas fijan que sigue haciéndolo aunque cambie el catálogo ficticio.
  */
 let home = ''
-let snapshot: Awaited<ReturnType<typeof import('@ai-office/daemon').buildSnapshot>>
+type Snap = Awaited<ReturnType<typeof import('@ai-office/daemon').buildSnapshot>>
+/** El de la demo tal como se abre (proyecto acme-web: actividad SOLO de ese proyecto). */
+let snapshot: Snap
+/** El mismo historial medido en ámbito de usuario: todas las sesiones de todos los proyectos. */
+let userSnapshot: Snap
 
 before(async () => {
   home = await mkdtemp(join(tmpdir(), 'ai-office-demo-test-'))
@@ -18,6 +22,7 @@ before(async () => {
   process.env.CLAUDE_HOME = home
   const { buildSnapshot } = await import('@ai-office/daemon')
   snapshot = await buildSnapshot()
+  userSnapshot = await buildSnapshot({ kind: 'user' })
 })
 
 after(async () => {
@@ -41,8 +46,8 @@ test('hay de todo: sin estrenar, en uso y comandos tecleados', () => {
   assert.ok(snapshot.stats.declaredAgentSkill > snapshot.stats.provenAgentSkill)
 })
 
-test('los grados cubren acreditada y en práctica', () => {
-  const grados = new Set(Object.values(snapshot.activity).map((a) => a.grade))
+test('los grados cubren acreditada y en práctica (en ámbito de usuario: acreditar pide 2 proyectos)', () => {
+  const grados = new Set(Object.values(userSnapshot.activity).map((a) => a.grade))
   assert.ok(grados.has('certified'), 'alguna skill acreditada')
   assert.ok(grados.has('practicing'), 'alguna skill en práctica')
 })
@@ -55,7 +60,7 @@ test('la planta tiene despachos con sentido y un archivo común', () => {
 })
 
 test('las series por semana tienen forma: 12 posiciones y la actividad repartida, no en la última', () => {
-  const series = Object.values(snapshot.activity)
+  const series = Object.values(userSnapshot.activity)
   assert.ok(series.length > 0)
   for (const a of series) {
     assert.equal(a.weekly.length, 12, a.id)
@@ -70,7 +75,7 @@ test('las series por semana tienen forma: 12 posiciones y la actividad repartida
     'skill:claude-code/user/style-guide',
     'command:claude-code/user/review',
   ]) {
-    const w = snapshot.activity[id]?.weekly ?? []
+    const w = userSnapshot.activity[id]?.weekly ?? []
     assert.ok(w.filter((n) => n > 0).length >= 6, `${id}: ${JSON.stringify(w)}`)
     assert.ok((w[11] ?? 0) < w.reduce((x, y) => x + y, 0) / 2, `${id}: no todo en la última`)
   }
@@ -82,7 +87,7 @@ test('byProject reparte los usos por proyecto en agentes, skills y comandos', ()
     'skill:claude-code/user/style-guide',
     'command:claude-code/user/review',
   ]) {
-    const a = snapshot.activity[id]
+    const a = userSnapshot.activity[id]
     const por = Object.values(a?.byProject ?? {})
     assert.ok(por.length >= 2, id)
     assert.equal(
@@ -165,13 +170,36 @@ test('la demo trae plugins: uno habilitado usado a medias y otro deshabilitado',
   assert.equal(snapshot.catalog.skills.filter((s) => s.scope === 'plugin').length, 4)
   assert.ok(!snapshot.planta.deposito.some((id) => id.includes('/plugin/')))
 
-  const uses = (id: string) => snapshot.activity[`skill:claude-code/plugin/${id}`]?.uses ?? 0
+  // La actividad completa se mira en ámbito de usuario: en el de proyecto solo cuenta acme-web.
+  const act = userSnapshot.activity
+  const uses = (id: string) => act[`skill:claude-code/plugin/${id}`]?.uses ?? 0
   assert.ok(uses('release-kit:notes-polish') > 0 && uses('release-kit:tag-check') > 0)
   assert.equal(uses('release-kit:rollback-plan'), 0, 'a medias: una skill del plugin nunca se usa')
-  assert.ok((snapshot.activity['command:claude-code/plugin/release-kit:preflight']?.uses ?? 0) > 0)
-  const total = snapshot.activity['plugin:claude-code/plugin/release-kit@acme-tools']
+  assert.ok((act['command:claude-code/plugin/release-kit:preflight']?.uses ?? 0) > 0)
+  const total = act['plugin:claude-code/plugin/release-kit@acme-tools']
   assert.ok(total && total.uses > 0 && total.weekly.length === 12)
-  assert.equal(snapshot.activity['plugin:claude-code/plugin/legacy-lint@acme-tools'], undefined)
+  assert.equal(act['plugin:claude-code/plugin/legacy-lint@acme-tools'], undefined)
+})
+
+test('la demo mide por ámbito: en el proyecto solo cuenta lo hecho allí; en usuario, todo', () => {
+  const over = snapshot.measuredOver
+  assert.equal(over.kind, 'project')
+  assert.ok(over.kind === 'project' && over.sessions > 0 && over.path.endsWith('acme-web'))
+  assert.deepEqual(userSnapshot.measuredOver, { kind: 'all' })
+  const id = 'skill:claude-code/user/style-guide'
+  const mine = snapshot.activity[id]
+  const all = userSnapshot.activity[id]
+  assert.ok(
+    mine && all && mine.uses > 0 && mine.uses < all.uses,
+    'el proyecto ve menos que el total',
+  )
+  // Cada uso del proyecto cae en acme-web: ningún otro proyecto aparece en su desglose.
+  for (const a of Object.values(snapshot.activity)) {
+    for (const key of Object.keys(a.byProject ?? {})) assert.match(key, /acme-web/, a.id)
+  }
+  // Lo que solo se hizo en otro proyecto (tag-check es de acme-api) no existe aquí.
+  assert.equal(snapshot.activity['skill:claude-code/plugin/release-kit:tag-check'], undefined)
+  assert.ok(snapshot.stats.skillsUnused >= userSnapshot.stats.skillsUnused)
 })
 
 test('la demo trae servidores MCP de usuario y de proyecto, con actividad también desde subagentes', () => {

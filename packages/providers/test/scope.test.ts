@@ -203,7 +203,7 @@ test('el home del usuario no se toma por un proyecto aunque tenga .claude/agents
 
 test('las raíces permitidas del ámbito: solo con proyecto, y solo .claude y .mcp.json', () => {
   assert.deepEqual(scopeRoots({ kind: 'user' }), [])
-  assert.deepEqual(scopeRoots({ kind: 'project', path: '/p' }), ['/p/.claude', '/p/.mcp.json'])
+  assert.deepEqual(scopeRoots({ kind: 'project', path: '/p' }), ['/p/.claude'])
 })
 
 test('config.json: validación estricta, parches y escritura auditada', async () => {

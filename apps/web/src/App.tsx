@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { Avisos, useAvisos } from './Avisos.tsx'
 import { Ayuda, Bienvenida } from './Ayuda.tsx'
+import { parcheDeAmbito } from './alcance.ts'
 import { fetchSnapshot, getToken, subscribeToken } from './api.ts'
 import { Buscador } from './Buscador.tsx'
 import { Cabecera } from './Cabecera.tsx'
 import { Crear } from './Crear.tsx'
+import { type ConfigView, fetchConfig, patchConfig } from './config.ts'
 import { hayDialogoAbierto } from './Dialogo.tsx'
 import { DiffDialog } from './Diff.tsx'
 import { DEMO, urlInstalar } from './demo.ts'
@@ -29,6 +31,7 @@ import {
 import { Plano } from './Plano.tsx'
 import { conCodigo } from './Rico.tsx'
 import { Sala } from './sala/Sala.tsx'
+import { aplicarShow, resolverShow, type Show } from './show.ts'
 import type { Snapshot } from './types.ts'
 import type { ControlVista } from './vista.ts'
 
@@ -152,8 +155,71 @@ const App = () => {
     if (conectado && errorRef.current) recargar()
   }, [conectado, recargar])
 
-  // La Sala y el editor no ven los agentes archivados; la ficha y el buscador, sí.
-  const dibujado = useMemo(() => (snapshot ? sinArchivados(snapshot) : null), [snapshot])
+  // --- Configuración propia: ámbito y "Show" --------------------------------------------------
+  // Se lee de `/api/config` al conectar (y de nuevo si cambia el token o el daemon vuelve). Sin
+  // ella —un daemon antiguo, o un fallo— todo sigue funcionando con los valores por defecto.
+  const [ajustes, setAjustes] = useState<ConfigView | null>(null)
+  const [showGuardado, setShowGuardado] = useState<Partial<Show>>({})
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `conectado` no se lee, pero reintenta la lectura al volver el daemon
+  useEffect(() => {
+    if (!token && !DEMO) return
+    let vivo = true
+    fetchConfig().then(
+      (c) => {
+        if (!vivo) return
+        setAjustes(c)
+        setShowGuardado(c.config.show ?? {})
+      },
+      () => undefined,
+    )
+    return () => {
+      vivo = false
+    }
+  }, [token, conectado])
+
+  const show = useMemo(
+    () => (snapshot ? resolverShow(snapshot, showGuardado) : null),
+    [snapshot, showGuardado],
+  )
+
+  /** Una casilla de "Show": se ve al momento y se guarda; si no se pudo guardar, se vuelve a lo que había. */
+  const cambiarShow = useCallback(
+    (parche: Partial<Show>) => {
+      setShowGuardado((prev) => ({ ...prev, ...parche }))
+      patchConfig({ show: parche }).then(
+        (c) => setAjustes(c),
+        (e: unknown) => {
+          avisar('error', mensajeDeError(e))
+          fetchConfig().then(
+            (c) => setShowGuardado(c.config.show ?? {}),
+            () => undefined,
+          )
+        },
+      )
+    },
+    [avisar],
+  )
+
+  /** Cambiar de ámbito reconstruye el snapshot en el daemon: lo seleccionado puede ya no existir. */
+  const cambiarAmbito = useCallback(
+    async (valor: string) => {
+      try {
+        setAjustes(await patchConfig(parcheDeAmbito(valor)))
+        setSelected(null)
+        await reload()
+      } catch (e) {
+        avisar('error', mensajeDeError(e))
+      }
+    },
+    [avisar, reload],
+  )
+
+  // La Sala, el Plano y el editor no ven los agentes archivados ni lo que "Show" apaga; la ficha, el
+  // buscador y el Registro, sí: ahí está todo.
+  const dibujado = useMemo(
+    () => (snapshot && show ? aplicarShow(sinArchivados(snapshot), show) : null),
+    [snapshot, show],
+  )
 
   // --- Escrituras -----------------------------------------------------------------------------
   const [flow, setFlow] = useState<{ flow: Flow; clave: number } | null>(null)
@@ -456,7 +522,7 @@ const App = () => {
   }, [elegirVista, controlActivo])
 
   // --- Pintado --------------------------------------------------------------------------------
-  if (!snapshot || !dibujado) {
+  if (!snapshot || !dibujado || !show) {
     if (error) return <PantallaError error={error} cargando={cargando} onReintentar={reload} />
     return <div className="loading">{t(DEMO ? 'app.loading.demo' : 'app.loading')}</div>
   }
@@ -476,6 +542,11 @@ const App = () => {
         onEncuadrar={encuadrar}
         onBuscar={() => setBuscando(true)}
         onAyuda={() => setAyuda(true)}
+        show={show}
+        onShow={cambiarShow}
+        onAmbito={cambiarAmbito}
+        rutaConfig={ajustes?.path ?? null}
+        ambitoBloqueado={DEMO && (ajustes?.scopeLocked ?? true)}
       />
       {DEMO && (
         <div className="banda demo" role="note">
@@ -544,6 +615,7 @@ const App = () => {
           onMutate={pedirMutacion}
           onLote={pedirLote}
           onSelect={setSelected}
+          onAmbito={cambiarAmbito}
           visor={visor}
           onVisor={abrirVisor}
           onCerrarVisor={() => setVisor(null)}

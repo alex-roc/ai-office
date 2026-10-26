@@ -22,10 +22,10 @@ cp "$ROOT"/apps/web/public/sprites/*.png "$OUT/sprites/"
 
 echo "==> demo estática de la interfaz"
 SNAP_DIR="$(mktemp -d)"
-node "$ROOT/scripts/demo-snapshot.ts" "$SNAP_DIR/snapshot.json"
+node "$ROOT/scripts/demo-snapshot.ts" "$SNAP_DIR"
 VITE_DEMO=1 pnpm --filter @ai-office/web exec vite build --base ./ --outDir "$OUT/demo" --emptyOutDir
 mkdir -p "$OUT/demo/demo"
-cp "$SNAP_DIR/snapshot.json" "$OUT/demo/demo/snapshot.json"
+cp "$SNAP_DIR"/snapshot*.json "$OUT/demo/demo/"
 rm -rf "$SNAP_DIR"
 
 touch "$OUT/.nojekyll"

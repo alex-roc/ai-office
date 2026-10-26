@@ -3,7 +3,8 @@
 [Español](es/GOTCHAS.md)
 
 Each of these cost at least one debugging session. Read them before touching the Office, the
-Blueprint, the daemon or the hooks: almost all of them fail **silently**.
+Blueprint, the daemon, the hooks, or what is written to Claude Code's files (plugins, MCP, scope):
+almost all of them fail **silently**.
 
 **CSS variables in SVG.** A presentation attribute (`fill="var(--ink)"`, `stroke="var(--x)"`) does
 NOT resolve CSS variables: the element is drawn invisible, with no error in the console. Colors
@@ -221,3 +222,74 @@ plates, tooltips and labels are written once when the scene is painted. Switchin
 re-apply the snapshot to the scene (`Sala.tsx` does it), or the Office stays in the old language
 while the rest of the page changes. Toasts are composed when they are created and keep their
 language; errors in bands and dialogs keep their key and are translated again.
+
+**Edit dialogs are painted in a portal on `<body>`.** They are opened from the side panel, and inside
+the `aside` they inherited its styles (its `aside.side h3` rules reach the dialog's heading) and its
+scrolling, and were clipped by its box. `Dialogo.tsx` renders every dialog with
+`createPortal(…, document.body)`. Nothing fails: the dialog just comes out wrongly styled or cut
+off, and the CSS looks right.
+
+**`~/.claude.json` is rewritten by Claude Code, so we only edit it when we can reproduce it byte for
+byte.** The file is Claude Code's state, not configuration, and it rewrites it often. A write that
+re-serializes it would change its formatting (and possibly numbers or escapes that do not survive a
+round trip) in a file whose format is Claude Code's. `computeSetClaudeJsonMcpDisabled` parses it and
+requires the original to be exactly `JSON.stringify(parsed, null, 2)` (with or without the trailing
+newline, which is preserved); otherwise it is refused with `unexpected-format` instead of being
+reformatted. Settings files are different on purpose: they are ours to edit, so their indentation is
+detected and kept.
+
+**Deleting a key from `enabledPlugins` does not disable the plugin.** The key is merged across
+user < project < local < managed, so removing it from one file lets a `true` from a lower one win
+again, and the plugin stays on with no error. Disabling writes an explicit `false`. A `false` in a
+file that a higher one overrides (managed) is written but has no effect: the plan warns `overridden`.
+
+**Disabled MCP servers live in two different places, and writing in the wrong one does nothing.**
+A server from `.mcp.json` is turned off by name in `disabledMcpjsonServers` of a settings file; any
+other (user, local, plugin) in `projects[<path>].disabledMcpServers` of `~/.claude.json`. The wrong
+list is valid JSON that Claude Code simply never consults for that server.
+
+**The key of a project in `~/.claude.json` is not documented, and a wrong one is silent.** The scope
+holds the project's real path, Claude Code may have keyed it by the path as typed (through a symlink;
+on macOS `/tmp` is `/private/tmp`). `claudeJsonProjectKey` tries the path, its real path and any key
+whose real path matches; if none exists, a new entry is created under the real path, which Claude
+Code may never read. Same for the name of a plugin server in that list (`plugin:<plugin>:<server>`, as
+`/mcp` shows it): it is an assumption, not a documented fact.
+
+**In a user scope an MCP server is neither on nor off: its state is unknown.** Claude Code stores it
+per project, so without one the honest value is `enabled: null`, not `true`. It is counted as loaded
+and the toggle is refused (`needs-project`); showing it as "on" would be a claim with no source.
+
+**MCP tool names are not the names in the config.** Claude Code replaces whatever is not
+`[A-Za-z0-9_-]` with `_` when it builds `mcp__<server>__<tool>`, and a plugin's server becomes
+`plugin_<plugin>_<server>`. Matching on the raw name makes a server look unused with no error;
+`mcpTranscriptKey` applies the same rule to the catalog. And the prefilter in `transcripts.ts` has to
+know `"name":"mcp__`: if it does not, the calls never reach the parser and a server with hundreds of
+calls shows none.
+
+**The scope filters what is counted, not what is read.** All transcripts are scanned once; a project
+scope then keeps only the invocations whose `cwd` is inside the project (real paths, prefix WITH a
+separator, worktrees and subdirectories included) and a user scope keeps all of them. "Unused" in a
+project means "not used in this project". Three traps: comparing paths as strings fails through a
+symlink (`/tmp` vs `/private/tmp` on macOS) and for a deleted worktree, which `realpath` cannot
+resolve (its nearest existing ancestor is resolved instead); a bare `startsWith(path)` makes
+`/p/app-old` part of `/p/app`; and an invocation with no `cwd` cannot be placed, so it counts in no
+project. Typed commands (`history.jsonl`) are filtered by their `project` the same way, which is why
+their events now carry the `sessionId`. The snapshot says what it measured over in `measuredOver`: if
+the interface shows "unused" it has to say unused where.
+
+**A plugin skill is cited by name, and the graph has to read it.** Its path changes with every version,
+so `agent.skillMentions` writes `- **kit:lint** — \`kit:lint\``. Two details in `findMentions`: a line
+is ONE mention even if the name appears twice (the bold one comes first and has no backtick, so
+judging only the first hit dropped a perfectly explicit citation), and `:` before the name does not
+count as a boundary, or citing `kit:lint` would credit the user skill `lint`.
+
+**A plugin's activity is not the sum of its entities'.** Three skills of a plugin used in one session
+are one session, not three: sessions and projects are sets. `activityByTarget` accumulates the
+plugin's bucket in parallel with each use instead of adding up the children, and summing them in the
+UI inflates the sessions and, with them, the grade.
+
+**`CLAUDE_HOME` has to isolate everything, or a test reads the real machine.** Beyond `agents/`,
+`skills/` and `settings.json`: the plugins directory (otherwise it reads
+`CLAUDE_CODE_PLUGIN_CACHE_DIR` and the real `installed_plugins.json`), the managed directory (the
+machine's `managed-settings.json` and `managed-mcp.json` would leak into a copy) and `.claude.json`
+(which lives INSIDE the directory, not in `~/`). A test that sees a plugin it never installed is this.

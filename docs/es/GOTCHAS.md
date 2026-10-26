@@ -3,7 +3,8 @@
 [English](../GOTCHAS.md)
 
 Cada uno de estos costó al menos una sesión de depuración. Léelos antes de tocar la Sala, el
-Plano, el daemon o los hooks: casi todos fallan **en silencio**.
+Plano, el daemon, los hooks o lo que se escribe en los archivos de Claude Code (plugins, MCP, ámbito):
+casi todos fallan **en silencio**.
 
 **Variables CSS en SVG.** Un atributo de presentación (`fill="var(--ink)"`, `stroke="var(--x)"`) NO
 resuelve variables CSS: el elemento se dibuja invisible, sin ningún error en consola. Los colores
@@ -220,3 +221,78 @@ tooltips y rótulos se escriben una vez al pintar la escena. Cambiar de idioma t
 aplicar el snapshot a la escena (lo hace `Sala.tsx`), o la Sala se queda en el idioma anterior
 mientras el resto de la página cambia. Los avisos efímeros se redactan al crearse y conservan su
 idioma; los errores de las bandas y los diálogos guardan su clave y se vuelven a traducir.
+
+**Los diálogos de edición se pintan en un portal sobre `<body>`.** Los abre la ficha lateral, y
+dentro del `aside` heredaban sus estilos (sus reglas `aside.side h3` alcanzan al título del diálogo)
+y su desplazamiento, y se recortaban con su caja. `Dialogo.tsx` pinta todos los diálogos con
+`createPortal(…, document.body)`. No falla nada: el diálogo sale mal estilado o cortado y el CSS
+parece correcto.
+
+**`~/.claude.json` lo reescribe Claude Code, así que solo lo editamos si podemos reproducirlo byte a
+byte.** Ese archivo es estado de Claude Code, no configuración, y lo reescribe a menudo. Una escritura
+que lo volviera a serializar cambiaría su formato (y quizá números o escapes que no sobreviven al
+viaje de ida y vuelta) en un archivo cuyo formato es de Claude Code.
+`computeSetClaudeJsonMcpDisabled` lo parsea y exige que el original sea exactamente
+`JSON.stringify(parseado, null, 2)` (con o sin salto de línea final, que se conserva); si no, lo
+rechaza con `unexpected-format` en vez de reformatearlo. Los archivos de ajustes son distintos a
+propósito: son nuestros para editar, así que se detecta y se conserva su indentación.
+
+**Borrar una clave de `enabledPlugins` no deshabilita el plugin.** La clave se combina entre
+usuario < proyecto < local < gestionado, así que quitarla de un archivo deja que vuelva a ganar un
+`true` de uno inferior, y el plugin sigue encendido sin ningún error. Deshabilitar escribe un `false`
+explícito. Un `false` en un archivo que otro superior anula (el gestionado) se escribe pero no surte
+efecto: el plan avisa con `overridden`.
+
+**Los servidores MCP desactivados viven en dos sitios distintos, y escribir en el equivocado no hace
+nada.** Uno de `.mcp.json` se apaga por nombre en `disabledMcpjsonServers` de un archivo de ajustes;
+cualquier otro (usuario, local, plugin) en `projects[<ruta>].disabledMcpServers` de `~/.claude.json`.
+La lista equivocada es JSON válido que Claude Code simplemente nunca consulta para ese servidor.
+
+**La clave de un proyecto en `~/.claude.json` no está documentada, y una equivocada es silenciosa.**
+El ámbito guarda la ruta real del proyecto; Claude Code puede haberlo registrado con la ruta tal como
+se tecleó (a través de un symlink; en macOS `/tmp` es `/private/tmp`). `claudeJsonProjectKey` prueba
+la ruta, su ruta real y cualquier clave cuya ruta real coincida; si no hay ninguna, se crea una
+entrada nueva bajo la ruta real, que Claude Code quizá nunca lea. Lo mismo con el nombre de un
+servidor de plugin en esa lista (`plugin:<plugin>:<servidor>`, como lo enseña `/mcp`): es un
+supuesto, no un hecho documentado.
+
+**En ámbito de usuario un servidor MCP no está ni encendido ni apagado: su estado se desconoce.**
+Claude Code lo guarda por proyecto, así que sin uno el valor honesto es `enabled: null`, no `true`.
+Cuenta como cargado y el interruptor se rechaza (`needs-project`); enseñarlo como «encendido» sería
+afirmar algo sin fuente.
+
+**El nombre de una herramienta MCP no es el nombre del config.** Claude Code sustituye por `_` todo
+lo que no sea `[A-Za-z0-9_-]` al construir `mcp__<servidor>__<herramienta>`, y el servidor de un
+plugin pasa a ser `plugin_<plugin>_<servidor>`. Casar por el nombre crudo hace que un servidor parezca
+sin uso sin ningún error; `mcpTranscriptKey` aplica la misma regla al catálogo. Y el prefiltro de
+`transcripts.ts` tiene que conocer `"name":"mcp__`: si no, las llamadas no llegan nunca al parser y un
+servidor con cientos de llamadas no enseña ninguna.
+
+**El ámbito filtra lo que se cuenta, no lo que se lee.** Los transcripts se escanean una vez; un ámbito
+de proyecto se queda luego solo con las invocaciones cuyo `cwd` está dentro del proyecto (rutas reales,
+prefijo CON separador, worktrees y subdirectorios incluidos) y uno de usuario con todas. «Sin uso» en un
+proyecto significa «no usado en este proyecto». Tres trampas: comparar rutas como cadenas falla a
+través de un symlink (`/tmp` frente a `/private/tmp` en macOS) y con un worktree borrado, que
+`realpath` no puede resolver (se resuelve su ancestro existente más cercano); un `startsWith(ruta)` a
+pelo mete `/p/app-old` dentro de `/p/app`; y una invocación sin `cwd` no se puede situar, así que no
+cuenta en ningún proyecto. Los comandos tecleados (`history.jsonl`) se filtran igual por su `project`,
+y por eso sus eventos llevan ahora el `sessionId`. El snapshot dice sobre qué midió en `measuredOver`:
+si la interfaz enseña «sin uso» tiene que decir sin uso dónde.
+
+**Una skill de plugin se cita por nombre, y el grafo tiene que leerlo.** Su ruta cambia con cada
+versión, así que `agent.skillMentions` escribe `- **kit:lint** — \`kit:lint\``. Dos detalles de
+`findMentions`: una línea es UNA mención aunque el nombre salga dos veces (la del negrita va primero y
+no lleva backtick, así que juzgar solo el primer acierto descartaba una cita perfectamente explícita),
+y un `:` antes del nombre no cuenta como frontera, o citar `kit:lint` acreditaría a la skill de usuario
+`lint`.
+
+**La actividad de un plugin no es la suma de la de sus entidades.** Tres skills de un plugin usadas
+en una misma sesión son una sesión, no tres: las sesiones y los proyectos son conjuntos.
+`activityByTarget` acumula el cubo del plugin en paralelo a cada uso en vez de sumar a los hijos, y
+sumarlos en la interfaz infla las sesiones y, con ellas, el grado.
+
+**`CLAUDE_HOME` tiene que aislar todo, o un test lee la máquina real.** Además de `agents/`, `skills/`
+y `settings.json`: el directorio de plugins (si no, lee `CLAUDE_CODE_PLUGIN_CACHE_DIR` y el
+`installed_plugins.json` real), el directorio gestionado (el `managed-settings.json` y el
+`managed-mcp.json` de la máquina se colarían en una copia) y `.claude.json` (que vive DENTRO del
+directorio, no en `~/`). Un test que ve un plugin que nunca instaló es esto.
