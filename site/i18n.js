@@ -96,7 +96,7 @@
       'El grado de una skill satura: el uso nº 50 no vale más que el 3.º, y caduca tras 90 días sin uso.',
     'install.title': 'Instalar',
     'install.lede':
-      'Requiere Node 22.16 o posterior. Nada se escribe en tu configuración sin enseñarte antes el diff.',
+      'Requiere Node 22.18 o posterior. Nada se escribe en tu configuración sin enseñarte antes el diff.',
     'install.plugin.t': 'Como plugin de Claude Code',
     'install.plugin.d':
       'Recomendado. Los hooks los declara el plugin, así que tu <code>settings.json</code> no se toca. Añade el comando <code>/censo</code>.',

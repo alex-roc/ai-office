@@ -10,7 +10,7 @@ los comentarios y la interfaz están en español; los identificadores, en inglé
 
 ```bash
 git clone https://github.com/alex-roc/ai-office && cd ai-office
-pnpm install          # pnpm only (packageManager is pinned); Node ≥ 22.16
+pnpm install          # pnpm only (packageManager is pinned); Node ≥ 22.18
 pnpm demo             # daemon + UI against a fictional ~/.claude, safe to edit
 pnpm dev:web          # Vite dev server on :7378 (proxies /api to the daemon on :7377)
 ```

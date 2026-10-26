@@ -29,7 +29,7 @@ en `tsdown.config.ts` con un `alias` explícito a sus archivos fuente, no vía e
 `node_modules`: así el build no depende de si el workspace los tiene enlazados, y
 `packages/cli/package.json` puede publicarse sin fingir que son paquetes de npm reales.
 
-**Alternativa que se descartó**: publicar el TypeScript crudo (Node ≥ 22.16 lo ejecuta nativo, sin
+**Alternativa que se descartó**: publicar el TypeScript crudo (Node ≥ 22.18 lo ejecuta nativo, sin
 build). Es más simple, pero exige resolver los `import`s entre paquetes sin `node_modules` real
 (los paquetes no publicados no se pueden instalar), lo que obliga a reescribir specifiers a mano de
 todas formas. Compilar con `unbundle` da lo mismo de simple en tiempo de publicación sin ese

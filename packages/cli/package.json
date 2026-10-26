@@ -20,7 +20,7 @@
   ],
   "type": "module",
   "engines": {
-    "node": ">=22.16"
+    "node": ">=22.18"
   },
   "bin": {
     "ai-office": "./dist/packages/cli/src/index.mjs"

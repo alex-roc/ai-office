@@ -6,7 +6,7 @@
 
 [![CI](https://github.com/alex-roc/ai-office/actions/workflows/ci.yml/badge.svg)](https://github.com/alex-roc/ai-office/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-d9a05b.svg)](LICENSE)
-[![Node ≥ 22.16](https://img.shields.io/badge/node-%E2%89%A5%2022.16-7fb08a.svg)](https://nodejs.org)
+[![Node ≥ 22.18](https://img.shields.io/badge/node-%E2%89%A5%2022.18-7fb08a.svg)](https://nodejs.org)
 
 [**Live demo**](https://alex-roc.github.io/ai-office/demo/) · [Website](https://alex-roc.github.io/ai-office/) · [Leer en español](README.es.md)
 
@@ -108,7 +108,7 @@ size leave the hook, never the text, the command or its output. It can be turned
 
 ## Install
 
-Requires **Node ≥ 22.16** (it runs TypeScript natively) and **pnpm**.
+Requires **Node ≥ 22.18** (it runs TypeScript natively) and **pnpm**.
 
 **As a Claude Code plugin** (recommended: the hooks are declared by the plugin, so your
 `settings.json` is never touched; adds the `/censo` command):

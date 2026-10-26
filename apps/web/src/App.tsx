@@ -352,7 +352,11 @@ const App = () => {
   // --- Pintado --------------------------------------------------------------------------------
   if (!snapshot || !dibujado) {
     if (error) return <PantallaError mensaje={error} cargando={cargando} onReintentar={reload} />
-    return <div className="loading">leyendo ~/.claude…</div>
+    return (
+      <div className="loading">
+        {DEMO ? 'abriendo la oficina de demostración…' : 'leyendo ~/.claude…'}
+      </div>
+    )
   }
 
   const erroresEscaneo = erroresDeEscaneo(snapshot)

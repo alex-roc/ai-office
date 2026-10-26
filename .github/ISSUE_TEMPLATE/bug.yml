@@ -17,7 +17,7 @@ body:
     id: versions
     attributes:
       label: Versions · Versiones
-      placeholder: "ai-office 0.1.0, Node 22.16, Claude Code 2.x, macOS 15"
+      placeholder: "ai-office 0.1.0, Node 22.18, Claude Code 2.x, macOS 15"
   - type: textarea
     id: doctor
     attributes:

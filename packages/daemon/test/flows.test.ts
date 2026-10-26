@@ -77,3 +77,13 @@ test('un nombre sin letras ni números da un error claro', async () => {
   await assert.rejects(() => previewFlow(flowOf('¿¿??'), catalog), /no sirve para un comando/)
   await assert.rejects(() => saveFlow(flowOf('!!!'), '', catalog), /no sirve para un comando/)
 })
+
+test('el primer flujo de una instalación sin commands/ se guarda: la carpeta se crea', async () => {
+  const home = realpathSync(mkdtempSync(join(tmpdir(), 'aio-flows-vacio-')))
+  process.env.CLAUDE_HOME = home
+  mkdirSync(join(home, 'agents'), { recursive: true })
+  writeFileSync(join(home, 'agents/revisor.md'), '---\nname: revisor\ndescription: d\n---\nc\n')
+  const { catalog } = await scanCatalogReport()
+  await saveFlow(flowOf('primero'), '', catalog)
+  assert.match(readFileSync(join(home, 'commands/primero.md'), 'utf8'), /description: nuevo/)
+})

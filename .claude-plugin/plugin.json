@@ -28,5 +28,6 @@
     }
   },
   "homepage": "https://alex-roc.github.io/ai-office/",
-  "repository": "https://github.com/alex-roc/ai-office"
+  "repository": "https://github.com/alex-roc/ai-office",
+  "icon": "./.claude-plugin/icon.png"
 }

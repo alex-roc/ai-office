@@ -15,6 +15,16 @@ const here = dirname(fileURLToPath(import.meta.url))
 const root = join(here, '..')
 const cli = join(root, 'packages', 'cli', 'src', 'index.ts')
 
+// El plugin ejecuta TypeScript directamente: Node lo admite sin bandera desde la 22.18. Con una
+// versión anterior el error sería un ERR_UNKNOWN_FILE_EXTENSION que no dice qué hacer.
+const [major, minor] = process.versions.node.split('.').map(Number)
+if (major < 22 || (major === 22 && minor < 18)) {
+  console.error(
+    `ai-office necesita Node 22.18 o posterior (tienes ${process.versions.node}): ejecuta TypeScript sin compilar.`,
+  )
+  process.exit(1)
+}
+
 // El plugin se clona sin node_modules. Con pnpm cada paquete del monorepo tiene los suyos, así que
 // se resuelve desde el paquete que los usa en vez de mirar una carpeta concreta.
 const resolvesFrom = (pkg, dep) => {

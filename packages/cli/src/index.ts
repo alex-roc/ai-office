@@ -73,8 +73,12 @@ const commands: Record<string, CliCommand> = {
       ['--no-open', 'solo imprime el enlace, sin abrir el navegador'],
       ['--port 7379', 'puerto (por defecto 7379, para convivir con el real)'],
     ],
-    run: (args) =>
-      demo(Number(flagValue(args, '--port') ?? 7379), { open: !args.includes('--no-open') }),
+    run: (args) => {
+      // Misma validación que el puerto normal: `--port abc` da un mensaje claro, no un NaN.
+      const raw = flagValue(args, '--port')
+      const port = raw ? resolvePort({ AI_OFFICE_PORT: raw }) : 7379
+      return demo(port, { open: !args.includes('--no-open') })
+    },
   },
 }
 

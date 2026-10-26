@@ -1,5 +1,5 @@
-import { readFile, stat } from 'node:fs/promises'
-import { join } from 'node:path'
+import { mkdir, readFile, stat } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
 import type { Catalog } from '@ai-office/core'
 import {
   applyCreateFile,
@@ -99,7 +99,9 @@ export const saveFlow = async (flow: Flow, etag: string, catalog?: Catalog) => {
   const { exists } = await readEtag(path)
   // Un comando nuevo no tiene etag que comparar: se crea, y la creación falla si alguien lo
   // creó mientras tanto, que es la misma protección por otro camino.
-  return exists
-    ? applyWriteCommand(name, path, markdown, etag, opts)
-    : applyCreateFile('command', name, path, markdown)
+  if (exists) return applyWriteCommand(name, path, markdown, etag, opts)
+  // Una instalación sin comandos propios no tiene `commands/`, y crear exige que la carpeta
+  // exista. Solo se crea la carpeta de comandos de Claude Code, nunca otra.
+  if (dirname(path) === paths().commands) await mkdir(paths().commands, { recursive: true })
+  return applyCreateFile('command', name, path, markdown)
 }

@@ -6,7 +6,7 @@
 
 [![CI](https://github.com/alex-roc/ai-office/actions/workflows/ci.yml/badge.svg)](https://github.com/alex-roc/ai-office/actions/workflows/ci.yml)
 [![Licencia: MIT](https://img.shields.io/badge/licencia-MIT-d9a05b.svg)](LICENSE)
-[![Node ≥ 22.16](https://img.shields.io/badge/node-%E2%89%A5%2022.16-7fb08a.svg)](https://nodejs.org)
+[![Node ≥ 22.18](https://img.shields.io/badge/node-%E2%89%A5%2022.18-7fb08a.svg)](https://nodejs.org)
 
 [**Demo en vivo**](https://alex-roc.github.io/ai-office/demo/) · [Página del proyecto](https://alex-roc.github.io/ai-office/?lang=es) · [Read in English](README.md)
 
@@ -196,7 +196,7 @@ plugin valen `AI_OFFICE_PORT` y `AI_OFFICE_TELEMETRY=0`.
 
 ## Desde el código
 
-Requiere Node ≥ 22.16 (ejecuta TypeScript sin transpilar) y pnpm.
+Requiere Node ≥ 22.18 (ejecuta TypeScript sin transpilar) y pnpm.
 
 ```bash
 git clone https://github.com/alex-roc/ai-office && cd ai-office

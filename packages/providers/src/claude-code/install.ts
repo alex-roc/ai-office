@@ -29,8 +29,12 @@ import { paths } from './paths.ts'
  * lo escribe así), instalar y desinstalar reproduce el original byte a byte.
  */
 
-/** Cadena que marca un hook como propio: es lo único que nos permite reconocerlo para desinstalar. */
-const HOOK_MARKER = 'ai-office-hook'
+/**
+ * Cadena que marca un hook como propio: es lo único que nos permite reconocerlo para desinstalar.
+ * Es el nombre del ARCHIVO del relay, no un fragmento: un hook ajeno llamado
+ * `mi-ai-office-hook-log.sh` no debe tomarse por nuestro.
+ */
+const HOOK_MARKER = 'ai-office-hook.mjs'
 
 /** Los hooks propios siempre van con este matcher: es el mismo patrón que usa Claude Code para
  * los eventos que no son de herramienta (SessionStart, SessionEnd, etc. ya llegan así). */

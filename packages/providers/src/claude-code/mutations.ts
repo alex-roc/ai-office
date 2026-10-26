@@ -2,6 +2,7 @@ import { createHash, randomBytes } from 'node:crypto'
 import {
   appendFile,
   chmod,
+  lstat,
   mkdir,
   readFile,
   realpath,
@@ -721,12 +722,33 @@ export const planUnarchiveAgent = (archivedPath: string, before: string): Mutati
  * instante en el que el archivo no exista en ningún sitio, y deshacerla es, literalmente, la
  * operación inversa (`unarchiveAgent`).
  */
+/**
+ * `rename` reemplaza el destino sin avisar: archivar un `foo.md` recreado, o restaurar uno
+ * archivado cuando ya hay otro con ese nombre, perdería un archivo en silencio. Mover nunca pisa.
+ */
+const assertFree = async (path: string): Promise<void> => {
+  try {
+    await lstat(path)
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return
+    throw err
+  }
+  throw new Error(`ya hay un archivo en ${path}: renómbralo o muévelo antes, para no pisarlo`)
+}
+
 export const applyArchiveAgent = async (
   agentName: string,
   visibleSourcePath: string,
   etag: string,
   opts?: MutationOptions,
 ): Promise<ApplyResult> => {
+  // Un agente que es symlink vive en otro store: moverlo dejaría aquí un enlace roto y el agente
+  // desaparecería de la vista sin poder restaurarse desde ella.
+  if ((await lstat(visibleSourcePath)).isSymbolicLink()) {
+    throw new Error(
+      `${visibleSourcePath} es un enlace simbólico: archiva el agente en su origen, no en la proyección`,
+    )
+  }
   const realSource = await resolveWriteTarget(visibleSourcePath)
   await assertWithinRoots(realSource, opts?.extraAllowedRoots)
 
@@ -738,6 +760,7 @@ export const applyArchiveAgent = async (
   const destPath = join(archiveDir, basename(realSource))
   const realDest = await resolveWriteTarget(destPath)
   await assertWithinRoots(realDest, opts?.extraAllowedRoots)
+  await assertFree(realDest)
 
   const backup = await writeBackup('agent', agentName, current.text)
   await rename(realSource, realDest)
@@ -770,6 +793,7 @@ export const applyUnarchiveAgent = async (
   const destPath = join(dirname(dirname(realSource)), basename(realSource))
   const realDest = await resolveWriteTarget(destPath)
   await assertWithinRoots(realDest, opts?.extraAllowedRoots)
+  await assertFree(realDest)
 
   const backup = await writeBackup('agent', agentName, current.text)
   await rename(realSource, realDest)

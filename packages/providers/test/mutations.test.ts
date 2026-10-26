@@ -272,6 +272,42 @@ test('archiveAgent/unarchiveAgent: mover y devolver deja el archivo idéntico y 
   assert.equal(await readFile(path, 'utf8'), AGENT_DOC, 'vuelve idéntico byte a byte')
 })
 
+test('archivar o restaurar nunca pisa un archivo que ya está en el destino', async () => {
+  const { claudeHome } = await scratch()
+  const path = join(claudeHome, 'agents', 'code-reviewer.md')
+  await writeFile(path, AGENT_DOC, 'utf8')
+  const archived = await applyArchiveAgent('code-reviewer', path, await etagOfFile(path))
+
+  // Alguien crea otro code-reviewer.md con el archivado aún apartado: restaurar no lo pisa.
+  await writeFile(path, 'el nuevo', 'utf8')
+  await assert.rejects(
+    applyUnarchiveAgent('code-reviewer', archived.path, archived.etag),
+    /ya hay un archivo/,
+  )
+  assert.equal(await readFile(path, 'utf8'), 'el nuevo')
+
+  // Y archivar el nuevo tampoco pisa el archivado anterior.
+  await assert.rejects(
+    applyArchiveAgent('code-reviewer', path, await etagOfFile(path)),
+    /ya hay un archivo/,
+  )
+  assert.equal(await readFile(archived.path, 'utf8'), AGENT_DOC)
+})
+
+test('archivar un agente que es symlink se rechaza: dejaría un enlace roto', async () => {
+  const { claudeHome, agentsHome } = await scratch()
+  const real = join(agentsHome, 'agents', 'code-reviewer.md')
+  await mkdir(dirname(real), { recursive: true })
+  await writeFile(real, AGENT_DOC, 'utf8')
+  const link = join(claudeHome, 'agents', 'code-reviewer.md')
+  await symlink(real, link)
+  await assert.rejects(
+    applyArchiveAgent('code-reviewer', link, await etagOfFile(real)),
+    /enlace simbólico/,
+  )
+  assert.equal(await readFile(real, 'utf8'), AGENT_DOC)
+})
+
 test('conflicto: modificar el archivo entre plan y apply lanza ConflictError', async () => {
   const { claudeHome } = await scratch()
   const path = join(claudeHome, 'agents', 'code-reviewer.md')
