@@ -199,7 +199,7 @@ export const es: Record<keyof typeof en, string> = {
   'welcome.blueprint':
     '**Plano**: el mismo catálogo como grafo. Punteado = lo que tus prompts dicen; sólido = lo que los transcripts demuestran.',
   'welcome.details':
-    '**Ficha** (a la derecha): pulsa cualquier cosa para ver qué dice de sí misma, qué ha hecho y de qué archivo sale cada dato. Desde ahí puedes editarla, siempre con diff.',
+    '**Ficha** (a la derecha): pulsa cualquier cosa para ver qué dice de sí misma, qué ha hecho y de qué archivo sale cada dato. Desde ahí puedes leer el archivo y editarlo, siempre con diff.',
   'welcome.shortcuts': 'Ver atajos',
 
   // --- Panel de detalle ---------------------------------------------------------------------
@@ -378,9 +378,9 @@ export const es: Record<keyof typeof en, string> = {
   'err.reason.symlink-archive':
     '{path} es un enlace simbólico: archiva el agente en su origen, no en la proyección.',
   'err.reason.file-exists':
-    'Ya hay un archivo en {path}: usa la operación de editar, no la de crear.',
+    'Ya hay un archivo en {path}: elige otro nombre, o edita ese en vez de crearlo.',
   'err.reason.invalid-name':
-    'El nombre "{name}" no vale para un comando: usa al menos una letra o un número.',
+    'El nombre "{name}" no vale: usa minúsculas, dígitos y guiones, sin empezar por guion (un flujo necesita al menos una letra o un número).',
   'err.reason.section-unclosed': 'Sección "{section}": hay marca de inicio pero no de fin.',
   'err.reason.no-frontmatter': 'No se puede editar: el archivo no tiene frontmatter.',
 
@@ -402,4 +402,202 @@ export const es: Record<keyof typeof en, string> = {
   'problem.name-mismatch': 'El nombre "{name}" no coincide con el del archivo.',
   'problem.no-skill-md': 'No hay un SKILL.md legible.',
   'detail.problems': 'problemas',
+
+  // --- Ver y medir: Registro (Ledger), visor de archivo, quién usa una skill ------------------
+  'view.ledger': 'Registro',
+  'header.edit.title.ledger': 'Solo disponible en el Plano: cambia de vista para editar el grafo',
+  'header.new': 'nuevo',
+  'header.new.title': 'Crear un agente, una skill, un comando o un flujo',
+  'header.new.agent': 'nuevo agente',
+  'header.new.skill': 'nueva skill',
+  'header.new.command': 'nuevo comando',
+  'spark.title': 'Usos por semana, últimas {n} semanas (de la más antigua a la actual): {values}',
+
+  'ledger.aria': 'Registro: cada agente, skill y comando con lo que ha hecho de verdad',
+  'ledger.filter.type': 'Filtrar por tipo',
+  'ledger.filter.all': 'todo',
+  'ledger.filter.agents': 'agentes',
+  'ledger.filter.skills': 'skills',
+  'ledger.filter.commands': 'comandos',
+  'ledger.unused': 'solo sin usar',
+  'ledger.unused.title': 'Filas sin ningún uso registrado en los {transcripts}',
+  'ledger.search': 'buscar por nombre…',
+  'ledger.count': '{n} de {total}',
+  'ledger.none': 'Nada coincide con esos filtros.',
+  'ledger.retired': '(jubilada)',
+  'ledger.cost.retired': 'Jubilada: su description ya no se carga, así que ahora no cuesta nada.',
+  'ledger.col.name': 'nombre',
+  'ledger.col.kind': 'tipo',
+  'ledger.col.grade': 'grado',
+  'ledger.col.uses': 'usos',
+  'ledger.col.sessions': 'sesiones',
+  'ledger.col.projects': 'proyectos',
+  'ledger.col.last': 'último uso',
+  'ledger.col.trend': 'tendencia',
+  'ledger.col.cost': 'coste de description',
+  'ledger.col.cites': 'skills citadas / probadas',
+  'ledger.col.calls': 'agentes que llama',
+  'ledger.src.name': 'Nombre del archivo en {agents}, {skills} o {commands}',
+  'ledger.src.kind': 'En qué carpeta vive el archivo: agents/, skills/ o commands/',
+  'ledger.src.grade':
+    'Grado según usos, sesiones y proyectos (caduca a los 90 días). Fuente: {transcripts}',
+  'ledger.src.uses':
+    'Invocaciones registradas en los {transcripts}; los comandos tecleados salen también de history.jsonl',
+  'ledger.src.sessions': 'Sesiones distintas con al menos un uso. Fuente: {transcripts}',
+  'ledger.src.projects': 'Proyectos distintos con al menos un uso. Fuente: {transcripts}',
+  'ledger.src.last': 'Fecha del uso registrado más reciente. Fuente: {transcripts}',
+  'ledger.src.trend':
+    'Usos por semana en las últimas 12 semanas, de la más antigua a la actual; el punto es la semana en curso. Fuente: {transcripts}',
+  'ledger.src.cost':
+    'Solo skills: tokens estimados de su description, que se carga en cada sesión. Fuente: `description` en SKILL.md',
+  'ledger.src.cites':
+    'Solo agentes: skills que su prompt cita o precarga (agents/*.md) sobre las que ha invocado de verdad ({transcripts})',
+  'ledger.src.calls':
+    'Solo comandos: agentes que nombra su texto (commands/*.md). Pasa el ratón por la cifra para ver cuáles',
+
+  'detail.explain.ledger':
+    'Cada fila del registro sale de uno de tus archivos, y sus cifras de tus transcripts. Pulsa una columna para ordenar; pulsa una fila para ver aquí su ficha.',
+  'detail.trend': 'últimas 12 semanas',
+  'detail.trend.src': 'Usos por semana, de la más antigua a la actual. Fuente: {transcripts}',
+  'detail.byProject': 'por proyecto',
+  'detail.byProject.more_one': 'y {n} proyecto más',
+  'detail.byProject.more_other': 'y {n} proyectos más',
+  'detail.who': 'quién la usa',
+  'detail.who.none':
+    'Ningún agente la cita, la precarga ni la ha invocado, y ningún comando la nombra.',
+  'detail.who.proven': 'la ha invocado (acreditado)',
+  'detail.who.preloaded': 'la precarga en `skills:`',
+  'detail.who.declared': 'su prompt la cita (declarado)',
+  'detail.who.commands': 'comandos que la nombran',
+  'detail.cite.title': 'Abrir el archivo en esa línea',
+  'detail.ev.callsAgents': 'agentes que llama',
+  'detail.ev.callsSkills': 'skills que nombra',
+  'detail.openFlow.note':
+    'El editor de flujos compone el comando a partir de pasos; el editor de texto de arriba lo escribe a mano.',
+
+  'viewer.show': 'ver archivo',
+  'viewer.hide': 'ocultar archivo',
+  'viewer.aria': 'Archivo de {name}, solo lectura',
+  'viewer.close': 'cerrar',
+  'viewer.frontmatter': '⋯ frontmatter · líneas {from}–{to}',
+  'viewer.unavailable':
+    'Este daemon no manda el contenido del archivo. Actualiza ai-office para verlo aquí.',
+
+  // --- Editar: botones de la ficha y sus diálogos ---------------------------------------------
+  'edit.cancel': 'Cancelar',
+  'edit.review': 'Revisar el diff',
+  'edit.discard.title': '¿Descartar los cambios?',
+  'edit.discard.text':
+    'Has editado esto y todavía no se ha guardado nada en disco. Si sales ahora, lo que escribiste se pierde.',
+  'edit.discard.confirm': 'Descartar y salir',
+  'edit.lines_one': '{n} línea',
+  'edit.lines_other': '{n} líneas',
+  'edit.filter': 'filtrar…',
+  'edit.tokens': '~{n} tokens',
+  'edit.missing': 'no está en el catálogo',
+  'edit.byHand': 'escrita a mano en el prompt',
+  'edit.noBody':
+    'Este daemon no manda el contenido del archivo, así que no se puede editar desde aquí.',
+  'edit.noSkills': 'No hay skills en tu catálogo.',
+  'edit.noAgents': 'No hay agentes en tu catálogo.',
+  'edit.btn.description': 'editar description',
+  'edit.btn.prompt': 'editar prompt',
+  'edit.btn.skillBody': 'editar SKILL.md',
+  'edit.btn.commandBody': 'editar texto del comando',
+  'edit.btn.hint': 'pista de argumento',
+  'edit.btn.tools': 'herramientas…',
+  'edit.btn.preloaded': 'skills precargadas…',
+  'edit.btn.citations': 'skills que cita…',
+  'edit.btn.assign': 'asignar a agentes…',
+  'edit.field.description': 'description',
+  'edit.field.prompt': 'prompt (el texto tras el frontmatter)',
+  'edit.field.skillBody': 'cuerpo de SKILL.md (el texto tras el frontmatter)',
+  'edit.field.commandBody': 'texto del comando (lo que se ejecuta al teclearlo)',
+  'edit.field.hint': 'pista de argumento (sale tras el nombre del comando)',
+  'edit.hint.note': 'Déjala vacía para quitar la pista del archivo.',
+  'edit.tools.legend': 'Herramientas que este agente puede usar',
+  'edit.tools.intro':
+    'Las marcadas se escriben en `tools:`. Con "todas las herramientas" se quita el campo y el agente hereda todas.',
+  'edit.tools.all': 'todas las herramientas (hereda todo)',
+  'edit.preloaded.legend': 'Skills que se cargan al arrancar cada ejecución',
+  'edit.preloaded.intro':
+    'Precargar no añade capacidad: el agente podría invocar la skill cuando la necesite. Solo adelanta el coste, en cada arranque. El diff enseña la estimación.',
+  'edit.citations.legend': 'Skills que su prompt le dice que lea',
+  'edit.citations.intro':
+    'Se escriben en la lista gestionada al final del prompt. Una skill que el prompt cita a mano en otro sitio sale marcada y bloqueada: edita el prompt para quitarla.',
+  'edit.description.cost': 'Coste hoy: ~{n} tokens en cada sesión.',
+  'edit.vocab.note':
+    'Palabras de tus propios prompts que esta description no contiene: el modelo se guía por ellas.',
+  'edit.assign.title': 'Asignar {name} a agentes',
+  'edit.assign.legend': 'Agentes cuyo prompt cita esta skill',
+  'edit.assign.intro':
+    'Cada cambio reescribe la lista gestionada de skills de ese agente. Verás un diff por agente y se guardan juntos.',
+  'toast.nothingToAssign': 'Nada que cambiar: todos los agentes ya citan lo que elegiste.',
+  'toast.created': 'Creado {name}.',
+  'diff.title.create': 'crear {kind} {name}',
+  'diff.title.description': 'description de {name}',
+  'diff.title.prompt': 'prompt de {name}',
+  'diff.title.skillBody': 'SKILL.md de {name}',
+  'diff.title.commandBody': 'texto de /{name}',
+  'diff.title.tools': 'herramientas de {name}',
+  'diff.title.preloaded': 'skills precargadas de {name}',
+  'diff.title.mentions': 'skills citadas por {name}',
+  'diff.title.hint': 'pista de argumento de /{name}',
+  'diff.title.assign_one': 'asignar {skill}: {n} cambio en agentes',
+  'diff.title.assign_other': 'asignar {skill}: {n} cambios en agentes',
+  'diff.title.assignOne': 'skills citadas por {agent}, por {skill}',
+  'diff.batch': 'Cambian {n} archivos. Cada diff se enseña abajo y se guardan todos juntos.',
+
+  // --- Crear ----------------------------------------------------------------------------------
+  'create.title.agent': 'Nuevo agente',
+  'create.title.skill': 'Nueva skill',
+  'create.title.command': 'Nuevo comando',
+  'create.name': 'nombre',
+  'create.name.rule':
+    'Minúsculas, dígitos y guiones, hasta 64, sin empezar por guion. Es también el nombre del archivo.',
+  'create.name.empty': 'Ponle un nombre.',
+  'create.name.format':
+    'Usa solo minúsculas, dígitos y guiones, hasta 64, y no empieces por guion.',
+  'create.name.exists': 'Ese nombre ya está en uso.',
+  'create.name.placeholder.agent': 'revisor-de-codigo',
+  'create.name.placeholder.skill': 'notas-de-version',
+  'create.name.placeholder.command': 'revision-semanal',
+  'create.description': 'description',
+  'create.description.placeholder.agent': 'Cuándo debe Claude delegar en este agente',
+  'create.description.placeholder.skill': 'Cuándo debe Claude elegir esta skill',
+  'create.description.placeholder.command': 'Qué hace este comando, para el menú /',
+  'create.body.agent': 'prompt (opcional)',
+  'create.body.skill': 'cuerpo de SKILL.md (opcional)',
+  'create.body.command': 'texto del comando (opcional)',
+  'create.command.flowHint': '¿Prefieres componerlo con pasos que delegan en agentes?',
+  'create.command.flowLink': 'Usar el lienzo de flujos',
+
+  // --- Ayuda: Registro y edición --------------------------------------------------------------
+  'help.key.ledger': 'mostrar el Registro',
+  'help.ledger.title': 'Cómo leer el Registro',
+  'help.ledger.table':
+    'Una fila por agente, skill y comando. Pulsa el título de una columna para ordenar y una fila para abrir su ficha a la derecha. El título de cada columna dice de qué archivo o campo sale su cifra.',
+  'help.ledger.filters':
+    'Filtra por tipo, marca **solo sin usar** para tener tu lista de limpieza, o busca por nombre.',
+  'help.ledger.trend':
+    '**Tendencia**: usos por semana en las últimas 12 semanas; el punto es la semana en curso. **Coste de description** es lo que cuesta una skill en cada sesión.',
+  'help.edit.title': 'Editar desde la ficha',
+  'help.edit.fields':
+    'La description, las herramientas, las skills precargadas y las que cita un prompt se editan desde la ficha. Cada cambio enseña su diff antes de tocar el archivo.',
+  'help.edit.prompt':
+    '**Editar prompt** (y SKILL.md o el texto de un comando) abre un editor de texto a tamaño casi completo; avisa si sales con cambios sin guardar.',
+  'help.edit.assign':
+    'En una skill, **asignar a agentes** marca qué agentes la citan; revisas un diff por agente y se guardan juntos.',
+  'help.edit.create':
+    '**nuevo** en la cabecera crea un agente, una skill o un comando; el nombre se valida mientras escribes.',
+  'help.edit.view':
+    '**ver archivo** enseña el archivo real con sus números de línea; cada cita `archivo:línea` de la ficha lo abre en esa línea.',
+  'welcome.ledger':
+    '**Registro**: el mismo catálogo como una tabla ordenable, con usos, último uso y una tendencia semanal de cada cosa.',
+
+  // --- Errores nuevos del daemon --------------------------------------------------------------
+  'err.reason.empty-description': 'La description no puede estar vacía.',
+  'err.reason.invalid-body': 'El texto a escribir no es válido: tiene que ser texto plano.',
+  'err.reason.wrong-entity-kind':
+    'Ese cambio no corresponde a este tipo de entidad ({kind} sobre un {entityKind}). Puede que la interfaz y el daemon estén desincronizados.',
 }

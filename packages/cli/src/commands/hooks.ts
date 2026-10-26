@@ -9,11 +9,15 @@ import {
   paths,
   planInstall,
   planUninstall,
+  readInstalledPlugins,
   removeRelay,
+  resolveScope,
+  type ScopeRequest,
   stableRelayPath,
 } from '@ai-office/providers'
 import type { Messages } from '../i18n.ts'
 import { bold, dim, green, red, yellow } from '../ui.ts'
+import { scopeLine } from './start.ts'
 
 const here = dirname(fileURLToPath(import.meta.url))
 
@@ -116,19 +120,11 @@ export const hooksUninstall = async (opts: { yes: boolean }, m: Messages): Promi
 }
 
 /** ¿Está el plugin de ai-office instalado? Defensivo: el formato de `installed_plugins.json` es de
- * Claude Code y ha cambiado de versión (v1: claves de primer nivel; v2: bajo `plugins`). */
-const pluginInstalled = async (home: string): Promise<boolean> => {
-  try {
-    const raw = JSON.parse(await readFile(join(home, 'plugins', 'installed_plugins.json'), 'utf8'))
-    const registry =
-      raw && typeof raw === 'object' && raw.plugins && typeof raw.plugins === 'object'
-        ? raw.plugins
-        : raw
-    return Object.keys(registry ?? {}).some((k) => k === 'ai-office' || k.startsWith('ai-office@'))
-  } catch {
-    return false
-  }
-}
+ * Claude Code y ha cambiado de versión (`readInstalledPlugins` entiende v1 y v2). */
+const pluginInstalled = async (): Promise<boolean> =>
+  ((await readInstalledPlugins()) ?? []).some(
+    (i) => i.key === 'ai-office' || i.key.startsWith('ai-office@'),
+  )
 
 /** ¿Responde un daemon de ai-office en este puerto? `/api/health` es público. */
 const daemonAlive = async (port: number): Promise<boolean> => {
@@ -154,7 +150,11 @@ const spoolPending = async (dir: string): Promise<number> => {
 }
 
 /** Comprueba que todo esté en su sitio y dice qué falta, sin arreglar nada por su cuenta. */
-export const doctor = async (port: number, m: Messages): Promise<void> => {
+export const doctor = async (
+  port: number,
+  m: Messages,
+  scopeRequest: ScopeRequest = { auto: true },
+): Promise<void> => {
   const t = m.doctor
   const p = paths()
   const settings = await readFile(p.settings, 'utf8').catch(() => null)
@@ -165,9 +165,15 @@ export const doctor = async (port: number, m: Messages): Promise<void> => {
   console.log(bold(`  ${t.title}`))
   console.log()
   console.log(`  ${t.claudeAt(dim(p.home))}`)
+  // El ámbito que `ai-office` usaría ahora mismo, y por qué.
+  try {
+    console.log(`  ${dim(scopeLine(await resolveScope(scopeRequest), m))}`)
+  } catch (err) {
+    warn((err as Error).message)
+  }
 
   const inSettings = settings?.includes('ai-office-hook') ?? false
-  const plugin = await pluginInstalled(p.home)
+  const plugin = await pluginInstalled()
 
   if (plugin) ok(t.pluginOk)
   if (inSettings) ok(t.hooksOk)

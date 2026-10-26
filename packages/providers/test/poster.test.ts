@@ -51,6 +51,7 @@ test('los comandos usados salen rellenos', () => {
         sessions: 1,
         projects: 1,
         lastUsedAt: 1,
+        weekly: new Array<number>(12).fill(0),
         grade: 'tried',
         active: false,
       },

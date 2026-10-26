@@ -28,7 +28,17 @@ try {
   // reescriben como si la instalación viviera en ~/.claude.
   // En macOS el tmp es un symlink (/var -> /private/var): los realPath llevan la forma resuelta.
   const real = await realpath(home)
-  const text = JSON.stringify(snapshot).split(real).join('~/.claude').split(home).join('~/.claude')
+  // Los proyectos ficticios viven bajo `<home>/demo-projects/`: se muestran como si estuvieran en
+  // `~/dev/` (primero, o quedarían como `~/.claude/demo-projects/...`).
+  const text = JSON.stringify(snapshot)
+    .split(`${real}/demo-projects`)
+    .join('~/dev')
+    .split(`${home}/demo-projects`)
+    .join('~/dev')
+    .split(real)
+    .join('~/.claude')
+    .split(home)
+    .join('~/.claude')
   await writeFile(out, text)
   console.log(`snapshot de la demo -> ${out} (${(text.length / 1024).toFixed(0)} KB)`)
 } finally {

@@ -92,6 +92,7 @@ test('lo tecleado en history.jsonl suma al comando con sus sesiones y proyectos'
         lastUsedAt: 1_700_000_000_000,
         sessions: new Set(['a', 'b']),
         projects: new Set(['/x/y']),
+        events: [],
       },
     ],
     [
@@ -101,6 +102,7 @@ test('lo tecleado en history.jsonl suma al comando con sus sesiones y proyectos'
         lastUsedAt: 1_800_000_000_000,
         sessions: new Set(['s1']),
         projects: new Set(['/p']),
+        events: [],
       },
     ],
   ])
@@ -114,4 +116,80 @@ test('lo tecleado en history.jsonl suma al comando con sus sesiones y proyectos'
   assert.equal(deploy?.uses, 3)
   assert.equal(deploy?.sessions, 1)
   assert.equal(deploy?.projects, 1)
+})
+
+test('weekly: 12 ventanas de 7 días que terminan en now, la última es la actual', async () => {
+  const { catalog, scan } = await setup()
+  const DAY = 24 * 60 * 60 * 1000
+  const t = Date.parse('2026-10-01T10:00:00Z')
+
+  const hoy = activityByTarget(scan.invocations, catalog, { now: t + 2 * DAY })
+  const estilo = hoy.get('skill:claude-code/user/estilo')
+  assert.equal(estilo?.weekly.length, 12)
+  assert.deepEqual(estilo?.weekly, [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2])
+  assert.equal(estilo?.uses, 2)
+
+  // Quince días después caen en la tercera ventana empezando por el final.
+  const antes = activityByTarget(scan.invocations, catalog, { now: t + 15 * DAY })
+  assert.equal(antes.get('skill:claude-code/user/estilo')?.weekly[9], 2)
+  // Fuera de las 12 semanas: sigue contando en el total, no en la serie.
+  const lejos = activityByTarget(scan.invocations, catalog, { now: t + 100 * DAY })
+  const fuera = lejos.get('skill:claude-code/user/estilo')
+  assert.equal(fuera?.uses, 2)
+  assert.equal(
+    fuera?.weekly.reduce((a, b) => a + b, 0),
+    0,
+  )
+  // Una fecha futura (reloj desfasado) cuenta en la semana en curso.
+  const futuro = activityByTarget(scan.invocations, catalog, { now: t - DAY })
+  assert.equal(futuro.get('skill:claude-code/user/estilo')?.weekly[11], 2)
+})
+
+test('weekly y byProject: agentes por delegación, comandos tecleados más vía Skill', async () => {
+  const { catalog, scan } = await setup()
+  const DAY = 24 * 60 * 60 * 1000
+  const t = Date.parse('2026-10-01T10:00:00Z')
+  const now = t + DAY
+  const commandUse = new Map([
+    [
+      'deploy',
+      {
+        count: 3,
+        lastUsedAt: t - 8 * DAY,
+        sessions: new Set(['s9']),
+        projects: new Set(['/q']),
+        events: [
+          { ts: t - 8 * DAY, project: '/q' },
+          { ts: t - 9 * DAY, project: '/q' },
+          { ts: t - 20 * DAY, project: null },
+        ],
+      },
+    ],
+  ])
+  const activity = activityByTarget(scan.invocations, catalog, { commandUse, now })
+
+  const revisor = activity.get('agent:claude-code/user/revisor')
+  assert.equal(revisor?.weekly[11], 1, 'la delegación del hilo principal')
+  assert.deepEqual(revisor?.byProject, { '/p': 1 })
+
+  const deploy = activity.get('command:claude-code/user/deploy')
+  // Vía Skill (esta semana) + dos tecleados la semana 2 + uno sin proyecto en la 3.
+  assert.equal(deploy?.weekly[11], 1)
+  assert.equal(deploy?.weekly[10], 2)
+  assert.equal(deploy?.weekly[8], 1)
+  assert.equal(
+    deploy?.weekly.reduce((a, b) => a + b, 0),
+    4,
+  )
+  // El que no trae proyecto suma a la serie pero no al reparto por proyecto.
+  assert.deepEqual(deploy?.byProject, { '/p': 1, '/q': 2 })
+})
+
+test('byProject abrevia con ~ lo que cuelga del home y deja ajeno lo demás', async () => {
+  const { abbreviateCwd } = await import('../src/claude-code/paths.ts')
+  const { homedir } = await import('node:os')
+  assert.equal(abbreviateCwd(`${homedir()}/dev/p`), '~/dev/p')
+  assert.equal(abbreviateCwd(homedir()), '~')
+  assert.equal(abbreviateCwd('/srv/app'), '/srv/app')
+  assert.equal(abbreviateCwd(`${homedir()}x/p`), `${homedir()}x/p`)
 })

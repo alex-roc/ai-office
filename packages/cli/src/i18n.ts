@@ -32,6 +32,8 @@ const makeEn = () => {
       dryRun: 'only show the diff',
       demo: 'the interface on a fictional install: edit anything without risk',
       demoPort: 'port (default 7379, so it can run next to the real one)',
+      project: 'look at this project too (default: the one you are in, or config.json)',
+      scope: 'user = only ~/.claude; project = also the project (needs --project or being in one)',
       lang: 'interface language (en or es; in the plugin, the "Language" option)',
       version: 'show the version',
       footer:
@@ -42,6 +44,20 @@ const makeEn = () => {
       `the port "${raw}" is not valid: use a number between 1 and 65535`,
     invalidLang: (raw: string) => `the language "${raw}" is not supported: use en or es`,
     missingLangValue: 'the --lang flag needs a value: en or es',
+    invalidScope: (raw: string) => `the scope "${raw}" is not supported: use user or project`,
+    missingFlagValue: (flag: string) => `the ${flag} flag needs a value`,
+    // --- ámbito ---
+    scope: {
+      user: 'scope: user, only ~/.claude',
+      project: (path: string) => `scope: project ${path}`,
+      why: {
+        flag: 'set by a flag',
+        config: 'from config.json',
+        auto: 'detected from the current directory',
+        autoGit: 'detected from the git root',
+        default: 'no project found here; use --project to add one',
+      },
+    },
     // --- start y demo ---
     start: {
       listening: (url: string) => `listening at ${url}`,
@@ -64,6 +80,16 @@ const makeEn = () => {
       retired: (k: number) => `(${n(k)} retired)`,
       commandsNone: 'none has been run',
       commandsRun: (k: number) => `${n(k)} run at least once`,
+      pluginsTitle: 'plugins',
+      pluginsLine: (enabled: number, total: number, tokens: number) =>
+        `${n(enabled)} enabled of ${n(total)} installed · ~${n(tokens)} tokens of skill descriptions`,
+      pluginsIdle: (names: string, since: string) => `enabled but unused ${since}: ${names}`,
+      pluginsAllUsed: 'every enabled plugin has been used',
+      mcpTitle: 'MCP servers',
+      mcpLine: (servers: number, idle: number) =>
+        `${count('en', servers, 'server', 'servers')} loaded · ${n(idle)} unused`,
+      mcpIdle: (names: string, since: string) => `never called ${since}: ${names}`,
+      mcpTools: (list: string) => `most used tools: ${list}`,
       activeRatio: 'active ratio',
       ratioLine: (active: number, live: number, retired: number) =>
         `${n(active)} of ${n(live)} skills practicing or certified${
@@ -171,6 +197,8 @@ const makeEs = (): Messages => {
       dryRun: 'solo muestra el diff',
       demo: 'la interfaz sobre una instalación ficticia: se puede editar todo sin riesgo',
       demoPort: 'puerto (por defecto 7379, para convivir con el real)',
+      project: 'mira también este proyecto (por defecto: en el que estás, o config.json)',
+      scope: 'user = solo ~/.claude; project = también el proyecto (pide --project o estar en uno)',
       lang: 'idioma de la interfaz (en o es; en el plugin, la opción «Idioma»)',
       version: 'muestra la versión',
       footer: 'Todo se lee de ~/.claude (o de CLAUDE_CONFIG_DIR). Nada sale de esta máquina.',
@@ -179,6 +207,19 @@ const makeEs = (): Messages => {
     invalidPort: (raw) => `el puerto "${raw}" no es válido: usa un número entre 1 y 65535`,
     invalidLang: (raw) => `el idioma "${raw}" no está soportado: usa en o es`,
     missingLangValue: 'la opción --lang necesita un valor: en o es',
+    invalidScope: (raw) => `el ámbito "${raw}" no está soportado: usa user o project`,
+    missingFlagValue: (flag) => `la opción ${flag} necesita un valor`,
+    scope: {
+      user: 'ámbito: usuario, solo ~/.claude',
+      project: (path) => `ámbito: proyecto ${path}`,
+      why: {
+        flag: 'fijado con una opción',
+        config: 'de config.json',
+        auto: 'detectado en el directorio actual',
+        autoGit: 'detectado en la raíz git',
+        default: 'aquí no hay ningún proyecto; usa --project para añadir uno',
+      },
+    },
     start: {
       listening: (url) => `escuchando en ${url}`,
       note: 'Solo 127.0.0.1. El token cambia en cada arranque. Ctrl-C para parar.',
@@ -199,6 +240,16 @@ const makeEs = (): Messages => {
       retired: (k) => `(${n(k)} jubiladas)`,
       commandsNone: 'ninguno se ha ejecutado',
       commandsRun: (k) => `${n(k)} ejecutados alguna vez`,
+      pluginsTitle: 'plugins',
+      pluginsLine: (enabled, total, tokens) =>
+        `${n(enabled)} habilitados de ${n(total)} instalados · ~${n(tokens)} tokens de descriptions de skills`,
+      pluginsIdle: (names, since) => `habilitados sin uso ${since}: ${names}`,
+      pluginsAllUsed: 'todos los plugins habilitados se han usado',
+      mcpTitle: 'servidores MCP',
+      mcpLine: (servers, idle) =>
+        `${count('es', servers, 'servidor', 'servidores')} cargados · ${n(idle)} sin uso`,
+      mcpIdle: (names, since) => `sin ninguna llamada ${since}: ${names}`,
+      mcpTools: (list) => `herramientas más usadas: ${list}`,
       activeRatio: 'ratio activo',
       ratioLine: (active, live, retired) =>
         `${n(active)} de ${n(live)} skills en práctica o acreditadas${
@@ -306,13 +357,15 @@ const parseLang = (raw: string): Lang => {
 
 /**
  * Idioma de la terminal. Por orden: `--lang en|es` (o `--lang=es`), `AI_OFFICE_LANG` y, dentro
- * del plugin, la opción `CLAUDE_PLUGIN_OPTION_LANGUAGE`. Por defecto inglés: NO se deduce de
- * `LANG`, el producto es inglés primero. Devuelve también los argumentos sin la opción, para que
+ * del plugin, la opción `CLAUDE_PLUGIN_OPTION_LANGUAGE`; después el `lang` de `config.json`. Por
+ * defecto inglés: NO se deduce de `LANG`, el producto es inglés primero. Devuelve también los argumentos sin la opción, para que
  * los subcomandos no tengan que saber que existe.
  */
 export const resolveLang = (
   argv: string[],
   env: NodeJS.ProcessEnv = process.env,
+  /** Lo que diga `config.json` (`lang`): cuenta después de la opción y de las variables. */
+  configured?: Lang,
 ): { lang: Lang; args: string[] } => {
   const args: string[] = []
   let flag: string | undefined
@@ -329,6 +382,7 @@ export const resolveLang = (
       args.push(a)
     }
   }
-  const raw = flag ?? (env.AI_OFFICE_LANG || env.CLAUDE_PLUGIN_OPTION_LANGUAGE || 'en')
+  const raw =
+    flag ?? (env.AI_OFFICE_LANG || env.CLAUDE_PLUGIN_OPTION_LANGUAGE || configured || 'en')
   return { lang: parseLang(raw), args }
 }

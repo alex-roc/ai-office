@@ -4,10 +4,14 @@
  * nunca un vocabulario paralelo.
  */
 
-export type EntityKind = 'agent' | 'skill' | 'command' | 'mcp' | 'project' | 'tool'
+export type EntityKind = 'agent' | 'skill' | 'command' | 'mcp' | 'plugin' | 'project' | 'tool'
 
-/** De dónde sale una entidad. La precedencia efectiva es project > user > plugin. */
-export type Scope = 'user' | 'project' | 'plugin' | 'builtin'
+/**
+ * De dónde sale una entidad. Agentes: project > user > plugin; skills: user > project (los de
+ * plugin van con prefijo y no compiten). `local` y `managed` solo existen para servidores MCP
+ * (`~/.claude.json` por proyecto, y el directorio de ajustes gestionados).
+ */
+export type Scope = 'user' | 'project' | 'plugin' | 'builtin' | 'local' | 'managed'
 
 /**
  * Identificador canónico y estable: `kind:provider/scope/nombre`.
@@ -17,6 +21,9 @@ export type EntityId = string
 
 export const makeId = (kind: EntityKind, provider: string, scope: Scope, name: string): EntityId =>
   `${kind}:${provider}/${scope}/${name}`
+
+/** Id de un plugin: `plugin:claude-code/plugin/<nombre>@<marketplace>`. */
+export const pluginId = (key: string): EntityId => `plugin:claude-code/plugin/${key}`
 
 /** Procedencia en disco. `realPath` es el destino tras resolver symlinks: ahí se escribe. */
 export interface Source {
@@ -59,6 +66,8 @@ export interface EntityBase {
   /** Nombre tal y como Claude Code lo usa. */
   name: string
   scope: Scope
+  /** Plugin del que viene (`<nombre>@<marketplace>`), solo si `scope` es `plugin`. */
+  plugin?: string
   provider: string
   description: string
   source: Source
@@ -116,9 +125,62 @@ export interface Command extends EntityBase {
   body: string
 }
 
+/** Dónde está declarado un servidor MCP (ver docs/CLAUDE-CODE-CONFIG.md). */
+export type McpScope = 'user' | 'local' | 'project' | 'plugin' | 'managed'
+
+export type McpTransport = 'stdio' | 'http' | 'sse' | 'unknown'
+
+/**
+ * Un servidor MCP. NUNCA lleva valores de `env`, de `headers`, argumentos ni URLs completas: son
+ * secretos habituales. Solo el ejecutable, el host y los NOMBRES de las claves.
+ */
 export interface McpServer extends EntityBase {
   kind: 'mcp'
-  transport: string
+  scope: McpScope
+  transport: McpTransport
+  /** Solo el ejecutable (sin argumentos ni directorios). */
+  command?: string
+  /** Solo el host (sin ruta, consulta ni credenciales). */
+  urlHost?: string
+  envKeys: string[]
+  headerKeys: string[]
+  /**
+   * `false` si está desactivado (lista del proyecto o plugin deshabilitado). `null` cuando no se
+   * puede saber: Claude Code guarda esa lista por proyecto y el ámbito usuario no tiene proyecto.
+   */
+  enabled: boolean | null
+  disabledVia?: 'disabledMcpServers' | 'disabledMcpjsonServers'
+  /** Ajustes (user/project/local) cuya lista `disabledMcpjsonServers` lo nombra; solo `.mcp.json`. */
+  disabledIn?: PluginSettingsScope[]
+}
+
+/** Quién fija `enabledPlugins` o las listas de MCP desactivados: un archivo de ajustes. */
+export type PluginSettingsScope = 'user' | 'project' | 'local'
+
+export type PluginEnabledSource = PluginSettingsScope | 'managed'
+
+/**
+ * Un plugin instalado (`~/.claude/plugins/installed_plugins.json`). Sus agentes, skills y
+ * comandos viajan en `catalog.agents|skills|commands` con `scope: 'plugin'`; aquí solo sus ids.
+ */
+export interface Plugin {
+  id: EntityId
+  /** `<nombre>@<marketplace>`: la clave de `enabledPlugins`. */
+  key: string
+  name: string
+  marketplace: string
+  version: string
+  description?: string
+  installPath: string
+  enabled: boolean
+  /** Qué ajustes lo deciden (el de mayor precedencia que nombra la clave); `null` si ninguno. */
+  enabledSource: PluginEnabledSource | null
+  agents: EntityId[]
+  skills: EntityId[]
+  commands: EntityId[]
+  mcpServers: EntityId[]
+  /** Coste en tokens de las descriptions de sus skills (se cargan en cada sesión). */
+  descriptionTokens: number
 }
 
 export interface Project extends EntityBase {
@@ -138,6 +200,7 @@ export interface Catalog {
   skills: Skill[]
   commands: Command[]
   mcpServers: McpServer[]
+  plugins: Plugin[]
   projects: Project[]
   scannedAt: number
   /** Rutas leídas, para poder enseñar al usuario de dónde sale cada cosa. */
@@ -149,6 +212,7 @@ export const emptyCatalog = (): Catalog => ({
   skills: [],
   commands: [],
   mcpServers: [],
+  plugins: [],
   projects: [],
   scannedAt: Date.now(),
   roots: [],

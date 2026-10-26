@@ -1,6 +1,6 @@
 import { mkdir, readFile, stat } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
-import type { Catalog, Lang } from '@ai-office/core'
+import type { Catalog, Lang, ScopeSelection } from '@ai-office/core'
 import {
   applyCreateFile,
   applyWriteCommand,
@@ -12,6 +12,7 @@ import {
   OfficeError,
   paths,
   planWriteCommand,
+  scopeRoots,
 } from '@ai-office/providers'
 
 /**
@@ -44,8 +45,10 @@ interface FlowTarget {
   /** Nombre con el que se audita y se respalda. */
   name: string
   path: string
-  /** Raíces extra que la escritura necesita autorizar (el destino real de un symlink). */
-  opts: { extraAllowedRoots: string[] }
+  /** Raíces extra que la escritura necesita autorizar (el destino real de un symlink, el proyecto). */
+  opts: { extraAllowedRoots: string[]; entityScope?: 'user' | 'project' }
+  /** Viene de un plugin: sus archivos son copias que una actualización sobrescribe. */
+  readOnly: boolean
 }
 
 /**
@@ -54,19 +57,40 @@ interface FlowTarget {
  * un comando que es symlink no debe reemplazarse por un archivo suelto. Solo un flujo nuevo
  * construye la ruta a partir de su nombre.
  */
-const targetOf = (flow: Flow, catalog?: Catalog): FlowTarget => {
+const targetOf = (
+  flow: Flow,
+  catalog?: Catalog,
+  scope: ScopeSelection = { kind: 'user' },
+): FlowTarget => {
+  // Lo tapado por otro ámbito no es el comando que Claude Code carga.
+  const loaded = catalog?.commands.filter((c) => c.status !== 'shadowed') ?? []
   const existing =
-    catalog?.commands.find((c) => c.name === flow.name) ??
-    catalog?.commands.find((c) => c.name === flowFileName(flow).replace(/\.md$/, ''))
+    loaded.find((c) => c.name === flow.name) ??
+    loaded.find((c) => c.name === flowFileName(flow).replace(/\.md$/, ''))
   if (existing) {
     return {
       name: existing.name,
       path: existing.source.realPath,
-      opts: { extraAllowedRoots: existing.source.symlink ? [existing.source.realPath] : [] },
+      opts: {
+        extraAllowedRoots: [
+          ...(existing.source.symlink ? [existing.source.realPath] : []),
+          ...scopeRoots(scope),
+        ],
+        entityScope: existing.scope === 'project' ? 'project' : 'user',
+      },
+      readOnly: existing.source.readOnly,
     }
   }
   const name = flowFileName(flow).replace(/\.md$/, '')
-  return { name, path: commandPath(name), opts: { extraAllowedRoots: [] } }
+  return { name, path: commandPath(name), opts: { extraAllowedRoots: [] }, readOnly: false }
+}
+
+const assertWritable = (target: FlowTarget): void => {
+  if (target.readOnly) {
+    throw new OfficeError('read-only', `${target.name} comes from a plugin and is read-only`, {
+      params: { name: target.name },
+    })
+  }
 }
 
 /** Abre un comando existente en el lienzo, recuperando sus pasos. */
@@ -99,16 +123,31 @@ export const previewFlow = async (
   return { flow, markdown: compileFlow(flow, lang), path, etag, exists }
 }
 
-export const planFlow = async (flow: Flow, catalog?: Catalog, lang: Lang = 'en') => {
-  const { path } = targetOf(flow, catalog)
+export const planFlow = async (
+  flow: Flow,
+  catalog?: Catalog,
+  lang: Lang = 'en',
+  scope?: ScopeSelection,
+) => {
+  const target = targetOf(flow, catalog, scope)
+  assertWritable(target)
+  const { path } = target
   const { text, etag } = await readEtag(path)
   const plan = planWriteCommand(path, text, compileFlow(flow, lang))
   const { before: _b, after: _a, ...rest } = plan
   return { ...rest, etag }
 }
 
-export const saveFlow = async (flow: Flow, etag: string, catalog?: Catalog, lang: Lang = 'en') => {
-  const { name, path, opts } = targetOf(flow, catalog)
+export const saveFlow = async (
+  flow: Flow,
+  etag: string,
+  catalog?: Catalog,
+  lang: Lang = 'en',
+  scope?: ScopeSelection,
+) => {
+  const target = targetOf(flow, catalog, scope)
+  assertWritable(target)
+  const { name, path, opts } = target
   const markdown = compileFlow(flow, lang)
   const { exists } = await readEtag(path)
   // Un comando nuevo no tiene etag que comparar: se crea, y la creación falla si alguien lo

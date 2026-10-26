@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { readFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -8,7 +8,7 @@ import test from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { interfaceUrl } from '../src/commands/start.ts'
 import { writeDemoHome } from '../src/demo/synth.ts'
-import { cliVersion, resolvePort } from '../src/env.ts'
+import { cliVersion, extractScopeFlags, resolvePort } from '../src/env.ts'
 import { flatKeys, messagesFor, resolveLang } from '../src/i18n.ts'
 
 const INDEX = fileURLToPath(new URL('../src/index.ts', import.meta.url))
@@ -115,4 +115,102 @@ test('el puerto sale de AI_OFFICE_PORT o de la opción del plugin, y se valida',
   assert.equal(resolvePort({ AI_OFFICE_PORT: '9000', CLAUDE_PLUGIN_OPTION_PORT: '8123' }), 9000)
   assert.throws(() => resolvePort({ AI_OFFICE_PORT: 'abc' }), /is not valid/)
   assert.throws(() => resolvePort({ AI_OFFICE_PORT: '70000' }), /is not valid/)
+})
+
+test('--project y --scope se retiran de los argumentos, con o sin =', () => {
+  const r = extractScopeFlags(['census', '--project', '/p', '--poster', '--scope=user'])
+  assert.deepEqual(r.args, ['census', '--poster'])
+  assert.deepEqual(r.flags, { project: '/p', scope: 'user' })
+  assert.deepEqual(extractScopeFlags(['--project=/q']).flags, { project: '/q' })
+  assert.deepEqual(extractScopeFlags(['census']).flags, {})
+  assert.throws(() => extractScopeFlags(['--scope', 'team']), /not supported/)
+  assert.throws(() => extractScopeFlags(['--project']), /needs a value/)
+  assert.throws(() => extractScopeFlags(['--project', '--poster']), /needs a value/)
+  // Los mensajes salen en el idioma pedido.
+  assert.throws(() => extractScopeFlags(['--scope', 'x'], messagesFor('es')), /no está soportado/)
+})
+
+test('census con ámbito: plugins y MCP en secciones breves, y el ámbito resuelto en la cabecera', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'aio-cli-scope-'))
+  try {
+    await writeDemoHome(home)
+    const env = { ...process.env, CLAUDE_HOME: home, CLAUDE_CONFIG_DIR: home, NO_COLOR: '1' }
+    const exec = (...args: string[]) =>
+      execFileSync(process.execPath, [INDEX, ...args], { encoding: 'utf8', env, cwd: tmpdir() })
+    const sections = (out: string, title: string): string[] => {
+      const lines = out.split('\n')
+      const at = lines.findIndex((l) => l.trim() === title)
+      assert.ok(at >= 0, `falta la sección ${title}`)
+      const end = lines.findIndex((l, i) => i > at && l.trim() === '')
+      return lines.slice(at + 1, end)
+    }
+
+    // Por defecto manda config.json de la demo (proyecto acme-web).
+    const byConfig = exec('census')
+    assert.match(byConfig, /scope: project .*acme-web \(from config\.json\)/)
+    assert.ok(sections(byConfig, 'plugins').length <= 4)
+    assert.match(sections(byConfig, 'plugins').join('\n'), /1 enabled of 2 installed · ~\d+ tokens/)
+    const mcp = sections(byConfig, 'MCP servers')
+    assert.ok(mcp.length <= 4)
+    assert.match(mcp.join('\n'), /3 servers loaded · 1 unused/)
+    assert.match(mcp.join('\n'), /never called .*: postgres/)
+    assert.match(mcp.join('\n'), /most used tools: github\.\w+ \(\d+\)/)
+
+    // El flag manda sobre config.json: solo usuario, sin el servidor del proyecto.
+    const user = exec('census', '--scope', 'user')
+    assert.match(user, /scope: user, only ~\/\.claude \(set by a flag\)/)
+    assert.match(sections(user, 'MCP servers').join('\n'), /2 servers loaded/)
+    const proj = join(home, 'demo-projects/docs-site')
+    const viaFlag = exec('census', '--project', proj)
+    assert.match(viaFlag, /scope: project .*docs-site \(set by a flag\)/)
+    assert.match(viaFlag, /ámbito|scope/)
+    const es = exec('census', '--lang', 'es', '--scope', 'user')
+    assert.match(es, /ámbito: usuario, solo ~\/\.claude \(fijado con una opción\)/)
+    assert.match(es, /servidores MCP/)
+
+    // doctor dice el ámbito y por qué.
+    const doctor = exec('doctor')
+    assert.match(doctor, /scope: project .*acme-web \(from config\.json\)/)
+    assert.match(
+      exec('doctor', '--scope', 'user'),
+      /scope: user, only ~\/\.claude \(set by a flag\)/,
+    )
+    // Un proyecto que no existe es un error con mensaje, no un stack.
+    assert.throws(
+      () =>
+        execFileSync(process.execPath, [INDEX, 'census', '--project', '/no/existe'], {
+          env,
+          stdio: 'pipe',
+        }),
+      (e: { stderr: Buffer }) => /project directory does not exist/.test(String(e.stderr)),
+    )
+  } finally {
+    await rm(home, { recursive: true, force: true })
+  }
+})
+
+test('census: sin plugins ni servidores MCP no imprime esas secciones; y se autodetecta el proyecto desde el cwd', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'aio-cli-auto-'))
+  try {
+    const home = join(root, 'claude')
+    const proj = join(root, 'proyecto')
+    mkdirSync(join(home, 'agents'), { recursive: true })
+    mkdirSync(join(proj, '.claude/agents'), { recursive: true })
+    writeFileSync(join(home, 'agents/a.md'), '---\nname: a\ndescription: d\n---\ncuerpo\n')
+    writeFileSync(join(proj, '.claude/agents/b.md'), '---\nname: b\ndescription: d\n---\ncuerpo\n')
+    const env = { ...process.env, CLAUDE_HOME: home, CLAUDE_CONFIG_DIR: home, NO_COLOR: '1' }
+    const exec = (cwd: string, ...args: string[]) =>
+      execFileSync(process.execPath, [INDEX, ...args], { encoding: 'utf8', env, cwd })
+
+    const out = exec(root, 'census')
+    assert.doesNotMatch(out, /plugins|MCP servers/)
+    assert.match(out, /scope: user, only ~\/\.claude \(no project found here/)
+    assert.match(out, /agents +1 /)
+
+    const auto = exec(proj, 'census')
+    assert.match(auto, /scope: project .*proyecto \(detected from the current directory\)/)
+    assert.match(auto, /agents +2 /)
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
 })

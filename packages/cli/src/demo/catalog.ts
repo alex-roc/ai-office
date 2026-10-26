@@ -18,6 +18,8 @@ export interface DemoAgent {
   model?: string
   color?: string
   tools?: string
+  /** `skills:` del frontmatter: las que se precargan al arrancar (la capa `preloaded`). */
+  skills?: string
   /** Prosa del cuerpo. Las skills se citan aquí, no en un campo. */
   body: string
 }
@@ -43,7 +45,7 @@ export const DEMO_AGENTS: DemoAgent[] = [
       'Reviews a diff or a branch before it is merged. Use when the user says "review this", before a release, or after a large refactor.',
     model: 'sonnet',
     color: 'blue',
-    tools: 'Read, Grep, Glob, Bash',
+    tools: 'Read, Grep, Glob, Bash, mcp__github__get_pull_request_diff',
     body: `You review code the way a careful senior engineer would: correctness first, then clarity.
 
 Before reviewing, read ${read('style-guide')} and ${read('team-context')}.
@@ -94,6 +96,7 @@ Cite every finding with the file and line that proves it.`,
     description:
       'Writes and updates documentation: READMEs, guides, API references. Use when a feature ships without docs.',
     color: 'purple',
+    skills: 'docs-voice',
     body: `You write documentation people actually read.
 
 Match the voice in ${read('docs-voice')} and the terminology in \`team-context\`.
@@ -330,3 +333,105 @@ Follow \`incident-runbook\`.`,
     body: 'Ask `docs-writer` to compare the README and the guides with the current code.',
   },
 ]
+
+/**
+ * Agentes de PROYECTO (`<proyecto>/.claude/agents/`). Este tapa al `frontend-designer` del usuario
+ * (proyecto > usuario) para que la demo enseñe qué es un agente tapado.
+ */
+export const DEMO_PROJECT_AGENTS: DemoAgent[] = [
+  {
+    name: 'frontend-designer',
+    description:
+      'Builds acme-web screens with the storefront design system. Use for new pages, visual polish or a component that "looks off".',
+    model: 'sonnet',
+    color: 'pink',
+    tools: 'Read, Edit, Bash, mcp__figma__get_design_context, mcp__figma__get_screenshot',
+    body: `You build the acme-web storefront, one component at a time.
+
+Pull the design from Figma first, then use the tokens in ${read('design-tokens')}.
+Every component passes \`a11y-checklist\` before it is done.`,
+  },
+]
+
+/** Un plugin ficticio ya instalado, con lo que trae. */
+export interface DemoPlugin {
+  name: string
+  marketplace: string
+  version: string
+  description: string
+  enabled: boolean
+  skills: DemoSkill[]
+  commands: DemoCommand[]
+}
+
+export const DEMO_PLUGINS: DemoPlugin[] = [
+  {
+    name: 'release-kit',
+    marketplace: 'acme-tools',
+    version: '1.4.0',
+    description: 'Release helpers: polished notes, tag checks and rollback plans.',
+    enabled: true,
+    skills: [
+      skill(
+        'notes-polish',
+        'Turns a raw changelog into release notes people read. Use when announcing a version.',
+      ),
+      skill(
+        'tag-check',
+        'Verifies that the tag, the version file and the changelog agree before a release.',
+      ),
+      skill(
+        'rollback-plan',
+        'Writes the rollback steps for a release. Use when a deploy touches data or infrastructure.',
+      ),
+    ],
+    commands: [
+      {
+        name: 'preflight',
+        description: 'Run the release checklist without publishing anything',
+        body: 'Run `tag-check`, then list what is left before the release can go out.',
+      },
+    ],
+  },
+  {
+    name: 'legacy-lint',
+    marketplace: 'acme-tools',
+    version: '0.9.2',
+    description: 'Old lint rules kept around for the billing service.',
+    enabled: false,
+    skills: [
+      skill(
+        'old-eslint-rules',
+        'ESLint rules for the legacy billing service. Use when touching billing code.',
+      ),
+    ],
+    commands: [],
+  },
+]
+
+/** Servidores MCP ficticios. Los valores de `env` y `headers` son inventados: la demo comprueba que NUNCA salen. */
+export const DEMO_MCP_USER = {
+  github: {
+    type: 'stdio',
+    command: 'npx',
+    args: ['-y', '@modelcontextprotocol/server-github'],
+    env: { GITHUB_PERSONAL_ACCESS_TOKEN: 'ghp_demo_not_a_real_token' },
+  },
+  postgres: {
+    type: 'stdio',
+    command: '/usr/local/bin/mcp-postgres',
+    args: ['postgresql://demo:demo-password@localhost:5432/warehouse'],
+    env: { PGPASSWORD: 'demo-password' },
+  },
+}
+
+/** `.mcp.json` de acme-web: un servidor remoto con credenciales en la URL y en una cabecera. */
+export const DEMO_MCP_PROJECT = {
+  mcpServers: {
+    figma: {
+      type: 'http',
+      url: 'https://mcp.figma.example/mcp?token=demo-secret-token',
+      headers: { Authorization: 'Bearer demo-figma-token' },
+    },
+  },
+}

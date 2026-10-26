@@ -21,6 +21,8 @@ export interface CommandUse {
   sessions: Set<string>
   /** Directorios de trabajo (`project` del historial), tal cual. */
   projects: Set<string>
+  /** Cada vez que se tecleó, con su fecha y directorio: de aquí salen las series por semana. */
+  events: { ts: number; project: string | null }[]
 }
 
 export interface HistoryScan {
@@ -70,8 +72,10 @@ export const scanHistory = async (path = `${paths().home}/history.jsonl`): Promi
         lastUsedAt: 0,
         sessions: new Set<string>(),
         projects: new Set<string>(),
+        events: [] as { ts: number; project: string | null }[],
       }
       cur.count += 1
+      cur.events.push({ ts, project: typeof obj.project === 'string' ? obj.project : null })
       if (typeof obj.sessionId === 'string') cur.sessions.add(obj.sessionId)
       if (typeof obj.project === 'string') cur.projects.add(obj.project)
       if (ts > cur.lastUsedAt) cur.lastUsedAt = ts

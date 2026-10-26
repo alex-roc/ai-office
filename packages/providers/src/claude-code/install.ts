@@ -102,7 +102,7 @@ const parseSettings = (text: string): Record<string, unknown> => {
 /** El primer `\n<espacios>"` del archivo dice cuántos espacios usa un nivel de indentación. */
 const detectIndent = (text: string): string => text.match(/\n([ \t]+)"/)?.[1] ?? '  '
 
-const stringifySettings = (parsed: Record<string, unknown>, text: string): string => {
+export const stringifySettings = (parsed: Record<string, unknown>, text: string): string => {
   const indent = detectIndent(text)
   const out = JSON.stringify(parsed, null, indent)
   return text.endsWith('\n') ? `${out}\n` : out

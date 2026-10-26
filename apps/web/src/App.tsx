@@ -4,20 +4,26 @@ import { Ayuda, Bienvenida } from './Ayuda.tsx'
 import { fetchSnapshot, getToken, subscribeToken } from './api.ts'
 import { Buscador } from './Buscador.tsx'
 import { Cabecera } from './Cabecera.tsx'
+import { Crear } from './Crear.tsx'
 import { hayDialogoAbierto } from './Dialogo.tsx'
 import { DiffDialog } from './Diff.tsx'
 import { DEMO, urlInstalar } from './demo.ts'
 import { erroresDeEscaneo, sinArchivados } from './derivados.ts'
 import { ApiError, mensajeDeError } from './errores.ts'
-import { Ficha, type Vista } from './Ficha.tsx'
+import { type EstadoVisor, Ficha, type Vista } from './Ficha.tsx'
+import type { PedirLote, PedirMutacion } from './FichaEdicion.tsx'
 import { FlowEditor } from './FlowEditor.tsx'
 import { type Flow, openFlow, planFlow, saveFlow } from './flows.ts'
 import { useLang, useT } from './i18n/react.ts'
+import { Ledger } from './Ledger.tsx'
 import { useLiveConnection, useLiveSelector } from './live.ts'
 import {
   applyMutation,
+  type CreateRequest,
+  createEntity,
   type MutationPlan,
   type MutationRequest,
+  planCreate,
   planMutation,
 } from './mutations.ts'
 import { Plano } from './Plano.tsx'
@@ -26,11 +32,24 @@ import { Sala } from './sala/Sala.tsx'
 import type { Snapshot } from './types.ts'
 import type { ControlVista } from './vista.ts'
 
-/** Lo que espera confirmación en el diálogo de diff: una arista suelta o un comando entero. */
+/** Un cambio de un lote: se planea junto a los demás y se escribe en orden al confirmar. */
+interface ItemLote {
+  req: MutationRequest
+  plan: MutationPlan
+  title: string
+}
+
+/** Lo que espera confirmación en el diálogo de diff: una arista suelta, un comando entero, un lote o una creación. */
 interface Pendiente {
   req?: MutationRequest
   /** Presente cuando lo que se va a guardar es un flujo entero. */
   flow?: Flow
+  /** Presente cuando se va a crear un archivo nuevo. */
+  crear?: CreateRequest
+  /** Varios cambios en archivos distintos, con un solo diff y una sola confirmación. */
+  lote?: ItemLote[]
+  /** Qué hacer tras guardar con éxito (cerrar el diálogo de edición que pidió el diff). */
+  alGuardar?: () => void
   plan: MutationPlan
   title: string
 }
@@ -73,6 +92,8 @@ const App = () => {
   const [selected, setSelected] = useState<string | null>(null)
   const [vista, setVista] = useState<Vista>('sala')
   const [editing, setEditing] = useState(false)
+  const [creando, setCreando] = useState<CreateRequest['kind'] | null>(null)
+  const [visor, setVisor] = useState<EstadoVisor | null>(null)
   const [buscando, setBuscando] = useState(false)
   const [ayuda, setAyuda] = useState(false)
   const { avisos, avisar, cerrar } = useAvisos()
@@ -80,11 +101,14 @@ const App = () => {
   const salaRef = useRef<ControlVista>(null)
   const planoRef = useRef<ControlVista>(null)
   const controlActivo = useCallback(
-    () => (vista === 'sala' ? salaRef.current : planoRef.current),
+    () => (vista === 'sala' ? salaRef.current : vista === 'plano' ? planoRef.current : null),
     [vista],
   )
   const selectedRef = useRef(selected)
   selectedRef.current = selected
+  // El visor de archivo pertenece a la ficha que lo abrió: al elegir otra cosa se cierra.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: solo reacciona a `selected`
+  useEffect(() => setVisor(null), [selected])
 
   // --- Carga del snapshot ---------------------------------------------------------------------
   // Un error ya no reemplaza la aplicación: se conserva el último snapshot bueno y el fallo sale
@@ -93,10 +117,10 @@ const App = () => {
   const secuencia = useRef(0)
   const errorRef = useRef<unknown>(null)
   errorRef.current = error
-  const reload = useCallback(() => {
+  const reload = useCallback((): Promise<void> => {
     const n = ++secuencia.current
     setCargando(true)
-    fetchSnapshot().then(
+    return fetchSnapshot().then(
       (s) => {
         if (n !== secuencia.current) return
         setSnapshot(s)
@@ -110,19 +134,23 @@ const App = () => {
       },
     )
   }, [])
-  useEffect(reload, [reload])
+  // Para quien solo necesita disparar la recarga (efectos, WebSocket) sin esperar su resultado.
+  const recargar = useCallback(() => {
+    void reload()
+  }, [reload])
+  useEffect(recargar, [recargar])
   // Pegar un enlace nuevo con otro token (el daemon genera uno en cada arranque): recargar ya.
-  useEffect(() => subscribeToken(reload), [reload])
+  useEffect(() => subscribeToken(recargar), [recargar])
 
   // La actividad en vivo llega por WebSocket; si el servidor no la ofrece, la interfaz
   // funciona igual y solo se pierde la animación. No devuelve estado: un evento en vivo no
   // re-renderiza `App`, solo a quien lee el contador (ver `live.ts`).
-  useLiveConnection(token, reload)
+  useLiveConnection(token, recargar)
   // Si el daemon vuelve (el WebSocket se reconecta) y la carga había fallado, se reintenta sola.
   const conectado = useLiveSelector((s) => s.connected)
   useEffect(() => {
-    if (conectado && errorRef.current) reload()
-  }, [conectado, reload])
+    if (conectado && errorRef.current) recargar()
+  }, [conectado, recargar])
 
   // La Sala y el editor no ven los agentes archivados; la ficha y el buscador, sí.
   const dibujado = useMemo(() => (snapshot ? sinArchivados(snapshot) : null), [snapshot])
@@ -223,18 +251,63 @@ const App = () => {
   )
 
   /** Cualquier edición de la ficha: se planea, se enseña el diff y solo entonces se escribe. */
-  const pedirMutacion = useCallback(
-    async (req: MutationRequest, title: string) => {
+  const pedirMutacion = useCallback<PedirMutacion>(
+    async (req, title, alGuardar) => {
       try {
         const plan = await planMutation(req)
         setDiffError(null)
-        setPending({ req, plan, title })
+        setPending({ req, plan, title, alGuardar })
       } catch (e) {
         avisar('error', mensajeDeError(e))
       }
     },
     [avisar],
   )
+
+  /**
+   * Varias mutaciones en archivos distintos (asignar una skill a varios agentes): se planean todas
+   * antes de enseñar nada, y el diálogo las muestra juntas con un solo "guardar".
+   */
+  const pedirLote = useCallback<PedirLote>(
+    async (items, title, alGuardar) => {
+      if (items.length === 0) {
+        avisar('info', t('toast.nothingToAssign'))
+        return
+      }
+      try {
+        const planes = await Promise.all(items.map((i) => planMutation(i.req)))
+        const lote = items.map((i, n) => ({ ...i, plan: planes[n] as MutationPlan }))
+        setDiffError(null)
+        setPending({ lote, plan: (lote[0] as ItemLote).plan, title, alGuardar })
+      } catch (e) {
+        avisar('error', mensajeDeError(e))
+      }
+    },
+    [avisar, t],
+  )
+
+  /** Crear un agente, una skill o un comando: el plan enseña el diff y el diálogo sigue debajo. */
+  const prepararCreacion = useCallback(
+    async (req: CreateRequest) => {
+      try {
+        const plan = await planCreate(req)
+        setDiffError(null)
+        setPending({
+          crear: req,
+          plan: { ...plan, etag: '' },
+          title: t('diff.title.create', { kind: t(`kind.${req.kind}`), name: req.name }),
+        })
+      } catch (e) {
+        avisar('error', mensajeDeError(e))
+      }
+    },
+    [avisar, t],
+  )
+
+  /** Abre el visor de archivo de una entidad (opcionalmente en una línea). */
+  const abrirVisor = useCallback((id: string, linea?: number) => {
+    setVisor((prev) => ({ id, linea, disparo: (prev?.disparo ?? 0) + 1 }))
+  }, [])
 
   const cancelarDiff = useCallback(() => {
     setPending(null)
@@ -252,6 +325,33 @@ const App = () => {
         await saveFlow(pending.flow, pending.plan.etag)
         setFlow(null)
         avisar('ok', t('toast.flowSaved', { name: pending.flow.name }))
+      } else if (pending.crear) {
+        const r = await createEntity(pending.crear)
+        const nombre = pending.crear.name
+        setPending(null)
+        await reload()
+        setCreando(null)
+        setSelected(r.id)
+        avisar('ok', t('toast.created', { name: nombre }))
+        return
+      } else if (pending.lote) {
+        // En orden y uno a uno: son archivos distintos, cada uno con su etag. Si uno falla, lo ya
+        // escrito se retira del diálogo y quedan los pendientes, con el error a la vista.
+        const hechos = new Set<ItemLote>()
+        try {
+          for (const item of pending.lote) {
+            if (item.plan.changed) await applyMutation({ ...item.req, etag: item.plan.etag })
+            hechos.add(item)
+          }
+        } catch (e) {
+          const restantes = pending.lote.filter((i) => !hechos.has(i))
+          if (hechos.size > 0 && restantes.length > 0) {
+            setPending({ ...pending, lote: restantes, plan: (restantes[0] as ItemLote).plan })
+            reload()
+          }
+          throw e
+        }
+        avisar('ok', t('toast.saved', { title: pending.title }))
       } else if (pending.req) {
         await applyMutation({ ...pending.req, etag: pending.plan.etag })
         const { kind, entityId } = pending.req
@@ -267,6 +367,7 @@ const App = () => {
         }
       }
       setPending(null)
+      pending.alGuardar?.()
       reload()
     } catch (e) {
       if (e instanceof ApiError && e.clase === 'conflicto') {
@@ -289,7 +390,7 @@ const App = () => {
     if (v !== 'plano') setEditing(false)
     // Lo seleccionado en una vista se encuentra en la otra: se centra si tiene representación.
     const id = selectedRef.current
-    if (id) (v === 'sala' ? salaRef : planoRef).current?.centrarEn(id)
+    if (id && v !== 'registro') (v === 'sala' ? salaRef : planoRef).current?.centrarEn(id)
   }, [])
 
   const elegirDelBuscador = useCallback(
@@ -321,6 +422,9 @@ const App = () => {
           break
         case '2':
           elegirVista('plano')
+          break
+        case '3':
+          elegirVista('registro')
           break
         case '+':
         case '=':
@@ -368,6 +472,7 @@ const App = () => {
         editing={editing}
         onEditing={setEditing}
         onNuevoFlujo={nuevoFlujo}
+        onNuevo={setCreando}
         onEncuadrar={encuadrar}
         onBuscar={() => setBuscando(true)}
         onAyuda={() => setAyuda(true)}
@@ -423,6 +528,13 @@ const App = () => {
               onAviso={avisoInfo}
             />
           </div>
+          <div
+            className="vista"
+            data-activa={vista === 'registro'}
+            aria-hidden={vista !== 'registro'}
+          >
+            <Ledger snapshot={snapshot} selected={selected} onSelect={setSelected} />
+          </div>
         </div>
         <Ficha
           snapshot={snapshot}
@@ -430,7 +542,11 @@ const App = () => {
           vista={vista}
           onEditFlow={editarFlujo}
           onMutate={pedirMutacion}
+          onLote={pedirLote}
           onSelect={setSelected}
+          visor={visor}
+          onVisor={abrirVisor}
+          onCerrarVisor={() => setVisor(null)}
         />
       </main>
       {flow && (
@@ -442,9 +558,26 @@ const App = () => {
           onSave={prepararGuardadoFlujo}
         />
       )}
+      {creando && (
+        <Crear
+          kind={creando}
+          snapshot={snapshot}
+          onCerrar={() => setCreando(null)}
+          onRevisar={prepararCreacion}
+          onFlujo={
+            creando === 'command'
+              ? () => {
+                  setCreando(null)
+                  nuevoFlujo()
+                }
+              : undefined
+          }
+        />
+      )}
       {pending && (
         <DiffDialog
           plan={pending.plan}
+          lote={pending.lote?.map((i) => ({ plan: i.plan, title: i.title }))}
           title={pending.title}
           busy={saving}
           error={diffError ? mensajeDeError(diffError) : null}

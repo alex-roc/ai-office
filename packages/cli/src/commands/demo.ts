@@ -41,7 +41,8 @@ export const demo = async (
     }
   })
   try {
-    await start(port, opts)
+    // La demo no autodetecta por la carpeta desde la que se lanza: su ámbito es el de su config.json.
+    await start(port, { ...opts, scopeRequest: { auto: false } })
   } catch (err) {
     await limpiar()
     throw err

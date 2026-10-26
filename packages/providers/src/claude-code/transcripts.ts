@@ -2,6 +2,7 @@ import { createReadStream } from 'node:fs'
 import { readdir, readFile, stat } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import { createInterface } from 'node:readline'
+import { parseMcpToolName } from './mcp.ts'
 import { paths } from './paths.ts'
 
 /**
@@ -18,9 +19,14 @@ import { paths } from './paths.ts'
 export type Actor = { kind: 'main' } | { kind: 'agent'; agentType: string; agentId: string }
 
 export interface Invocation {
-  /** Nombre de la skill invocada, tal cual aparece en `tool_input.skill`. */
+  /** Nombre de la skill invocada, tal cual aparece en `tool_input.skill`; con `type: 'mcp'`, la
+   * parte `<servidor>` de `mcp__<servidor>__<herramienta>` (`plugin_<plugin>_<servidor>` en un plugin). */
   target: string
-  type: 'skill' | 'agent'
+  type: 'skill' | 'agent' | 'mcp'
+  /** Solo con `type: 'mcp'`: la herramienta llamada. */
+  tool?: string
+  /** Transcript del que sale, para citarlo como evidencia. */
+  file?: string
   actor: Actor
   sessionId: string
   projectSlug: string
@@ -41,12 +47,14 @@ export interface TranscriptScan {
 /**
  * Solo se parsean las líneas que pueden contener una invocación. Descarta la gran mayoría.
  * `"name":"Task"` es el nombre antiguo de la herramienta de subagentes (hoy `Agent`): los
- * historiales de versiones previas siguen en disco y no deben desaparecer del censo.
+ * historiales de versiones previas siguen en disco y no deben desaparecer del censo. Las
+ * herramientas MCP se llaman `mcp__<servidor>__<herramienta>`.
  */
 const isCandidate = (line: string): boolean =>
   line.includes('"name":"Skill"') ||
   line.includes('"name":"Agent"') ||
-  line.includes('"name":"Task"')
+  line.includes('"name":"Task"') ||
+  line.includes('"name":"mcp__')
 
 const parseLine = (
   line: string,
@@ -54,6 +62,7 @@ const parseLine = (
   actor: Actor,
   out: Invocation[],
   seen: Set<string>,
+  file: string,
 ): void => {
   let obj: Record<string, unknown>
   try {
@@ -81,7 +90,21 @@ const parseLine = (
       if (seen.has(toolUseId)) continue
       seen.add(toolUseId)
     }
-    if (b.name === 'Skill' && typeof b.input?.skill === 'string') {
+    const mcp = typeof b.name === 'string' ? parseMcpToolName(b.name) : null
+    if (mcp) {
+      out.push({
+        target: mcp.server,
+        type: 'mcp',
+        tool: mcp.tool ?? '',
+        file,
+        actor,
+        sessionId: String(obj.sessionId ?? ''),
+        projectSlug,
+        cwd: typeof obj.cwd === 'string' ? obj.cwd : null,
+        ts: Number.isNaN(ts) ? 0 : ts,
+        toolUseId,
+      })
+    } else if (b.name === 'Skill' && typeof b.input?.skill === 'string') {
       out.push({
         target: b.input.skill,
         type: 'skill',
@@ -127,7 +150,7 @@ const readJsonl = async (
     })
     for await (const line of rl) {
       if (!isCandidate(line)) continue
-      parseLine(line, projectSlug, actor, scan.invocations, seen)
+      parseLine(line, projectSlug, actor, scan.invocations, seen, path)
     }
   } catch (err) {
     scan.errors.push(`${path}: ${(err as Error).message}`)

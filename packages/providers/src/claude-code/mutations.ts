@@ -12,7 +12,8 @@ import {
 } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, dirname, join, resolve, sep } from 'node:path'
-import { makeId } from '@ai-office/core'
+import { type Lang, makeId, type ScopeSelection } from '@ai-office/core'
+import { stringify } from 'yaml'
 import { removeSection, upsertSection } from './body-sections.ts'
 import { OfficeError } from './errors.ts'
 import { etagOf } from './etag.ts'
@@ -90,6 +91,8 @@ export interface MutationOptions {
    * repositorio de un proyecto: el llamante, que conoce ese repo, lo añade explícitamente.
    */
   extraAllowedRoots?: string[]
+  /** De dónde es la entidad que se escribe, para que la auditoría la nombre bien. Por defecto `user`. */
+  entityScope?: 'user' | 'project'
 }
 
 /** Lo mínimo de una skill que necesita `setAgentPreloadedSkills` para estimar su coste. */
@@ -165,7 +168,7 @@ const lcsDiff = (a: string[], b: string[]): DiffOp[] => {
 const CONTEXT_LINES = 3
 
 /** Diff unificado (estilo `diff -u`) entre dos textos, con 3 líneas de contexto por hunk. */
-const buildUnifiedDiff = (path: string, before: string, after: string): string => {
+export const buildUnifiedDiff = (path: string, before: string, after: string): string => {
   if (before === after) return ''
   const a = before.split('\n')
   const b = after.split('\n')
@@ -230,7 +233,7 @@ const buildUnifiedDiff = (path: string, before: string, after: string): string =
  */
 const agentsHome = (): string => process.env.AGENTS_HOME ?? join(homedir(), '.agents')
 
-const defaultAllowedRoots = (): string[] => [paths().home, agentsHome()]
+export const defaultAllowedRoots = (): string[] => [paths().home, agentsHome()]
 
 /**
  * Resuelve la ruta real de una escritura exista o no todavía el archivo: si existe, su realpath;
@@ -238,7 +241,7 @@ const defaultAllowedRoots = (): string[] => [paths().home, agentsHome()]
  * directorio contenedor más el nombre de archivo. Así toda escritura -exista ya o sea nueva-
  * pasa por el mismo resuelto de symlinks antes del guard de rutas.
  */
-const resolveWriteTarget = async (target: string): Promise<string> => {
+export const resolveWriteTarget = async (target: string): Promise<string> => {
   try {
     return await realpath(target)
   } catch {
@@ -248,11 +251,33 @@ const resolveWriteTarget = async (target: string): Promise<string> => {
 }
 
 /**
+ * Como `resolveWriteTarget`, pero tolera que falte más de un nivel de carpetas (el `.claude/` de un
+ * proyecto todavía por crear): resuelve el ancestro más cercano que existe y le añade el resto.
+ */
+export const realWhereverItEnds = async (target: string): Promise<string> => {
+  const rest: string[] = []
+  let cur = resolve(target)
+  for (;;) {
+    try {
+      return join(await realpath(cur), ...rest)
+    } catch {
+      const up = dirname(cur)
+      if (up === cur) return resolve(target)
+      rest.unshift(basename(cur))
+      cur = up
+    }
+  }
+}
+
+/**
  * Lanza si `realTarget` cae fuera de las raíces permitidas. Como `realTarget` ya pasó por
  * `resolveWriteTarget` (que resuelve symlinks), esto también es la defensa contra `..` y contra
  * symlinks que apunten fuera: lo que se compara es siempre el destino final, no la ruta visible.
  */
-const assertWithinRoots = async (realTarget: string, extraRoots: string[] = []): Promise<void> => {
+export const assertWithinRoots = async (
+  realTarget: string,
+  extraRoots: string[] = [],
+): Promise<void> => {
   const roots = await Promise.all(
     [...defaultAllowedRoots(), ...extraRoots].map(async (root) => {
       try {
@@ -276,9 +301,9 @@ const assertWithinRoots = async (realTarget: string, extraRoots: string[] = []):
 // Primitivas de disco: lectura con etag, backup, log de auditoría, escritura atómica
 // ---------------------------------------------------------------------------------------------
 
-const sha256 = (text: string): string => createHash('sha256').update(text).digest('hex')
+export const sha256 = (text: string): string => createHash('sha256').update(text).digest('hex')
 
-const readWithEtag = async (
+export const readWithEtag = async (
   path: string,
 ): Promise<{ text: string; etag: string; mode: number }> => {
   const text = await readFile(path, 'utf8')
@@ -293,7 +318,7 @@ const readWithEtag = async (
  * `/` lo sacarían de `backups/`. Y el sufijo aleatorio evita que dos escrituras en el mismo
  * milisegundo (un guardado doble) se pisen el respaldo.
  */
-const backupPathFor = (kind: string, name: string): string => {
+const backupPathFor = (kind: string, name: string, ext = '.md'): string => {
   const safe =
     name
       .replace(/[^\p{L}\p{N}._-]+/gu, '_')
@@ -304,18 +329,23 @@ const backupPathFor = (kind: string, name: string): string => {
     'backups',
     kind,
     safe,
-    `${Date.now()}-${randomBytes(3).toString('hex')}.md`,
+    `${Date.now()}-${randomBytes(3).toString('hex')}${ext}`,
   )
 }
 
-const writeBackup = async (kind: string, name: string, text: string): Promise<string> => {
-  const backupPath = backupPathFor(kind, name)
+export const writeBackup = async (
+  kind: string,
+  name: string,
+  text: string,
+  ext?: string,
+): Promise<string> => {
+  const backupPath = backupPathFor(kind, name, ext)
   await mkdir(dirname(backupPath), { recursive: true })
   await writeFile(backupPath, text, 'utf8')
   return backupPath
 }
 
-interface AuditEntry {
+export interface AuditEntry {
   ts: number
   action: string
   entityId: string
@@ -325,14 +355,14 @@ interface AuditEntry {
   bytesDelta: number
 }
 
-const appendAudit = async (entry: AuditEntry): Promise<void> => {
+export const appendAudit = async (entry: AuditEntry): Promise<void> => {
   const logPath = join(paths().ours, 'logs', 'audit.ndjson')
   await mkdir(dirname(logPath), { recursive: true })
   await appendFile(logPath, `${JSON.stringify(entry)}\n`, 'utf8')
 }
 
 /** tmp en el MISMO directorio que el destino + rename: la escritura es atómica frente a lecturas. */
-const writeAtomic = async (path: string, data: string, mode: number): Promise<void> => {
+export const writeAtomic = async (path: string, data: string, mode: number): Promise<void> => {
   const tmp = join(dirname(path), `.ai-office.tmp.${basename(path)}.${process.pid}-${Date.now()}`)
   await writeFile(tmp, data, 'utf8')
   await chmod(tmp, mode)
@@ -370,6 +400,7 @@ interface ApplyTextArgs {
   etag: string
   compute: ComputeFn
   extraAllowedRoots?: string[]
+  entityScope?: 'user' | 'project'
 }
 
 const applyTextMutation = async (args: ApplyTextArgs): Promise<ApplyResult> => {
@@ -392,7 +423,7 @@ const applyTextMutation = async (args: ApplyTextArgs): Promise<ApplyResult> => {
   await appendAudit({
     ts: Date.now(),
     action: args.action,
-    entityId: makeId(args.kind, 'claude-code', 'user', args.name),
+    entityId: makeId(args.kind, 'claude-code', args.entityScope ?? 'user', args.name),
     path: realTarget,
     shaBefore: sha256(current.text),
     shaAfter: sha256(after),
@@ -440,6 +471,7 @@ export const applySetAgentColor = (
     etag,
     compute: computeSetAgentColor(color),
     extraAllowedRoots: opts?.extraAllowedRoots,
+    entityScope: opts?.entityScope,
   })
 
 // ---------------------------------------------------------------------------------------------
@@ -484,6 +516,7 @@ export const applySetAgentModel = (
     etag,
     compute: computeSetAgentModel(model),
     extraAllowedRoots: opts?.extraAllowedRoots,
+    entityScope: opts?.entityScope,
   })
 
 // ---------------------------------------------------------------------------------------------
@@ -521,6 +554,7 @@ export const applySetAgentTools = (
     etag,
     compute: computeSetAgentTools(tools),
     extraAllowedRoots: opts?.extraAllowedRoots,
+    entityScope: opts?.entityScope,
   })
 
 // ---------------------------------------------------------------------------------------------
@@ -583,6 +617,7 @@ export const applySetAgentPreloadedSkills = (
     etag,
     compute: computeSetAgentPreloadedSkills(skillNames, skillsCatalog),
     extraAllowedRoots: opts?.extraAllowedRoots,
+    entityScope: opts?.entityScope,
   })
 
 // ---------------------------------------------------------------------------------------------
@@ -627,6 +662,7 @@ export const applySetAgentSkillMentions = (
     etag,
     compute: computeSetAgentSkillMentions(skillNames),
     extraAllowedRoots: opts?.extraAllowedRoots,
+    entityScope: opts?.entityScope,
   })
 
 // ---------------------------------------------------------------------------------------------
@@ -661,6 +697,217 @@ export const applySetSkillDescription = (
     etag,
     compute: computeSetSkillDescription(description),
     extraAllowedRoots: opts?.extraAllowedRoots,
+    entityScope: opts?.entityScope,
+  })
+
+// ---------------------------------------------------------------------------------------------
+// 6b. Descripción del agente y cuerpo (agente y skill)
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * Una description vacía deja al agente invisible para la delegación automática: Claude Code decide
+ * a quién llamar leyéndola. Se rechaza en vez de escribir `description: ""` en silencio.
+ */
+const computeSetAgentDescription = (description: string): ComputeFn => {
+  if (typeof description !== 'string' || !description.trim()) {
+    throw new OfficeError('empty-description', 'the description cannot be empty')
+  }
+  return (before) => {
+    const r = setFrontmatterFields(before, { description })
+    return { after: r.text, changed: r.changed, warnings: [] }
+  }
+}
+
+export const planSetAgentDescription = (
+  path: string,
+  before: string,
+  description: string,
+): MutationPlan => planTextChange(path, before, computeSetAgentDescription(description))
+
+export const applySetAgentDescription = (
+  agentName: string,
+  visiblePath: string,
+  description: string,
+  etag: string,
+  opts?: MutationOptions,
+): Promise<ApplyResult> =>
+  applyTextMutation({
+    kind: 'agent',
+    name: agentName,
+    action: 'setAgentDescription',
+    visiblePath,
+    etag,
+    compute: computeSetAgentDescription(description),
+    extraAllowedRoots: opts?.extraAllowedRoots,
+    entityScope: opts?.entityScope,
+  })
+
+/**
+ * Reemplaza TODO lo que va tras el frontmatter y deja el frontmatter intacto, byte a byte
+ * (comentarios, orden de claves y comillas son del usuario). El texto nuevo se escribe tal cual
+ * llega: ni se le añade ni se le quita el salto de línea final.
+ */
+const computeSetBody = (body: string, allowNoFrontmatter = false): ComputeFn => {
+  if (typeof body !== 'string') throw new OfficeError('invalid-body', 'the body must be text')
+  return (before) => {
+    const parsed = parseMarkdownDoc(before)
+    // Un slash command sin frontmatter es válido (todo el archivo es el prompt); un agente o una
+    // skill sin él no, y un frontmatter sin cerrar nunca se pisa: el "cuerpo" sería ambiguo.
+    const bare = allowNoFrontmatter && parsed.problems[0]?.code === 'no-frontmatter'
+    if (!parsed.hasFrontmatter && !bare) {
+      throw new OfficeError('no-frontmatter', 'cannot edit: the file has no frontmatter')
+    }
+    if (body === parsed.body) return { after: before, changed: false, warnings: [] }
+    return { after: before.slice(0, parsed.bodyOffset) + body, changed: true, warnings: [] }
+  }
+}
+
+export const planSetBody = (
+  path: string,
+  before: string,
+  body: string,
+  allowNoFrontmatter = false,
+): MutationPlan => planTextChange(path, before, computeSetBody(body, allowNoFrontmatter))
+
+export const applySetAgentBody = (
+  agentName: string,
+  visiblePath: string,
+  body: string,
+  etag: string,
+  opts?: MutationOptions,
+): Promise<ApplyResult> =>
+  applyTextMutation({
+    kind: 'agent',
+    name: agentName,
+    action: 'setAgentBody',
+    visiblePath,
+    etag,
+    compute: computeSetBody(body),
+    extraAllowedRoots: opts?.extraAllowedRoots,
+    entityScope: opts?.entityScope,
+  })
+
+export const applySetSkillBody = (
+  skillName: string,
+  visiblePath: string,
+  body: string,
+  etag: string,
+  opts?: MutationOptions,
+): Promise<ApplyResult> =>
+  applyTextMutation({
+    kind: 'skill',
+    name: skillName,
+    action: 'setSkillBody',
+    visiblePath,
+    etag,
+    compute: computeSetBody(body),
+    extraAllowedRoots: opts?.extraAllowedRoots,
+    entityScope: opts?.entityScope,
+  })
+
+// ---------------------------------------------------------------------------------------------
+// 6c. Slash commands: description, cuerpo y argument-hint
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * Como `setFrontmatterFields`, pero un comando puede no tener frontmatter (es lo habitual en los
+ * escritos a mano): entonces se le antepone uno con lo que se pide, y el resto del archivo queda
+ * intacto debajo. Un frontmatter sin cerrar sigue siendo un error: no se adivina dónde acaba.
+ */
+const setCommandFrontmatter = (
+  text: string,
+  changes: Record<string, unknown>,
+): { text: string; changed: boolean } => {
+  const parsed = parseMarkdownDoc(text)
+  if (parsed.hasFrontmatter || parsed.problems[0]?.code !== 'no-frontmatter') {
+    return setFrontmatterFields(text, changes)
+  }
+  const defined = Object.fromEntries(Object.entries(changes).filter(([, v]) => v !== undefined))
+  if (Object.keys(defined).length === 0) return { text, changed: false }
+  return { text: `---\n${stringify(defined, { lineWidth: 0 })}---\n${text}`, changed: true }
+}
+
+const computeSetCommandDescription = (description: string): ComputeFn => {
+  if (typeof description !== 'string' || !description.trim()) {
+    throw new OfficeError('empty-description', 'the description cannot be empty')
+  }
+  return (before) => {
+    const r = setCommandFrontmatter(before, { description })
+    return { after: r.text, changed: r.changed, warnings: [] }
+  }
+}
+
+const computeSetCommandArgumentHint =
+  (hint: string | null): ComputeFn =>
+  (before) => {
+    const r = setCommandFrontmatter(before, { 'argument-hint': hint ?? undefined })
+    return { after: r.text, changed: r.changed, warnings: [] }
+  }
+
+export const planSetCommandDescription = (
+  path: string,
+  before: string,
+  description: string,
+): MutationPlan => planTextChange(path, before, computeSetCommandDescription(description))
+
+export const planSetCommandArgumentHint = (
+  path: string,
+  before: string,
+  hint: string | null,
+): MutationPlan => planTextChange(path, before, computeSetCommandArgumentHint(hint))
+
+export const applySetCommandDescription = (
+  commandName: string,
+  visiblePath: string,
+  description: string,
+  etag: string,
+  opts?: MutationOptions,
+): Promise<ApplyResult> =>
+  applyTextMutation({
+    kind: 'command',
+    name: commandName,
+    action: 'setCommandDescription',
+    visiblePath,
+    etag,
+    compute: computeSetCommandDescription(description),
+    extraAllowedRoots: opts?.extraAllowedRoots,
+    entityScope: opts?.entityScope,
+  })
+
+export const applySetCommandBody = (
+  commandName: string,
+  visiblePath: string,
+  body: string,
+  etag: string,
+  opts?: MutationOptions,
+): Promise<ApplyResult> =>
+  applyTextMutation({
+    kind: 'command',
+    name: commandName,
+    action: 'setCommandBody',
+    visiblePath,
+    etag,
+    compute: computeSetBody(body, true),
+    extraAllowedRoots: opts?.extraAllowedRoots,
+    entityScope: opts?.entityScope,
+  })
+
+export const applySetCommandArgumentHint = (
+  commandName: string,
+  visiblePath: string,
+  hint: string | null,
+  etag: string,
+  opts?: MutationOptions,
+): Promise<ApplyResult> =>
+  applyTextMutation({
+    kind: 'command',
+    name: commandName,
+    action: 'setCommandArgumentHint',
+    visiblePath,
+    etag,
+    compute: computeSetCommandArgumentHint(hint),
+    extraAllowedRoots: opts?.extraAllowedRoots,
+    entityScope: opts?.entityScope,
   })
 
 // ---------------------------------------------------------------------------------------------
@@ -702,6 +949,7 @@ export const applyRetireSkill = (
     etag,
     compute: computeSetSkillRetired(true),
     extraAllowedRoots: opts?.extraAllowedRoots,
+    entityScope: opts?.entityScope,
   })
 
 export const applyUnretireSkill = (
@@ -718,6 +966,7 @@ export const applyUnretireSkill = (
     etag,
     compute: computeSetSkillRetired(false),
     extraAllowedRoots: opts?.extraAllowedRoots,
+    entityScope: opts?.entityScope,
   })
 
 // ---------------------------------------------------------------------------------------------
@@ -813,7 +1062,7 @@ export const applyArchiveAgent = async (
   await appendAudit({
     ts: Date.now(),
     action: 'archiveAgent',
-    entityId: makeId('agent', 'claude-code', 'user', agentName),
+    entityId: makeId('agent', 'claude-code', opts?.entityScope ?? 'user', agentName),
     path: realDest,
     shaBefore: sha256(current.text),
     shaAfter: sha256(current.text),
@@ -846,7 +1095,7 @@ export const applyUnarchiveAgent = async (
   await appendAudit({
     ts: Date.now(),
     action: 'unarchiveAgent',
-    entityId: makeId('agent', 'claude-code', 'user', agentName),
+    entityId: makeId('agent', 'claude-code', opts?.entityScope ?? 'user', agentName),
     path: realDest,
     shaBefore: sha256(current.text),
     shaAfter: sha256(current.text),
@@ -901,6 +1150,7 @@ export const applyWriteCommand = (
     etag,
     compute: computeWriteCommand(markdown),
     extraAllowedRoots: opts?.extraAllowedRoots,
+    entityScope: opts?.entityScope,
   })
 
 /**
@@ -941,11 +1191,131 @@ export const applyCreateFile = async (
   await appendAudit({
     ts: Date.now(),
     action: `create:${kind}`,
-    entityId: makeId(kind, 'claude-code', 'user', name),
+    entityId: makeId(kind, 'claude-code', opts?.entityScope ?? 'user', name),
     path: target,
     shaBefore: '',
     shaAfter: sha256(content),
     bytesDelta: Buffer.byteLength(content, 'utf8'),
   })
   return { path: target, etag: etagOf(content, st.mtimeMs, st.size), backup: '' }
+}
+
+// ---------------------------------------------------------------------------------------------
+// 10. Entidades nuevas: un agente o una skill desde cero
+// ---------------------------------------------------------------------------------------------
+
+/** Minúsculas, dígitos y guiones: el nombre es a la vez archivo, carpeta e identificador. */
+const ENTITY_NAME_RE = /^[a-z0-9][a-z0-9-]{0,63}$/
+
+export const assertEntityName = (name: unknown): string => {
+  if (typeof name !== 'string' || !ENTITY_NAME_RE.test(name)) {
+    throw new OfficeError(
+      'invalid-name',
+      `invalid name: use lowercase letters, digits and hyphens (1-64 characters, not starting with a hyphen)`,
+      { params: { name: String(name) } },
+    )
+  }
+  return name
+}
+
+/** Dónde vive una entidad nueva: `agents/<name>.md`, `commands/<name>.md` o `skills/<name>/SKILL.md`. */
+export type NewEntityKind = 'agent' | 'skill' | 'command'
+
+export const newEntityPath = (
+  kind: NewEntityKind,
+  name: string,
+  scope: ScopeSelection = { kind: 'user' },
+): string => {
+  // En un ámbito de proyecto lo nuevo nace en `<proyecto>/.claude/`, junto a lo que ya hay allí.
+  const base = scope.kind === 'project' ? join(scope.path, '.claude') : paths().home
+  return kind === 'agent'
+    ? join(base, 'agents', `${name}.md`)
+    : kind === 'command'
+      ? join(base, 'commands', `${name}.md`)
+      : join(base, 'skills', name, 'SKILL.md')
+}
+
+/** Cuerpo inicial breve, para que el archivo nazca válido y con algo que editar. */
+const STARTER_BODY: Record<NewEntityKind, Record<Lang, (name: string) => string>> = {
+  agent: {
+    en: (name) =>
+      `You are ${name}. Describe here, in a few lines, what you do, how you work and what you return.\n`,
+    es: (name) =>
+      `Eres ${name}. Describe aquí, en pocas líneas, qué haces, cómo trabajas y qué devuelves.\n`,
+  },
+  command: {
+    en: () =>
+      'Describe here what this command should do. $ARGUMENTS is whatever the user types after the command name.\n',
+    es: () =>
+      'Describe aquí qué debe hacer este comando. $ARGUMENTS es lo que el usuario escribe tras el nombre del comando.\n',
+  },
+  skill: {
+    en: (name) => `# ${name}\n\nDescribe here when to use this skill and which steps to follow.\n`,
+    es: (name) => `# ${name}\n\nDescribe aquí cuándo usar esta skill y qué pasos seguir.\n`,
+  },
+}
+
+export interface NewEntityInput {
+  kind: NewEntityKind
+  name: string
+  description: string
+  body?: string
+  lang?: Lang
+  /** Dónde nace: el usuario (por defecto) o el proyecto del ámbito activo. */
+  scope?: ScopeSelection
+}
+
+/**
+ * El contenido completo del archivo nuevo. El frontmatter sale de la librería `yaml`, nunca de una
+ * plantilla: una description con `:` o con un salto de línea seguido de otra clave sería una
+ * inyección (ver GOTCHAS, "YAML frontmatter is not written with templates").
+ */
+export const renderNewEntity = (input: NewEntityInput): string => {
+  const name = assertEntityName(input.name)
+  if (typeof input.description !== 'string' || !input.description.trim()) {
+    throw new OfficeError('empty-description', 'the description cannot be empty')
+  }
+  const body = input.body ?? STARTER_BODY[input.kind][input.lang === 'es' ? 'es' : 'en'](name)
+  // Un comando se llama como su archivo: su frontmatter no lleva `name`.
+  const fields =
+    input.kind === 'command'
+      ? { description: input.description }
+      : { name, description: input.description }
+  const yamlOut = stringify(fields, { lineWidth: 0 })
+  return `---\n${yamlOut}---\n\n${body}`
+}
+
+/** Plan puro de una creación: de vacío a contenido, para enseñar el diff antes de escribir. */
+export const planCreateEntity = (input: NewEntityInput): MutationPlan => {
+  const path = newEntityPath(input.kind, assertEntityName(input.name), input.scope)
+  const after = renderNewEntity(input)
+  return {
+    path,
+    before: '',
+    after,
+    diff: buildUnifiedDiff(path, '', after),
+    changed: true,
+    warnings: [],
+    warningDetails: [],
+  }
+}
+
+/**
+ * Crea el agente, la skill o el comando. Una skill es una carpeta: se crea el directorio (solo bajo
+ * `skills/`) y luego `applyCreateFile` escribe con `wx`, así que un nombre ya tomado falla con
+ * `file-exists` en vez de pisar nada.
+ */
+export const applyCreateEntity = async (
+  input: NewEntityInput,
+  opts?: MutationOptions,
+): Promise<ApplyResult> => {
+  const content = renderNewEntity(input)
+  const path = newEntityPath(input.kind, input.name, input.scope)
+  // Antes de crear carpetas: la raíz de un proyecto viene de fuera y no se toca si no está permitida.
+  await assertWithinRoots(await realWhereverItEnds(path), opts?.extraAllowedRoots)
+  await mkdir(dirname(path), { recursive: true })
+  return applyCreateFile(input.kind, input.name, path, content, {
+    ...opts,
+    entityScope: input.scope?.kind === 'project' ? 'project' : 'user',
+  })
 }

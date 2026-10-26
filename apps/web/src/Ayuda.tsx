@@ -9,6 +9,7 @@ import { conCodigo } from './Rico.tsx'
 const ATAJOS: { teclas: string; que: Clave }[] = [
   { teclas: '1', que: 'help.key.office' },
   { teclas: '2', que: 'help.key.blueprint' },
+  { teclas: '3', que: 'help.key.ledger' },
   { teclas: '/', que: 'help.key.search' },
   { teclas: '+  −', que: 'help.key.zoom' },
   { teclas: '0', que: 'help.key.fit' },
@@ -28,6 +29,16 @@ const LEYENDA_PLANO: Clave[] = [
   'help.blueprint.lines',
   'help.blueprint.shapes',
   'help.blueprint.edit',
+]
+
+const LEYENDA_REGISTRO: Clave[] = ['help.ledger.table', 'help.ledger.filters', 'help.ledger.trend']
+
+const LEYENDA_EDICION: Clave[] = [
+  'help.edit.fields',
+  'help.edit.prompt',
+  'help.edit.assign',
+  'help.edit.create',
+  'help.edit.view',
 ]
 
 export const Ayuda = ({ onCerrar }: { onCerrar: () => void }) => {
@@ -57,6 +68,20 @@ export const Ayuda = ({ onCerrar }: { onCerrar: () => void }) => {
       <h4 className="sub-ayuda">{t('help.blueprint.title')}</h4>
       <ul className="leyenda-lista">
         {LEYENDA_PLANO.map((k) => (
+          <li key={k}>{conCodigo(t(k))}</li>
+        ))}
+      </ul>
+
+      <h4 className="sub-ayuda">{t('help.ledger.title')}</h4>
+      <ul className="leyenda-lista">
+        {LEYENDA_REGISTRO.map((k) => (
+          <li key={k}>{conCodigo(t(k))}</li>
+        ))}
+      </ul>
+
+      <h4 className="sub-ayuda">{t('help.edit.title')}</h4>
+      <ul className="leyenda-lista">
+        {LEYENDA_EDICION.map((k) => (
           <li key={k}>{conCodigo(t(k))}</li>
         ))}
       </ul>
@@ -99,6 +124,7 @@ export const Bienvenida = ({ onAyuda }: { onAyuda: () => void }) => {
         <ul>
           <li>{conCodigo(t('welcome.office'))}</li>
           <li>{conCodigo(t('welcome.blueprint'))}</li>
+          <li>{conCodigo(t('welcome.ledger'))}</li>
           <li>{conCodigo(t('welcome.details'))}</li>
         </ul>
       </div>

@@ -1,6 +1,12 @@
 import { spawn } from 'node:child_process'
 import type { Lang } from '@ai-office/core'
 import { startServer } from '@ai-office/daemon'
+import {
+  abbreviateCwd,
+  type ResolvedScope,
+  resolveScope,
+  type ScopeRequest,
+} from '@ai-office/providers'
 import { type Messages, messagesFor } from '../i18n.ts'
 import { bold, dim } from '../ui.ts'
 
@@ -34,16 +40,31 @@ export const interfaceUrl = (url: string, lang: Lang): string => {
   return `${head}${head.includes('?') ? '&' : '?'}lang=${lang}${hash}`
 }
 
+/** Cómo se dice el ámbito resuelto y por qué: lo usan `start` y `doctor`. */
+export const scopeLine = (resolved: ResolvedScope, t: Messages): string => {
+  const what =
+    resolved.scope.kind === 'user'
+      ? t.scope.user
+      : t.scope.project(abbreviateCwd(resolved.scope.path))
+  const why =
+    resolved.source === 'auto' && resolved.via === 'git-root'
+      ? t.scope.why.autoGit
+      : t.scope.why[resolved.source]
+  return `${what} (${why})`
+}
+
 export const start = async (
   port = 7377,
-  opts: { open?: boolean; lang?: Lang; t?: Messages } = {},
+  opts: { open?: boolean; lang?: Lang; t?: Messages; scopeRequest?: ScopeRequest } = {},
 ): Promise<void> => {
   const lang = opts.lang ?? 'en'
   const t = opts.t ?? messagesFor(lang)
-  const handle = await startServer(port)
+  const resolved = await resolveScope(opts.scopeRequest ?? { auto: true })
+  const handle = await startServer(port, { scope: resolved })
   const url = interfaceUrl(handle.url, lang)
   console.log()
   console.log(`  ${bold('ai-office')} ${t.start.listening(url)}`)
+  console.log(dim(`  ${scopeLine(resolved, t)}`))
   console.log(dim(`  ${t.start.note}`))
   console.log()
   // Sin terminal (lo lanza otro programa, p. ej. la herramienta Bash de Claude Code) no se abre

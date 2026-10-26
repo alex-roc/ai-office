@@ -1,4 +1,6 @@
 import type { Agent, Catalog, Command, Edge, EdgeEvidence, Skill } from '@ai-office/core'
+import { liveCatalog } from './live.ts'
+import { mcpResolver, parseMcpToolName, unknownMcpId } from './mcp.ts'
 
 /**
  * Extrae el grafo que ya está escrito en los archivos, casi siempre en prosa.
@@ -180,35 +182,62 @@ export const agentDelegationEdges = (agents: Agent[]): Edge[] => {
   return edges
 }
 
-/** Aristas agente→tool y agente→servidor MCP, del frontmatter. */
-export const agentToolEdges = (agents: Agent[]): Edge[] => {
+/**
+ * Aristas agente→tool y agente→servidor MCP, del frontmatter. Varias herramientas del mismo
+ * servidor (`mcp__github__a`, `mcp__github__b`) son UNA arista agente→servidor con varias pruebas.
+ */
+export const agentToolEdges = (agents: Agent[], mcp: Pick<Catalog, 'mcpServers'>): Edge[] => {
   const edges: Edge[] = []
+  const resolve = mcpResolver(mcp)
   for (const agent of agents) {
+    const servers = new Map<string, Edge>()
     for (const tool of agent.tools ?? []) {
-      const isMcp = tool.startsWith('mcp__')
-      edges.push({
+      const parsed = parseMcpToolName(tool)
+      const evidence: EdgeEvidence = { path: agent.source.realPath, field: 'tools', excerpt: tool }
+      if (!parsed) {
+        edges.push({
+          from: agent.id,
+          to: `tool:claude-code/builtin/${tool}`,
+          kind: 'agent-has-tool',
+          layer: 'declared',
+          evidence: [evidence],
+        })
+        continue
+      }
+      const server = resolve(parsed.server)
+      const to = server?.id ?? unknownMcpId(parsed.server)
+      const existing = servers.get(to)
+      if (existing) {
+        if (existing.evidence.length < 3) existing.evidence.push(evidence)
+        continue
+      }
+      const edge: Edge = {
         from: agent.id,
-        to: isMcp
-          ? `mcp:claude-code/user/${tool.split('__')[1] ?? tool}`
-          : `tool:claude-code/builtin/${tool}`,
-        kind: isMcp ? 'agent-uses-mcp' : 'agent-has-tool',
+        to,
+        kind: 'agent-uses-mcp',
         layer: 'declared',
-        evidence: [{ path: agent.source.realPath, field: 'tools', excerpt: tool }],
-      })
+        evidence: [evidence],
+        ...(server ? {} : { dangling: true }),
+      }
+      servers.set(to, edge)
+      edges.push(edge)
     }
   }
   return edges
 }
 
 /** El grafo declarado completo: todo lo que los archivos afirman que debería pasar. */
-export const buildDeclaredGraph = (catalog: Catalog): Edge[] => {
-  // Los agentes archivados no se cargan: ni son origen ni destino de ninguna relación.
-  const agents = catalog.agents.filter((a) => !a.archived)
+export const buildDeclaredGraph = (full: Catalog): Edge[] => {
+  // Solo lo que Claude Code carga: ni agentes archivados, ni lo tapado por otro ámbito, ni lo de
+  // un plugin deshabilitado son origen o destino de ninguna relación.
+  const catalog = liveCatalog(full)
+  const agents = catalog.agents
   return [
     ...agentSkillEdges(agents, catalog.skills),
     ...commandEdges(catalog.commands, agents, catalog.skills),
     ...skillClientEdges(catalog.skills, agents),
     ...agentDelegationEdges(agents),
-    ...agentToolEdges(agents),
+    // Los servidores desactivados siguen siendo destino válido de la cita: se resuelve contra todos.
+    ...agentToolEdges(agents, full),
   ]
 }

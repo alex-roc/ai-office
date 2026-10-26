@@ -22,6 +22,7 @@ const active = (id: string): [string, EntityActivity] => [
     sessions: 3,
     projects: 1,
     lastUsedAt: Date.now(),
+    weekly: new Array<number>(12).fill(0),
     grade: 'practicing',
     active: true,
   },

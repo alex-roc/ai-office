@@ -73,6 +73,10 @@ export interface Activity {
   sessions: number
   projects: number
   lastUsedAt: number | null
+  /** Usos por semana, 12 posiciones; la última es la semana en curso. */
+  weekly: number[]
+  /** Usos por proyecto (cwd abreviado `~/…` o slug). Ausente si no hay datos. */
+  byProject?: Record<string, number>
   grade: Grade
   active: boolean
 }

@@ -4,23 +4,36 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { test } from 'node:test'
 import { etagOf } from '../src/claude-code/etag.ts'
+import { parseMarkdownDoc } from '../src/claude-code/frontmatter.ts'
 import {
   applyArchiveAgent,
+  applyCreateEntity,
   applyCreateFile,
   applyRetireSkill,
+  applySetAgentBody,
   applySetAgentColor,
+  applySetAgentDescription,
   applySetAgentModel,
   applySetAgentPreloadedSkills,
   applySetAgentSkillMentions,
   applySetAgentTools,
+  applySetCommandArgumentHint,
+  applySetCommandBody,
+  applySetCommandDescription,
+  applySetSkillBody,
   applySetSkillDescription,
   applyUnarchiveAgent,
   applyUnretireSkill,
   applyWriteCommand,
   ConflictError,
+  planCreateEntity,
   planRetireSkill,
   planSetAgentColor,
+  planSetAgentDescription,
   planSetAgentPreloadedSkills,
+  planSetBody,
+  planSetCommandArgumentHint,
+  planSetCommandDescription,
 } from '../src/claude-code/mutations.ts'
 
 /**
@@ -431,4 +444,228 @@ test('applyWriteCommand sobre un comando en subcarpeta escribe en su propio arch
   await writeFile(path, 'viejo\n', 'utf8')
   await applyWriteCommand('ns:x', path, 'nuevo\n', await etagOfFile(path))
   assert.equal(await readFile(path, 'utf8'), 'nuevo\n')
+})
+
+const COMMAND_DOC = `---
+description: "Revisa el diff"
+---
+
+Revisa $ARGUMENTS con cuidado.
+`
+
+test('setAgentDescription: aplicar y revertir deja el archivo idéntico', async () => {
+  const { claudeHome } = await scratch()
+  const path = join(claudeHome, 'agents', 'code-reviewer.md')
+  await writeFile(path, AGENT_DOC, 'utf8')
+
+  const r1 = await applySetAgentDescription(
+    'code-reviewer',
+    path,
+    'Revisa: código # con dos puntos',
+    await etagOfFile(path),
+  )
+  const editado = await readFile(path, 'utf8')
+  assert.match(editado, /^description: "Revisa: código # con dos puntos"$/m)
+  assert.ok(editado.endsWith(AGENT_DOC.slice(AGENT_DOC.indexOf('# Cuerpo'))), 'el cuerpo no cambia')
+
+  await applySetAgentDescription('code-reviewer', path, 'Asesor contable', r1.etag)
+  assert.equal(await readFile(path, 'utf8'), AGENT_DOC)
+})
+
+test('setAgentDescription: una description vacía se rechaza al planear', () => {
+  assert.throws(() => planSetAgentDescription('/x/a.md', AGENT_DOC, '   '), /cannot be empty/)
+})
+
+test('setAgentDescription: un salto de línea no puede colar otra clave en el frontmatter', () => {
+  const plan = planSetAgentDescription('/x/a.md', AGENT_DOC, 'hola\ntools: Bash(*)')
+  assert.ok(!/^tools:/m.test(plan.after), 'la clave inyectada no es una clave')
+})
+
+test('agent.body: reemplaza el cuerpo y conserva el frontmatter byte a byte; revertir es exacto', async () => {
+  const { claudeHome } = await scratch()
+  const path = join(claudeHome, 'agents', 'code-reviewer.md')
+  const doc = AGENT_DOC.replace('model: opus', 'model: opus # el mejor\ncolor:   blue')
+  await writeFile(path, doc, 'utf8')
+  const frontmatter = doc.slice(0, doc.indexOf('\n\n# Cuerpo') + 1)
+
+  const plan = planSetBody(path, doc, 'Nuevo cuerpo\n')
+  assert.equal(plan.changed, true)
+  assert.match(plan.diff, /^\+Nuevo cuerpo$/m)
+
+  const r1 = await applySetAgentBody(
+    'code-reviewer',
+    path,
+    'Nuevo cuerpo\n',
+    await etagOfFile(path),
+  )
+  const editado = await readFile(path, 'utf8')
+  assert.ok(editado.startsWith(frontmatter), 'el frontmatter queda idéntico')
+  assert.equal(editado, `${frontmatter}Nuevo cuerpo\n`)
+  assert.equal(await readFile(r1.backup, 'utf8'), doc)
+
+  const cuerpoOriginal = doc.slice(doc.indexOf('\n\n# Cuerpo') + 1)
+  await applySetAgentBody('code-reviewer', path, cuerpoOriginal, r1.etag)
+  assert.equal(await readFile(path, 'utf8'), doc)
+})
+
+test('skill.body: aplicar y revertir deja el archivo idéntico', async () => {
+  const { claudeHome } = await scratch()
+  const path = join(claudeHome, 'skills', 'release-tools', 'SKILL.md')
+  await mkdir(dirname(path), { recursive: true })
+  await writeFile(path, SKILL_DOC, 'utf8')
+  const original = SKILL_DOC.slice(SKILL_DOC.indexOf('\n# release-tools'))
+
+  const r1 = await applySetSkillBody(
+    'release-tools',
+    path,
+    '\nOtro cuerpo\n',
+    await etagOfFile(path),
+  )
+  assert.equal(
+    await readFile(path, 'utf8'),
+    `---\nname: release-tools\ndescription: "Herramientas de publicación"\n---\n\nOtro cuerpo\n`,
+  )
+  await applySetSkillBody('release-tools', path, original, r1.etag)
+  assert.equal(await readFile(path, 'utf8'), SKILL_DOC)
+})
+
+test('un cuerpo igual al actual no cambia nada, y sin frontmatter un agente no se edita', () => {
+  assert.equal(
+    planSetBody('/x/a.md', AGENT_DOC, AGENT_DOC.slice(AGENT_DOC.indexOf('\n# Cuerpo'))).changed,
+    false,
+  )
+  assert.throws(() => planSetBody('/x/a.md', 'solo prosa\n', 'x'), /no frontmatter/)
+  assert.throws(() => planSetBody('/x/a.md', AGENT_DOC, 42 as never), /must be text/)
+})
+
+test('command.description: aplicar y revertir deja el archivo idéntico', async () => {
+  const { claudeHome } = await scratch()
+  await mkdir(join(claudeHome, 'commands'), { recursive: true })
+  const path = join(claudeHome, 'commands', 'review.md')
+  await writeFile(path, COMMAND_DOC, 'utf8')
+
+  assert.equal(planSetCommandDescription(path, COMMAND_DOC, 'Otra').changed, true)
+  const r1 = await applySetCommandDescription('review', path, 'Otra', await etagOfFile(path))
+  const editado = await readFile(path, 'utf8')
+  assert.match(editado, /description: "Otra"/)
+  await applySetCommandDescription('review', path, 'Revisa el diff', r1.etag)
+  assert.equal(await readFile(path, 'utf8'), COMMAND_DOC)
+})
+
+test('command.body: reemplaza el cuerpo y conserva el frontmatter; funciona sin frontmatter', async () => {
+  const { claudeHome } = await scratch()
+  await mkdir(join(claudeHome, 'commands'), { recursive: true })
+  const path = join(claudeHome, 'commands', 'review.md')
+  await writeFile(path, COMMAND_DOC, 'utf8')
+  const cuerpo = '\nRevisa $ARGUMENTS con cuidado.\n'
+
+  const r1 = await applySetCommandBody('review', path, '\nOtro prompt\n', await etagOfFile(path))
+  assert.equal(
+    await readFile(path, 'utf8'),
+    `${COMMAND_DOC.slice(0, COMMAND_DOC.indexOf('\n\nRevisa'))}\n\nOtro prompt\n`,
+  )
+  await applySetCommandBody('review', path, cuerpo, r1.etag)
+  assert.equal(await readFile(path, 'utf8'), COMMAND_DOC)
+
+  // Un comando a mano sin frontmatter: todo el archivo es el prompt.
+  assert.equal(
+    planSetBody('/x/c.md', 'Haz algo\n', 'Haz otra cosa\n', true).after,
+    'Haz otra cosa\n',
+  )
+  assert.throws(() => planSetBody('/x/c.md', 'Haz algo\n', 'x'), /no frontmatter/)
+})
+
+test('command.argumentHint: añade, cambia y quita la clave; null quita; revertir es exacto', async () => {
+  const { claudeHome } = await scratch()
+  await mkdir(join(claudeHome, 'commands'), { recursive: true })
+  const path = join(claudeHome, 'commands', 'review.md')
+  await writeFile(path, COMMAND_DOC, 'utf8')
+
+  const r1 = await applySetCommandArgumentHint(
+    'review',
+    path,
+    '[pr-number]',
+    await etagOfFile(path),
+  )
+  assert.match(await readFile(path, 'utf8'), /^argument-hint: "?\[pr-number\]"?$/m)
+  const r2 = await applySetCommandArgumentHint('review', path, null, r1.etag)
+  assert.equal(await readFile(path, 'utf8'), COMMAND_DOC)
+  assert.equal(r2.backup !== '', true)
+  assert.equal(planSetCommandArgumentHint(path, COMMAND_DOC, null).changed, false)
+})
+
+test('un comando sin frontmatter recibe uno al poner description o argument-hint', () => {
+  const plan = planSetCommandDescription('/x/c.md', 'Haz algo\n', 'Hace algo')
+  assert.equal(plan.after, '---\ndescription: Hace algo\n---\nHaz algo\n')
+  assert.equal(planSetCommandArgumentHint('/x/c.md', 'Haz algo\n', null).changed, false)
+  assert.throws(
+    () => planSetCommandDescription('/x/c.md', '---\nsin cerrar\n', 'x'),
+    /no frontmatter/,
+  )
+})
+
+test('createEntity: agente, skill y comando con frontmatter de la librería yaml', async () => {
+  const { claudeHome } = await scratch()
+  const description = 'Revisa: PRs # y "comillas"\ntools: Bash(*)'
+
+  const plan = planCreateEntity({ kind: 'agent', name: 'nuevo-agente', description, lang: 'es' })
+  assert.equal(plan.path, join(claudeHome, 'agents', 'nuevo-agente.md'))
+  assert.equal(plan.before, '')
+  assert.match(plan.diff, /^\+name: nuevo-agente$/m)
+  assert.match(plan.after, /Eres nuevo-agente/)
+  assert.ok(!/^tools:/m.test(plan.after), 'la description no cuela una clave')
+
+  const agente = await applyCreateEntity({ kind: 'agent', name: 'nuevo-agente', description })
+  assert.equal(
+    await readFile(agente.path, 'utf8'),
+    planCreateEntity({ kind: 'agent', name: 'nuevo-agente', description }).after,
+  )
+  const parsed = parseMarkdownDoc(await readFile(agente.path, 'utf8'))
+  assert.equal(
+    parsed.data.description,
+    description,
+    'la description sobrevive al viaje de ida y vuelta',
+  )
+  assert.equal(parsed.data.name, 'nuevo-agente')
+  assert.match(parsed.body, /You are nuevo-agente/)
+
+  const skill = await applyCreateEntity({
+    kind: 'skill',
+    name: 'mi-skill',
+    description: 'Hace x',
+    body: 'Cuerpo propio\n',
+  })
+  assert.equal(skill.path, join(claudeHome, 'skills', 'mi-skill', 'SKILL.md'))
+  assert.equal(
+    await readFile(skill.path, 'utf8'),
+    '---\nname: mi-skill\ndescription: Hace x\n---\n\nCuerpo propio\n',
+  )
+
+  const comando = await applyCreateEntity({
+    kind: 'command',
+    name: 'mi-cmd',
+    description: 'Hace y',
+  })
+  assert.equal(comando.path, join(claudeHome, 'commands', 'mi-cmd.md'))
+  assert.ok(!/^name:/m.test(await readFile(comando.path, 'utf8')), 'un comando no lleva name')
+})
+
+test('createEntity: valida el nombre y no pisa lo existente', async () => {
+  await scratch()
+  for (const name of ['Mayus', '-guion', 'a b', '../x', '', 'a'.repeat(65)]) {
+    assert.throws(
+      () => planCreateEntity({ kind: 'agent', name, description: 'd' }),
+      /invalid name/,
+      name,
+    )
+  }
+  assert.throws(
+    () => planCreateEntity({ kind: 'skill', name: 'ok', description: ' ' }),
+    /cannot be empty/,
+  )
+  await applyCreateEntity({ kind: 'skill', name: 'dup', description: 'd' })
+  await assert.rejects(
+    () => applyCreateEntity({ kind: 'skill', name: 'dup', description: 'otra' }),
+    (err: Error & { code?: string }) => err.code === 'file-exists',
+  )
 })

@@ -1,3 +1,5 @@
+import { t } from './i18n/index.ts'
+import { shortPath } from './texto.ts'
 import type { Agent, Snapshot } from './types.ts'
 
 /**
@@ -60,3 +62,20 @@ export const claveDeConjunto = (s: Snapshot): string =>
     s.catalog.commands.map((c) => c.id).join('|'),
     (s.planta?.salas ?? []).map((x) => `${x.id}:${x.agents.length}`).join('|'),
   ].join('#')
+
+/**
+ * La fuente de toda cifra de uso, tal como se cita en los tooltips: los transcripts de la raíz de
+ * Claude Code y los días que conservan. Una sola redacción para la cabecera y el Registro.
+ */
+export const fuenteTranscripts = (s: Snapshot): string => {
+  const [dirAgentes = '~/.claude/agents'] = s.catalog.roots
+  const raiz = shortPath(dirAgentes.replace(/[\\/]agents[\\/]?$/, ''))
+  const dias = ventanaDeHistorial(s)
+  const ventana =
+    dias === undefined
+      ? ''
+      : dias === null
+        ? t('src.window.all')
+        : t('src.window.days', { n: dias })
+  return t('src.transcripts', { root: raiz, window: ventana })
+}

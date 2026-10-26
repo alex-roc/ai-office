@@ -1,4 +1,5 @@
 import { type ReactNode, useEffect, useId, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { useT } from './i18n/react.ts'
 
 /**
@@ -116,7 +117,9 @@ export const Dialogo = ({
     }
   }, [inicial])
 
-  return (
+  // En un portal al <body>: los diálogos de edición los abre la ficha, y dentro de ella heredarían
+  // sus estilos (`aside.side h3`, el desplazamiento) y se recortarían con su caja.
+  return createPortal(
     <div className="modal-fondo" ref={fondoRef}>
       <div
         className={`modal${ancho ? ' ancho' : ''}${claseModal ? ` ${claseModal}` : ''}`}
@@ -129,7 +132,8 @@ export const Dialogo = ({
         <h3 id={idTitulo}>{titulo}</h3>
         {children}
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
 

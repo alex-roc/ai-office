@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 import type { Lang } from '@ai-office/core'
+import type { ScopeRequest } from '@ai-office/providers'
 import { census } from './commands/census.ts'
 import { demo } from './commands/demo.ts'
 import { doctor, hooksInstall, hooksUninstall } from './commands/hooks.ts'
 import { start } from './commands/start.ts'
-import { cliVersion, resolvePort } from './env.ts'
+import { cliVersion, configuredLang, extractScopeFlags, resolvePort } from './env.ts'
 import { type Messages, messagesFor, resolveLang } from './i18n.ts'
 import { bold, dim } from './ui.ts'
 
@@ -12,6 +13,8 @@ import { bold, dim } from './ui.ts'
 interface Ctx {
   lang: Lang
   t: Messages
+  /** `--project` y `--scope`: se combinan con `config.json` en `resolveScope`. */
+  scope: Pick<ScopeRequest, 'scope' | 'project'>
 }
 
 /**
@@ -39,23 +42,34 @@ const commands: Record<string, CliCommand> = {
     summary: (t) => t.help.start,
     options: [
       ['--no-open', (t) => t.help.noOpen],
+      ['--project <path>', (t) => t.help.project],
+      ['--scope user|project', (t) => t.help.scope],
       ['AI_OFFICE_PORT=7377', (t) => t.help.port],
     ],
-    run: (args, { lang, t }) =>
-      start(resolvePort(process.env, t), { open: !args.includes('--no-open'), lang, t }),
+    run: (args, { lang, t, scope }) =>
+      start(resolvePort(process.env, t), {
+        open: !args.includes('--no-open'),
+        lang,
+        t,
+        scopeRequest: { ...scope, auto: true },
+      }),
   },
   census: {
     usage: 'ai-office census',
     summary: (t) => t.help.census,
     // `censo` y `--cartel` son los nombres en español de antes: siguen funcionando.
     aliases: ['censo'],
-    options: [['--poster [file.svg]', (t) => t.help.poster]],
+    options: [
+      ['--poster [file.svg]', (t) => t.help.poster],
+      ['--project <path>', (t) => t.help.project],
+      ['--scope user|project', (t) => t.help.scope],
+    ],
     run: async (args, ctx) => {
       // `--poster` sin ruta guarda en `ai-office-census.svg`.
       const flag = ['--poster', '--cartel'].find((f) => args.includes(f))
       const next = flag ? flagValue(args, flag) : undefined
       await census(
-        ctx,
+        { lang: ctx.lang, t: ctx.t, scopeRequest: { ...ctx.scope, auto: true } },
         flag === undefined
           ? undefined
           : next && !next.startsWith('--')
@@ -67,7 +81,11 @@ const commands: Record<string, CliCommand> = {
   doctor: {
     usage: 'ai-office doctor',
     summary: (t) => t.help.doctor,
-    run: (_args, { t }) => doctor(resolvePort(process.env, t), t),
+    options: [
+      ['--project <path>', (t) => t.help.project],
+      ['--scope user|project', (t) => t.help.scope],
+    ],
+    run: (_args, { t, scope }) => doctor(resolvePort(process.env, t), t, { ...scope, auto: true }),
   },
   hooks: {
     usage: 'ai-office hooks install|uninstall',
@@ -124,9 +142,14 @@ ${dim(t.help.footer)}
 
 const main = async (): Promise<void> => {
   // El idioma se resuelve primero y la opción `--lang` se retira: los subcomandos no la ven.
-  const { lang, args: argv } = resolveLang(process.argv.slice(2))
+  const { lang, args: withScope } = resolveLang(
+    process.argv.slice(2),
+    process.env,
+    configuredLang(),
+  )
   const t = messagesFor(lang)
-  const ctx: Ctx = { lang, t }
+  const { flags: scope, args: argv } = extractScopeFlags(withScope, t)
+  const ctx: Ctx = { lang, t, scope }
   const [cmd, ...rest] = argv
   if (cmd === '--version' || cmd === '-v') {
     console.log(cliVersion(t))

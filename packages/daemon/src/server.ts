@@ -4,8 +4,19 @@ import type { AddressInfo } from 'node:net'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
-import type { Lang, SessionState } from '@ai-office/core'
-import { paths, scanCatalogReport } from '@ai-office/providers'
+import type { Lang, ScopeSelection, SessionState } from '@ai-office/core'
+import {
+  applyConfigPatch,
+  assertUsableConfig,
+  ourConfigPath,
+  paths,
+  readOurConfig,
+  resolveScope,
+  type ScopeSource,
+  scanCatalogReport,
+  withCurrentProject,
+  writeOurConfig,
+} from '@ai-office/providers'
 import fastifyStatic from '@fastify/static'
 import fastifyWebsocket from '@fastify/websocket'
 import Fastify from 'fastify'
@@ -14,6 +25,7 @@ import { createEventBus } from './bus.ts'
 import { reject, sendError } from './errors.ts'
 import { startIngestSocket } from './ingest/socket.ts'
 import { createDedupeCache, watchSpool } from './ingest/spool.ts'
+import { applyCreate, type CreateEntityRequest, planCreate } from './mutations/entities.ts'
 import { openFlow, planFlow, previewFlow, saveFlow } from './mutations/flows.ts'
 import { applyMutation, type MutationRequest, planMutation } from './mutations/router.ts'
 import { createPresenceStore } from './presence.ts'
@@ -28,6 +40,11 @@ const HELLO_TIMEOUT_MS = 5000
 export interface ServerOptions {
   /** Plazo del primer frame del WebSocket (con el token). */
   helloTimeoutMs?: number
+  /**
+   * Ámbito con el que arranca (lo resuelve la CLI: flag > config > autodetección). Sin él se usa
+   * el de `config.json` o el de usuario: el daemon no mira desde qué carpeta se lanzó.
+   */
+  scope?: { scope: ScopeSelection; source: ScopeSource }
 }
 
 const execFileAsync = promisify(execFile)
@@ -82,6 +99,10 @@ export const startServer = async (port = 7377, opts: ServerOptions = {}): Promis
     )
   }
   const p = paths()
+  const initial = opts.scope ?? (await resolveScope())
+  // El ámbito activo: lo cambia `POST /api/config` sin reiniciar y sin cambiar la URL.
+  let currentScope: ScopeSelection = initial.scope
+  let scopeSource: ScopeSource = initial.source
   const auth: AuthConfig = await createToken(join(p.ours, 'run'), port)
   const app = Fastify({ logger: false })
   await app.register(fastifyWebsocket)
@@ -113,14 +134,20 @@ export const startServer = async (port = 7377, opts: ServerOptions = {}): Promis
   const resolveEntity = (normalized: Parameters<typeof bus.publish>[0]): string | undefined => {
     const cat = snapshot?.catalog
     if (!cat) return undefined
+    // Lo tapado por otro ámbito no es lo que Claude Code ejecuta.
+    const loaded = <T extends { status: string }>(list: T[]): T[] =>
+      list.filter((e) => e.status !== 'shadowed')
     if (normalized.skill) {
-      const name = normalized.skill.includes(':')
-        ? normalized.skill.split(':').pop()
-        : normalized.skill
-      return cat.skills.find((s) => s.name === name)?.id
+      // Una skill de plugin llega como `plugin:skill` y así se llama en el catálogo; si no casa
+      // entera, se prueba con la parte final (el prefijo puede ser un espacio de nombres propio).
+      const full = normalized.skill
+      const exact = loaded(cat.skills).find((s) => s.name === full)
+      if (exact) return exact.id
+      const name = full.includes(':') ? full.split(':').pop() : full
+      return loaded(cat.skills).find((s) => s.name === name)?.id
     }
     if (normalized.actor.kind === 'agent' && normalized.actor.agentType) {
-      return cat.agents.find((a) => a.name === normalized.actor.agentType)?.id
+      return loaded(cat.agents).find((a) => a.name === normalized.actor.agentType)?.id
     }
     return undefined
   }
@@ -173,16 +200,18 @@ export const startServer = async (port = 7377, opts: ServerOptions = {}): Promis
     if (building) return building
     const mine = generation
     const myEpoch = historyEpoch
+    const scope = currentScope
     const t0 = Date.now()
     let attempt: Promise<Snapshot> | undefined
     attempt = (async () => {
       try {
         const [catalog, hist] = await Promise.all([
-          scanCatalogReport(),
+          scanCatalogReport(scope),
           historical ?? scanHistorical(),
         ])
         if (myEpoch === historyEpoch) historical = hist
-        const built = assembleSnapshot(catalog, hist, t0)
+        const knownProjects = await withCurrentProject(hist.knownProjects, scope)
+        const built = assembleSnapshot(catalog, { ...hist, knownProjects }, scope, t0)
         if (mine === generation) snapshot = built
         return built
       } finally {
@@ -212,11 +241,58 @@ export const startServer = async (port = 7377, opts: ServerOptions = {}): Promis
   })
   app.get('/api/sessions', async () => ({ sessions: presence.list() }))
 
+  // --- configuración propia ------------------------------------------------------------------
+  // `~/.claude/ai-office/config.json`. Es lo único que escribe fuera del motor de mutaciones de
+  // Claude Code y solo toca ese archivo. `POST` recibe un PARCHE (`null` quita una clave, `show` se
+  // combina clave a clave); cambiar `scope`/`project` cambia el ámbito en caliente y reconstruye
+  // el snapshot.
+  const configView = async (changed = false) => {
+    const { config, error } = await readOurConfig()
+    return {
+      config,
+      ...(error ? { configError: error } : {}),
+      path: ourConfigPath(),
+      scope: currentScope,
+      scopeSource,
+      changed,
+    }
+  }
+  app.get('/api/config', async (_req, reply) => {
+    try {
+      return await configView()
+    } catch (err) {
+      return sendError(reply, err)
+    }
+  })
+  app.post('/api/config', async (req, reply) => {
+    try {
+      const { config: current } = await readOurConfig()
+      const next = applyConfigPatch(current, req.body)
+      await assertUsableConfig(next)
+      const { changed } = await writeOurConfig(next)
+      const touchesScope =
+        req.body !== null &&
+        typeof req.body === 'object' &&
+        ('scope' in req.body || 'project' in req.body)
+      if (touchesScope) {
+        const resolved = await resolveScope({ config: next })
+        if (JSON.stringify(resolved.scope) !== JSON.stringify(currentScope)) invalidateCatalog()
+        currentScope = resolved.scope
+        scopeSource = resolved.source
+      }
+      return await configView(changed)
+    } catch (err) {
+      return sendError(reply, err)
+    }
+  })
+
   // --- escritura -----------------------------------------------------------------------------
   // Los errores salen siempre como `{ error, code, ... }` (ver `errors.ts`).
   app.post('/api/mutations/plan', async (req, reply) => {
     try {
-      return await planMutation((await getSnapshot()).catalog, req.body as MutationRequest)
+      return await planMutation((await getSnapshot()).catalog, req.body as MutationRequest, {
+        scope: currentScope,
+      })
     } catch (err) {
       return sendError(reply, err)
     }
@@ -225,8 +301,39 @@ export const startServer = async (port = 7377, opts: ServerOptions = {}): Promis
   app.post('/api/mutations/apply', async (req, reply) => {
     try {
       const body = req.body as MutationRequest & { etag: string }
-      const result = await applyMutation((await getSnapshot()).catalog, body)
+      const result = await applyMutation((await getSnapshot()).catalog, body, {
+        scope: currentScope,
+      })
       // El catálogo acaba de cambiar en disco: el siguiente que pida el snapshot lo recalcula.
+      invalidateCatalog()
+      return result
+    } catch (err) {
+      return sendError(reply, err)
+    }
+  })
+
+  // --- entidades nuevas ----------------------------------------------------------------------
+  // `{ kind: 'agent' | 'skill' | 'command', name, description, body?, lang? }`. Sin `body` se
+  // escribe uno inicial breve en `lang`.
+  app.post('/api/entities/plan', async (req, reply) => {
+    try {
+      return await planCreate(
+        (await getSnapshot()).catalog,
+        req.body as CreateEntityRequest,
+        currentScope,
+      )
+    } catch (err) {
+      return sendError(reply, err)
+    }
+  })
+
+  app.post('/api/entities/create', async (req, reply) => {
+    try {
+      const result = await applyCreate(
+        (await getSnapshot()).catalog,
+        req.body as CreateEntityRequest,
+        currentScope,
+      )
       invalidateCatalog()
       return result
     } catch (err) {
@@ -258,7 +365,7 @@ export const startServer = async (port = 7377, opts: ServerOptions = {}): Promis
   app.post('/api/flows/plan', async (req, reply) => {
     try {
       const { flow, lang } = req.body as { flow: Parameters<typeof planFlow>[0]; lang?: unknown }
-      return await planFlow(flow, (await getSnapshot()).catalog, parseLang(lang))
+      return await planFlow(flow, (await getSnapshot()).catalog, parseLang(lang), currentScope)
     } catch (err) {
       return sendError(reply, err)
     }
@@ -271,7 +378,13 @@ export const startServer = async (port = 7377, opts: ServerOptions = {}): Promis
         etag: string
         lang?: unknown
       }
-      const result = await saveFlow(flow, etag, (await getSnapshot()).catalog, parseLang(lang))
+      const result = await saveFlow(
+        flow,
+        etag,
+        (await getSnapshot()).catalog,
+        parseLang(lang),
+        currentScope,
+      )
       invalidateCatalog()
       return result
     } catch (err) {

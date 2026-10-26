@@ -1,4 +1,11 @@
-import { agruparEnSalas, type Catalog, type Edge, type Planta } from '@ai-office/core'
+import {
+  agruparEnSalas,
+  type Catalog,
+  type Edge,
+  type KnownProject,
+  type Planta,
+  type ScopeSelection,
+} from '@ai-office/core'
 import {
   activityByTarget,
   buildDeclaredGraph,
@@ -7,13 +14,18 @@ import {
   type EntityActivity,
   type HistoryScan,
   MAIN_THREAD_ID,
+  ownCatalog,
+  pluginStats,
   readHistoryWindowDays,
+  resolveScope,
   scanCatalogReport,
   scanHistory,
+  scanKnownProjects,
   scanTranscripts,
   skillStats,
   type TranscriptScan,
   vocabularyGap,
+  withCurrentProject,
 } from '@ai-office/providers'
 
 /**
@@ -28,10 +40,15 @@ export interface Snapshot {
   edges: Edge[]
   /** Actividad por id de entidad: skills, agentes y comandos (estos desde `history.jsonl` y la herramienta Skill). */
   activity: Record<string, EntityActivity>
+  /** El ámbito con el que se construyó: solo lo del usuario, o además lo de un proyecto. */
+  scope: ScopeSelection
+  /** Proyectos conocidos (de `~/.claude.json` y de los transcripts); los que existen, primero. */
+  knownProjects: KnownProject[]
   /** Archivos del catálogo que no se pudieron leer (symlink roto, .md ilegible), con el motivo. */
   scanErrors: string[]
   stats: {
-    /** Agentes activos: los archivados (`agents/.archivo/`) no cuentan. */
+    /** Agentes del usuario y del proyecto que Claude Code carga: no cuentan los archivados, los
+     * tapados por otro ámbito ni los de plugins. */
     agents: number
     skills: number
     commands: number
@@ -43,6 +60,15 @@ export interface Snapshot {
     activeRatio: number
     /** Días que Claude Code conserva los transcripts (`cleanupPeriodDays`); `null` si no se sabe. */
     historyWindowDays: number | null
+    /** Plugins instalados y, de ellos, los habilitados y los habilitados sin ningún uso. */
+    plugins: number
+    pluginsEnabled: number
+    pluginsUnused: number
+    /** Tokens de las descriptions de las skills de plugins HABILITADOS (aparte de `descriptionTokens`). */
+    pluginDescriptionTokens: number
+    /** Servidores MCP que se cargan (ni tapados, ni desactivados, ni de un plugin apagado) y los sin uso. */
+    mcpServers: number
+    mcpUnused: number
     descriptionTokens: number
     deadDescriptionTokens: number
     declaredAgentSkill: number
@@ -72,26 +98,30 @@ export interface HistoricalData {
   scan: TranscriptScan
   history: HistoryScan
   historyWindowDays: number | null
+  knownProjects: KnownProject[]
 }
 
 export const scanHistorical = async (): Promise<HistoricalData> => {
-  const [scan, history, historyWindowDays] = await Promise.all([
+  const [scan, history, historyWindowDays, knownProjects] = await Promise.all([
     scanTranscripts(),
     scanHistory(),
     readHistoryWindowDays(),
+    scanKnownProjects(),
   ])
-  return { scan, history, historyWindowDays }
+  return { scan, history, historyWindowDays, knownProjects }
 }
 
 /** Une un catálogo recién escaneado con un historial ya calculado. */
 export const assembleSnapshot = (
   { catalog, errors }: CatalogScan,
-  { scan, history, historyWindowDays }: HistoricalData,
+  { scan, history, historyWindowDays, knownProjects }: HistoricalData,
+  scope: ScopeSelection = { kind: 'user' },
   t0 = Date.now(),
 ): Snapshot => {
-  // Los archivados viajan en `catalog.agents` para poder restaurarlos, pero no se cuentan ni
-  // entran en ningún grafo (ver `buildDeclaredGraph`).
-  const liveAgents = catalog.agents.filter((a) => !a.archived)
+  // Los archivados, los tapados por otro ámbito y lo de plugins viajan en el catálogo para poder
+  // enseñarlos, pero las cifras y la planta cuentan solo lo que es del usuario y se carga.
+  const own = ownCatalog(catalog)
+  const liveAgents = own.agents
 
   const declared = buildDeclaredGraph(catalog)
   const proven = buildProvenGraph(scan.invocations, catalog)
@@ -101,11 +131,12 @@ export const assembleSnapshot = (
   })
 
   const agentsUnused = liveAgents.filter((a) => !activityMap.get(a.id)?.uses)
-  const skills = skillStats(catalog, activityMap)
+  const skills = skillStats(own, activityMap)
+  const plugins = pluginStats(catalog, activityMap)
 
   const vocabularyGaps: Record<string, string[]> = {}
   for (const s of catalog.skills) {
-    if (!s.description) continue
+    if (!s.description || s.status === 'shadowed') continue
     vocabularyGaps[s.id] = vocabularyGap(s.description, history.vocab).missing.slice(0, 12)
   }
 
@@ -113,6 +144,8 @@ export const assembleSnapshot = (
     catalog,
     edges,
     activity: Object.fromEntries(activityMap),
+    scope,
+    knownProjects,
     scanErrors: errors,
     vocabularyGaps,
     // Solo con el grafo DECLARADO: la planta describe cómo está organizado el trabajo según lo
@@ -122,14 +155,15 @@ export const assembleSnapshot = (
     mainThreadId: MAIN_THREAD_ID,
     stats: {
       agents: liveAgents.length,
-      skills: catalog.skills.length,
-      commands: catalog.commands.length,
+      skills: own.skills.length,
+      commands: own.commands.length,
       agentsUnused: agentsUnused.length,
       skillsUnused: skills.skillsUnused,
       skillsRetired: skills.skillsRetired,
-      commandsUsed: catalog.commands.filter((c) => activityMap.get(c.id)?.uses).length,
+      commandsUsed: own.commands.filter((c) => activityMap.get(c.id)?.uses).length,
       activeRatio: skills.activeRatio,
       historyWindowDays,
+      ...plugins,
       descriptionTokens: skills.descriptionTokens,
       deadDescriptionTokens: skills.deadDescriptionTokens,
       declaredAgentSkill: declared.filter(
@@ -149,9 +183,14 @@ export const assembleSnapshot = (
   }
 }
 
-/** Todo de una vez: lo que usa el primer arranque y `/api/refresh`. */
-export const buildSnapshot = async (): Promise<Snapshot> => {
+/**
+ * Todo de una vez: lo que usa el primer arranque y `/api/refresh`. Sin ámbito explícito se usa el
+ * de `config.json` (o el de usuario): quien lanza desde una carpeta la decide en la CLI, no aquí.
+ */
+export const buildSnapshot = async (scope?: ScopeSelection): Promise<Snapshot> => {
   const t0 = Date.now()
-  const [catalog, historical] = await Promise.all([scanCatalogReport(), scanHistorical()])
-  return assembleSnapshot(catalog, historical, t0)
+  const active = scope ?? (await resolveScope()).scope
+  const [catalog, historical] = await Promise.all([scanCatalogReport(active), scanHistorical()])
+  const knownProjects = await withCurrentProject(historical.knownProjects, active)
+  return assembleSnapshot(catalog, { ...historical, knownProjects }, active, t0)
 }

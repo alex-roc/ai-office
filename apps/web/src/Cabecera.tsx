@@ -1,11 +1,18 @@
-import { memo } from 'react'
-import { skillsJubiladas, ventanaDeHistorial } from './derivados.ts'
+import { memo, useEffect, useRef, useState } from 'react'
+import { fuenteTranscripts, skillsJubiladas } from './derivados.ts'
 import type { Vista } from './Ficha.tsx'
 import { LANGS, type Lang, setLang } from './i18n/index.ts'
 import { useLang, useT } from './i18n/react.ts'
 import { useLiveSelector } from './live.ts'
+import type { CreateRequest } from './mutations.ts'
 import { shortPath } from './texto.ts'
 import type { Snapshot } from './types.ts'
+
+const VISTAS = [
+  { id: 'sala', rotulo: 'view.office', tecla: '1' },
+  { id: 'plano', rotulo: 'view.blueprint', tecla: '2' },
+  { id: 'registro', rotulo: 'view.ledger', tecla: '3' },
+] as const
 
 const pct = (n: number) => `${Math.round(n * 100)}%`
 
@@ -62,6 +69,84 @@ const ConmutadorIdioma = () => {
   )
 }
 
+/**
+ * Menú "nuevo ▾": agente, skill, comando en blanco o el lienzo de flujos. Un botón con
+ * `aria-haspopup`, una lista de botones, y Esc / clic fuera / elegir lo cierran devolviendo el foco.
+ */
+const MenuNuevo = ({
+  onNuevo,
+  onNuevoFlujo,
+}: {
+  onNuevo: (kind: CreateRequest['kind']) => void
+  onNuevoFlujo: () => void
+}) => {
+  const t = useT()
+  const [abierto, setAbierto] = useState(false)
+  const raiz = useRef<HTMLDivElement>(null)
+  const boton = useRef<HTMLButtonElement>(null)
+
+  useEffect(() => {
+    if (!abierto) return
+    raiz.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus()
+    const fuera = (e: PointerEvent) => {
+      if (!raiz.current?.contains(e.target as Node)) setAbierto(false)
+    }
+    const tecla = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation()
+        setAbierto(false)
+        boton.current?.focus()
+      } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault()
+        const items = Array.from(
+          raiz.current?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? [],
+        )
+        const i = items.indexOf(document.activeElement as HTMLElement)
+        const paso = e.key === 'ArrowDown' ? 1 : -1
+        items[(i + paso + items.length) % items.length]?.focus()
+      }
+    }
+    document.addEventListener('pointerdown', fuera)
+    document.addEventListener('keydown', tecla, true)
+    return () => {
+      document.removeEventListener('pointerdown', fuera)
+      document.removeEventListener('keydown', tecla, true)
+    }
+  }, [abierto])
+
+  const elegir = (f: () => void) => () => {
+    setAbierto(false)
+    f()
+  }
+  return (
+    <div className="menu-nuevo" ref={raiz}>
+      <button
+        ref={boton}
+        type="button"
+        className="modo"
+        aria-haspopup="menu"
+        aria-expanded={abierto}
+        onClick={() => setAbierto((a) => !a)}
+        title={t('header.new.title')}
+      >
+        {t('header.new')} ▾
+      </button>
+      {abierto && (
+        <div className="menu-lista" role="menu" aria-label={t('header.new.title')}>
+          {(['agent', 'skill', 'command'] as const).map((k) => (
+            <button key={k} type="button" role="menuitem" onClick={elegir(() => onNuevo(k))}>
+              {t(`header.new.${k}`)}
+            </button>
+          ))}
+          <button type="button" role="menuitem" onClick={elegir(onNuevoFlujo)}>
+            {t('header.newFlow')}
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 const Lectura = ({
   valor,
   rotulo,
@@ -87,6 +172,7 @@ const CabeceraImpl = ({
   editing,
   onEditing,
   onNuevoFlujo,
+  onNuevo,
   onEncuadrar,
   onBuscar,
   onAyuda,
@@ -97,6 +183,7 @@ const CabeceraImpl = ({
   editing: boolean
   onEditing: (v: boolean) => void
   onNuevoFlujo: () => void
+  onNuevo: (kind: CreateRequest['kind']) => void
   onEncuadrar: () => void
   onBuscar: () => void
   onAyuda: () => void
@@ -111,14 +198,7 @@ const CabeceraImpl = ({
     dirSkills = '~/.claude/skills',
   ] = snapshot.catalog.roots
   const raiz = shortPath(dirAgentes.replace(/[\\/]agents[\\/]?$/, ''))
-  const dias = ventanaDeHistorial(snapshot)
-  const ventana =
-    dias === undefined
-      ? ''
-      : dias === null
-        ? t('src.window.all')
-        : t('src.window.days', { n: dias })
-  const transcripts = t('src.transcripts', { root: raiz, window: ventana })
+  const transcripts = fuenteTranscripts(snapshot)
   const jubiladas = skillsJubiladas(snapshot)
 
   return (
@@ -128,19 +208,16 @@ const CabeceraImpl = ({
           ai<span>-</span>office
         </h1>
         <div className="views">
-          {(['sala', 'plano'] as const).map((v) => (
+          {VISTAS.map((v) => (
             <button
-              key={v}
+              key={v.id}
               type="button"
-              data-on={vista === v}
-              aria-pressed={vista === v}
-              onClick={() => onVista(v)}
-              title={t('header.view.title', {
-                view: t(v === 'sala' ? 'view.office' : 'view.blueprint'),
-                key: v === 'sala' ? '1' : '2',
-              })}
+              data-on={vista === v.id}
+              aria-pressed={vista === v.id}
+              onClick={() => onVista(v.id)}
+              title={t('header.view.title', { view: t(v.rotulo), key: v.tecla })}
             >
-              {t(v === 'sala' ? 'view.office' : 'view.blueprint')}
+              {t(v.rotulo)}
             </button>
           ))}
         </div>
@@ -151,25 +228,30 @@ const CabeceraImpl = ({
           aria-pressed={editing}
           disabled={vista !== 'plano'}
           onClick={() => onEditing(!editing)}
-          title={t(vista === 'plano' ? 'header.edit.title.blueprint' : 'header.edit.title.office')}
+          title={t(
+            vista === 'plano'
+              ? 'header.edit.title.blueprint'
+              : vista === 'sala'
+                ? 'header.edit.title.office'
+                : 'header.edit.title.ledger',
+          )}
         >
           {t(editing ? 'header.edit.on' : 'header.edit.off')}
         </button>
-        <button
-          type="button"
-          className="modo"
-          onClick={onNuevoFlujo}
-          title={t('header.newFlow.title')}
-        >
-          {t('header.newFlow')}
-        </button>
+        <MenuNuevo onNuevo={onNuevo} onNuevoFlujo={onNuevoFlujo} />
       </div>
 
       <div className="bar-grupo bar-herramientas">
         <button type="button" className="modo" onClick={onBuscar} title={t('header.search.title')}>
           {t('header.search')} <kbd>/</kbd>
         </button>
-        <button type="button" className="modo" onClick={onEncuadrar} title={t('header.fit.title')}>
+        <button
+          type="button"
+          className="modo"
+          onClick={onEncuadrar}
+          disabled={vista === 'registro'}
+          title={t('header.fit.title')}
+        >
           {t('header.fit')}
         </button>
         <button type="button" className="modo" onClick={onAyuda} title={t('header.help.title')}>

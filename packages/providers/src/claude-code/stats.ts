@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import type { Catalog } from '@ai-office/core'
+import { liveCatalog } from './live.ts'
 import { paths } from './paths.ts'
 import type { EntityActivity } from './proven.ts'
 
@@ -33,6 +34,36 @@ export const skillStats = (catalog: Catalog, activity: Map<string, EntityActivit
     activeRatio: live.length ? active / live.length : 0,
     descriptionTokens: live.reduce((a, s) => a + s.descriptionTokens, 0),
     deadDescriptionTokens: unused.reduce((a, s) => a + s.descriptionTokens, 0),
+  }
+}
+
+export interface PluginStats {
+  /** Plugins instalados (habilitados o no). */
+  plugins: number
+  pluginsEnabled: number
+  /** Habilitados sin ningún uso en el historial. */
+  pluginsUnused: number
+  /** Coste en tokens de las descriptions de las skills de los plugins HABILITADOS. */
+  pluginDescriptionTokens: number
+  /** Servidores MCP que Claude Code carga (ni tapados, ni desactivados, ni de plugin apagado). */
+  mcpServers: number
+  mcpUnused: number
+}
+
+/** Cifras de plugins y servidores MCP. Aparte de `skillStats`: lo de un plugin no se puede jubilar. */
+export const pluginStats = (
+  catalog: Catalog,
+  activity: Map<string, EntityActivity>,
+): PluginStats => {
+  const enabled = catalog.plugins.filter((p) => p.enabled)
+  const servers = liveCatalog(catalog).mcpServers
+  return {
+    plugins: catalog.plugins.length,
+    pluginsEnabled: enabled.length,
+    pluginsUnused: enabled.filter((p) => !activity.get(p.id)?.uses).length,
+    pluginDescriptionTokens: enabled.reduce((n, p) => n + p.descriptionTokens, 0),
+    mcpServers: servers.length,
+    mcpUnused: servers.filter((s) => !activity.get(s.id)?.uses).length,
   }
 }
 

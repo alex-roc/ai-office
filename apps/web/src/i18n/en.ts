@@ -202,7 +202,7 @@ export const en = {
   'welcome.blueprint':
     '**Blueprint**: the same catalog as a graph. Dotted = what your prompts say; solid = what the transcripts prove.',
   'welcome.details':
-    '**Details** (on the right): click anything to see what it says about itself, what it has done and which file each fact comes from. From there you can edit it, always with a diff.',
+    '**Details** (on the right): click anything to see what it says about itself, what it has done and which file each fact comes from. From there you can read the file and edit it, always with a diff.',
   'welcome.shortcuts': 'See shortcuts',
 
   // --- Panel de detalle ---------------------------------------------------------------------
@@ -380,9 +380,9 @@ export const en = {
   'err.reason.symlink-archive':
     '{path} is a symbolic link: archive the agent at its source, not at the projection.',
   'err.reason.file-exists':
-    'A file already exists at {path}: use the edit operation, not the create one.',
+    'A file already exists at {path}: pick another name, or edit that one instead of creating it.',
   'err.reason.invalid-name':
-    'The name "{name}" is not valid for a command: use at least one letter or number.',
+    'The name "{name}" is not valid: use lowercase letters, digits and hyphens, not starting with a hyphen (a flow needs at least one letter or number).',
   'err.reason.section-unclosed': 'Section "{section}": start marker found but no end marker.',
   'err.reason.no-frontmatter': 'Cannot edit: the file has no frontmatter.',
 
@@ -404,4 +404,200 @@ export const en = {
   'problem.name-mismatch': 'The name "{name}" does not match the file name.',
   'problem.no-skill-md': 'No readable SKILL.md.',
   'detail.problems': 'problems',
+
+  // --- Ver y medir: Registro (Ledger), visor de archivo, quién usa una skill ------------------
+  'view.ledger': 'Ledger',
+  'header.edit.title.ledger': 'Only available in the Blueprint: switch view to edit the graph',
+  'header.new': 'new',
+  'header.new.title': 'Create an agent, a skill, a command or a flow',
+  'header.new.agent': 'new agent',
+  'header.new.skill': 'new skill',
+  'header.new.command': 'new command',
+  'spark.title': 'Uses per week, last {n} weeks (oldest to current): {values}',
+
+  'ledger.aria': 'Ledger: every agent, skill and command with what it has really done',
+  'ledger.filter.type': 'Filter by kind',
+  'ledger.filter.all': 'all',
+  'ledger.filter.agents': 'agents',
+  'ledger.filter.skills': 'skills',
+  'ledger.filter.commands': 'commands',
+  'ledger.unused': 'only unused',
+  'ledger.unused.title': 'Rows with no recorded use in the {transcripts}',
+  'ledger.search': 'search by name…',
+  'ledger.count': '{n} of {total}',
+  'ledger.none': 'Nothing matches those filters.',
+  'ledger.retired': '(retired)',
+  'ledger.cost.retired': 'Retired: its description is no longer loaded, so it costs nothing now.',
+  'ledger.col.name': 'name',
+  'ledger.col.kind': 'kind',
+  'ledger.col.grade': 'grade',
+  'ledger.col.uses': 'uses',
+  'ledger.col.sessions': 'sessions',
+  'ledger.col.projects': 'projects',
+  'ledger.col.last': 'last used',
+  'ledger.col.trend': 'trend',
+  'ledger.col.cost': 'description cost',
+  'ledger.col.cites': 'skills cited / proven',
+  'ledger.col.calls': 'agents it calls',
+  'ledger.src.name': 'Name of the file in {agents}, {skills} or {commands}',
+  'ledger.src.kind': 'Which folder the file lives in: agents/, skills/ or commands/',
+  'ledger.src.grade':
+    'Grade from uses, sessions and projects (it expires after 90 days). Source: {transcripts}',
+  'ledger.src.uses':
+    'Invocations recorded in the {transcripts}; typed commands also come from history.jsonl',
+  'ledger.src.sessions': 'Distinct sessions with at least one use. Source: {transcripts}',
+  'ledger.src.projects': 'Distinct projects with at least one use. Source: {transcripts}',
+  'ledger.src.last': 'Date of the most recent recorded use. Source: {transcripts}',
+  'ledger.src.trend':
+    'Uses per week over the last 12 weeks, oldest first; the dot is the current week. Source: {transcripts}',
+  'ledger.src.cost':
+    'Skills only: estimated tokens of its description, loaded in every session. Source: `description` in SKILL.md',
+  'ledger.src.cites':
+    'Agents only: skills its prompt cites or preloads (agents/*.md) over skills it has really invoked ({transcripts})',
+  'ledger.src.calls':
+    'Commands only: agents its text names (commands/*.md). Hover a number to see which',
+
+  'detail.explain.ledger':
+    'Every row in the ledger comes from one of your files, and its numbers from your transcripts. Click a column to sort; click a row to see its details here.',
+  'detail.trend': 'last 12 weeks',
+  'detail.trend.src': 'Uses per week, oldest first. Source: {transcripts}',
+  'detail.byProject': 'by project',
+  'detail.byProject.more_one': 'and {n} more project',
+  'detail.byProject.more_other': 'and {n} more projects',
+  'detail.who': 'who uses it',
+  'detail.who.none': 'No agent cites it, preloads it or has invoked it, and no command names it.',
+  'detail.who.proven': 'has invoked it (proven)',
+  'detail.who.preloaded': 'preloads it in `skills:`',
+  'detail.who.declared': 'its prompt cites it (declared)',
+  'detail.who.commands': 'commands that name it',
+  'detail.cite.title': 'Open the file at that line',
+  'detail.ev.callsAgents': 'agents it calls',
+  'detail.ev.callsSkills': 'skills it names',
+  'detail.openFlow.note':
+    'The flow editor composes the command from steps; the text editor above writes it by hand.',
+
+  'viewer.show': 'view file',
+  'viewer.hide': 'hide file',
+  'viewer.aria': 'File of {name}, read only',
+  'viewer.close': 'close',
+  'viewer.frontmatter': '⋯ frontmatter · lines {from}–{to}',
+  'viewer.unavailable':
+    'This daemon does not send the file contents. Update ai-office to see them here.',
+
+  // --- Editar: botones de la ficha y sus diálogos ---------------------------------------------
+  'edit.cancel': 'Cancel',
+  'edit.review': 'Review diff',
+  'edit.discard.title': 'Discard the changes?',
+  'edit.discard.text':
+    'You have edited this and nothing has been saved to disk yet. If you leave now, what you wrote is lost.',
+  'edit.discard.confirm': 'Discard and leave',
+  'edit.lines_one': '{n} line',
+  'edit.lines_other': '{n} lines',
+  'edit.filter': 'filter…',
+  'edit.tokens': '~{n} tokens',
+  'edit.missing': 'not in the catalog',
+  'edit.byHand': 'written by hand in the prompt',
+  'edit.noBody': 'This daemon does not send the file contents, so it cannot be edited here.',
+  'edit.noSkills': 'There are no skills in your catalog.',
+  'edit.noAgents': 'There are no agents in your catalog.',
+  'edit.btn.description': 'edit description',
+  'edit.btn.prompt': 'edit prompt',
+  'edit.btn.skillBody': 'edit SKILL.md',
+  'edit.btn.commandBody': 'edit command text',
+  'edit.btn.hint': 'argument hint',
+  'edit.btn.tools': 'tools…',
+  'edit.btn.preloaded': 'preloaded skills…',
+  'edit.btn.citations': 'skills it cites…',
+  'edit.btn.assign': 'assign to agents…',
+  'edit.field.description': 'description',
+  'edit.field.prompt': 'prompt (the text after the frontmatter)',
+  'edit.field.skillBody': 'SKILL.md body (the text after the frontmatter)',
+  'edit.field.commandBody': 'command text (what runs when you type it)',
+  'edit.field.hint': 'argument hint (shown after the command name)',
+  'edit.hint.note': 'Leave it empty to remove the hint from the file.',
+  'edit.tools.legend': 'Tools this agent may use',
+  'edit.tools.intro':
+    'Checked tools are written to `tools:`. With "all tools" the field is removed and the agent inherits every tool.',
+  'edit.tools.all': 'all tools (inherit everything)',
+  'edit.preloaded.legend': 'Skills loaded at the start of every run',
+  'edit.preloaded.intro':
+    'Preloading adds no capability: the agent could invoke the skill on demand. It only brings the cost forward, at every start. The diff shows the estimate.',
+  'edit.citations.legend': 'Skills its prompt tells it to read',
+  'edit.citations.intro':
+    'Written in the managed list at the end of the prompt. A skill the prompt cites by hand elsewhere shows as checked and locked: edit the prompt to remove it.',
+  'edit.description.cost': 'Cost today: ~{n} tokens in every session.',
+  'edit.vocab.note':
+    'Words from your own prompts that this description does not contain: the model matches on them.',
+  'edit.assign.title': 'Assign {name} to agents',
+  'edit.assign.legend': 'Agents whose prompt cites this skill',
+  'edit.assign.intro':
+    'Each change rewrites the managed skill list of that agent. You will see one diff per agent and save them together.',
+  'toast.nothingToAssign': 'Nothing to change: every agent already cites what you chose.',
+  'toast.created': 'Created {name}.',
+  'diff.title.create': 'create {kind} {name}',
+  'diff.title.description': 'description of {name}',
+  'diff.title.prompt': 'prompt of {name}',
+  'diff.title.skillBody': 'SKILL.md of {name}',
+  'diff.title.commandBody': 'text of /{name}',
+  'diff.title.tools': 'tools of {name}',
+  'diff.title.preloaded': 'preloaded skills of {name}',
+  'diff.title.mentions': 'skills cited by {name}',
+  'diff.title.hint': 'argument hint of /{name}',
+  'diff.title.assign_one': 'assign {skill}: {n} agent changes',
+  'diff.title.assign_other': 'assign {skill}: {n} agent changes',
+  'diff.title.assignOne': 'skills cited by {agent}, for {skill}',
+  'diff.batch': '{n} files change. Each diff is shown below and all of them are saved together.',
+
+  // --- Crear ----------------------------------------------------------------------------------
+  'create.title.agent': 'New agent',
+  'create.title.skill': 'New skill',
+  'create.title.command': 'New command',
+  'create.name': 'name',
+  'create.name.rule':
+    'Lowercase letters, digits and hyphens, up to 64, not starting with a hyphen. It is also the file name.',
+  'create.name.empty': 'Give it a name.',
+  'create.name.format':
+    'Use only lowercase letters, digits and hyphens, up to 64, and do not start with a hyphen.',
+  'create.name.exists': 'That name is already taken.',
+  'create.name.placeholder.agent': 'code-reviewer',
+  'create.name.placeholder.skill': 'release-notes',
+  'create.name.placeholder.command': 'weekly-review',
+  'create.description': 'description',
+  'create.description.placeholder.agent': 'When Claude should delegate to this agent',
+  'create.description.placeholder.skill': 'When Claude should pick this skill',
+  'create.description.placeholder.command': 'What this command does, for the / menu',
+  'create.body.agent': 'prompt (optional)',
+  'create.body.skill': 'SKILL.md body (optional)',
+  'create.body.command': 'command text (optional)',
+  'create.command.flowHint': 'Prefer to compose it from steps that delegate to agents?',
+  'create.command.flowLink': 'Use the flow canvas',
+
+  // --- Ayuda: Registro y edición --------------------------------------------------------------
+  'help.key.ledger': 'show the Ledger',
+  'help.ledger.title': 'How to read the Ledger',
+  'help.ledger.table':
+    'One row per agent, skill and command. Click a column title to sort, and a row to open its details on the right. Each column title says which file or field its figure comes from.',
+  'help.ledger.filters':
+    'Filter by kind, tick **only unused** to get your clean-up list, or search by name.',
+  'help.ledger.trend':
+    '**Trend**: uses per week over the last 12 weeks; the dot is the current week. **Description cost** is what a skill costs in every session.',
+  'help.edit.title': 'Editing from the details panel',
+  'help.edit.fields':
+    'Description, tools, preloaded skills and the skills a prompt cites are edited from the details panel. Every change shows its diff before touching the file.',
+  'help.edit.prompt':
+    '**Edit prompt** (and SKILL.md or command text) opens a full-size text editor; it warns you if you leave with unsaved changes.',
+  'help.edit.assign':
+    'On a skill, **assign to agents** ticks which agents cite it; you review one diff per agent and save them together.',
+  'help.edit.create':
+    '**new** in the header creates an agent, a skill or a command; the name is checked as you type.',
+  'help.edit.view':
+    '**view file** shows the real file with its line numbers; every `file:line` citation in the details opens it at that line.',
+  'welcome.ledger':
+    '**Ledger**: the same catalog as a sortable table, with uses, last use and a weekly trend for each one.',
+
+  // --- Errores nuevos del daemon --------------------------------------------------------------
+  'err.reason.empty-description': 'The description cannot be empty.',
+  'err.reason.invalid-body': 'The text to write is not valid: it must be plain text.',
+  'err.reason.wrong-entity-kind':
+    'That change does not apply to this kind of entity ({kind} on a {entityKind}). The interface and the daemon may be out of sync.',
 } satisfies Record<string, string>

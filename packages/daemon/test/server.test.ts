@@ -201,3 +201,139 @@ test('un conflicto de etag es 409 con code conflict y currentEtag', async () => 
   assert.equal(body.code, 'conflict')
   assert.ok(body.currentEtag)
 })
+
+/** Plan + apply por HTTP, como lo hace la interfaz; devuelve el plan para poder inspeccionar el diff. */
+const mutate = async (kind: string, entityId: string, value?: unknown) => {
+  const planRes = await api('/api/mutations/plan', { kind, entityId, value })
+  assert.equal(planRes.status, 200, `plan ${kind}`)
+  const plan = (await planRes.json()) as { etag: string; diff: string; changed: boolean }
+  const applied = await api('/api/mutations/apply', { kind, entityId, value, etag: plan.etag })
+  assert.equal(applied.status, 200, `apply ${kind}`)
+  return plan
+}
+
+test('agent.tools y agent.preloadedSkills funcionan por HTTP, con aviso de coste', async () => {
+  const snap = await snapshot()
+  const id = snap.catalog.agents.find((a) => a.name === 'activo')?.id as string
+  const file = join(home, 'agents/activo.md')
+
+  await mutate('agent.tools', id, ['Read', 'Grep'])
+  assert.match(readFileSync(file, 'utf8'), /^tools: Read, Grep$/m)
+
+  const planRes = await api('/api/mutations/plan', {
+    kind: 'agent.preloadedSkills',
+    entityId: id,
+    value: ['viva', 'no-existe'],
+  })
+  const plan = (await planRes.json()) as { warningDetails: { code: string }[]; etag: string }
+  assert.deepEqual(plan.warningDetails.map((w) => w.code).sort(), [
+    'broken-citation',
+    'preload-cost',
+  ])
+  await mutate('agent.preloadedSkills', id, ['viva'])
+  assert.match(readFileSync(file, 'utf8'), /^skills: viva$/m)
+})
+
+test('descripciones y cuerpos de agente, skill y comando se editan por HTTP', async () => {
+  const snap = await snapshot()
+  const agent = snap.catalog.agents.find((a) => a.name === 'activo')?.id as string
+  const skill = snap.catalog.skills.find((s) => s.name === 'viva')?.id as string
+  const command = snap.catalog.commands.find((c) => c.name === 'x')?.id as string
+
+  await mutate('agent.description', agent, 'Nueva: descripción')
+  await mutate('agent.body', agent, 'Cuerpo del agente\n')
+  await mutate('skill.description', skill, 'Skill nueva')
+  await mutate('skill.body', skill, 'Cuerpo de la skill\n')
+  await mutate('command.description', command, 'Comando nuevo')
+  await mutate('command.argumentHint', command, '[x]')
+  await mutate('command.body', command, 'Cuerpo del comando\n')
+
+  const a = readFileSync(join(home, 'agents/activo.md'), 'utf8')
+  assert.match(a, /^description: "Nueva: descripción"$/m)
+  assert.ok(a.endsWith('---\nCuerpo del agente\n'))
+  const s = readFileSync(join(home, 'skills/viva/SKILL.md'), 'utf8')
+  assert.ok(s.startsWith('---\nname: viva\ndescription: Skill nueva\n---\n'))
+  assert.ok(s.endsWith('---\nCuerpo de la skill\n'))
+  const c = readFileSync(join(home, 'commands/x.md'), 'utf8')
+  assert.match(c, /^argument-hint: "?\[x\]"?$/m)
+  assert.ok(c.endsWith('---\nCuerpo del comando\n'))
+
+  const after = await snapshot()
+  assert.equal(after.catalog.agents.find((x) => x.id === agent)?.description, 'Nueva: descripción')
+})
+
+test('una mutación que no corresponde al tipo de la entidad o con valor inválido se rechaza', async () => {
+  const snap = await snapshot()
+  const agent = snap.catalog.agents.find((a) => a.name === 'activo')?.id as string
+  const wrong = await api('/api/mutations/plan', {
+    kind: 'skill.body',
+    entityId: agent,
+    value: 'x',
+  })
+  assert.equal(wrong.status, 400)
+  assert.equal(((await wrong.json()) as { reason: string }).reason, 'wrong-entity-kind')
+
+  const empty = await api('/api/mutations/plan', {
+    kind: 'agent.description',
+    entityId: agent,
+    value: '  ',
+  })
+  assert.equal(((await empty.json()) as { reason: string }).reason, 'empty-description')
+
+  const notText = await api('/api/mutations/plan', {
+    kind: 'agent.body',
+    entityId: agent,
+    value: null,
+  })
+  assert.equal(((await notText.json()) as { reason: string }).reason, 'invalid-body')
+})
+
+test('/api/entities/plan y /create: agente, skill y comando nuevos; un nombre tomado es file-exists', async () => {
+  for (const [kind, name, file] of [
+    ['agent', 'nuevo-agente', 'agents/nuevo-agente.md'],
+    ['skill', 'nueva-skill', 'skills/nueva-skill/SKILL.md'],
+    ['command', 'nuevo-cmd', 'commands/nuevo-cmd.md'],
+  ] as const) {
+    const req = { kind, name, description: `Hace ${name}: algo`, lang: 'es' }
+    const planRes = await api('/api/entities/plan', req)
+    assert.equal(planRes.status, 200)
+    const plan = (await planRes.json()) as {
+      diff: string
+      path: string
+      changed: boolean
+      warnings: string[]
+      warningDetails: unknown[]
+    }
+    assert.equal(plan.path, join(home, file))
+    assert.equal(plan.changed, true)
+    assert.deepEqual(plan.warnings, [])
+    assert.match(plan.diff, /^\+description: /m)
+    assert.ok(!existsSync(plan.path), 'planear no escribe')
+
+    const created = await api('/api/entities/create', req)
+    assert.equal(created.status, 200)
+    const result = (await created.json()) as { path: string; etag: string; id: string }
+    assert.equal(result.path, join(home, file))
+    assert.equal(result.id, `${kind}:claude-code/user/${name}`)
+    assert.ok(result.etag)
+    assert.ok(existsSync(result.path))
+
+    const again = await api('/api/entities/create', req)
+    assert.equal(again.status, 400)
+    const body = (await again.json()) as { code: string; reason: string }
+    assert.deepEqual([body.code, body.reason], ['invalid-request', 'file-exists'])
+  }
+
+  // La entidad nueva ya está en el snapshot y se puede editar con el mismo motor.
+  const snap = await snapshot()
+  const skill = snap.catalog.skills.find((s) => s.name === 'nueva-skill')
+  assert.ok(skill)
+  await mutate('skill.body', skill.id, 'Editada\n')
+  assert.ok(readFileSync(join(home, 'skills/nueva-skill/SKILL.md'), 'utf8').endsWith('Editada\n'))
+
+  const bad = await api('/api/entities/plan', { kind: 'agent', name: '../Mal', description: 'd' })
+  assert.equal(bad.status, 400)
+  assert.equal(((await bad.json()) as { reason: string }).reason, 'invalid-name')
+  const badKind = await api('/api/entities/plan', { kind: 'mcp', name: 'x', description: 'd' })
+  assert.equal(badKind.status, 400)
+})

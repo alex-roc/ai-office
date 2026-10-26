@@ -24,11 +24,17 @@ export interface MutationPlan {
 
 export type MutationKind =
   | 'agent.color'
+  | 'agent.description'
+  | 'agent.body'
   | 'agent.model'
   | 'agent.tools'
   | 'agent.preloadedSkills'
   | 'agent.skillMentions'
   | 'skill.description'
+  | 'skill.body'
+  | 'command.description'
+  | 'command.body'
+  | 'command.argumentHint'
   | 'skill.retire'
   | 'skill.unretire'
   | 'agent.archive'
@@ -45,3 +51,26 @@ export const planMutation = (req: MutationRequest): Promise<MutationPlan> =>
 
 export const applyMutation = (req: MutationRequest & { etag: string }): Promise<{ etag: string }> =>
   apiPost<{ etag: string }>('/api/mutations/apply', { ...req, lang: getLang() })
+
+/** Lo que se crea desde la interfaz: un archivo nuevo en la carpeta de usuario. */
+export interface CreateRequest {
+  kind: 'agent' | 'skill' | 'command'
+  name: string
+  description: string
+  body?: string
+}
+
+/** Crear no tiene etag que comprobar (el archivo aún no existe): es el plan de una mutación sin él. */
+export type CreatePlan = Omit<MutationPlan, 'etag'>
+
+export interface CreateResult {
+  path: string
+  etag: string
+  id: string
+}
+
+export const planCreate = (req: CreateRequest): Promise<CreatePlan> =>
+  apiPost<CreatePlan>('/api/entities/plan', { ...req, lang: getLang() })
+
+export const createEntity = (req: CreateRequest): Promise<CreateResult> =>
+  apiPost<CreateResult>('/api/entities/create', { ...req, lang: getLang() })

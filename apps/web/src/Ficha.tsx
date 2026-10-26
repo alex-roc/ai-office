@@ -1,17 +1,35 @@
 import { memo, type ReactNode } from 'react'
-import { agentesArchivados, estaArchivado } from './derivados.ts'
+import { type CapaUso, entidadDeRuta, quienUsa } from './campos.ts'
+import { agentesArchivados, estaArchivado, fuenteTranscripts } from './derivados.ts'
+import {
+  AccionesAgente,
+  AccionesComando,
+  AccionesSkill,
+  type PedirLote,
+  type PedirMutacion,
+} from './FichaEdicion.tsx'
+import { fmtNum } from './i18n/index.ts'
 import { useT } from './i18n/react.ts'
-import type { MutationRequest } from './mutations.ts'
+import { porProyecto, semanal } from './ledger.ts'
 import { conCodigo } from './Rico.tsx'
+import { Sparkline } from './Sparkline.tsx'
 import { detalleTexto, gradoEtiqueta, nombreHilo, relDate, shortPath } from './texto.ts'
 import type { Agent, Command, Edge, Skill, Snapshot } from './types.ts'
+import { VisorArchivo } from './VisorArchivo.tsx'
 
 const COLORES = ['red', 'blue', 'green', 'yellow', 'purple', 'orange', 'pink', 'cyan']
 const MODELOS = ['haiku', 'sonnet', 'opus']
 
 /** Panel lateral: qué es esto, qué dice de sí mismo, y qué ha hecho de verdad. */
 
-export type Vista = 'sala' | 'plano'
+export type Vista = 'sala' | 'plano' | 'registro'
+
+/** El visor de archivo abierto: de qué entidad, en qué línea, y un contador para volver a centrarlo. */
+export interface EstadoVisor {
+  id: string
+  linea?: number
+  disparo: number
+}
 
 /**
  * Las opciones de un selector más el valor actual si no está en la lista. Un modelo como
@@ -21,8 +39,48 @@ export type Vista = 'sala' | 'plano'
 const opcionesCon = (lista: string[], actual: string | null): string[] =>
   actual && !lista.includes(actual) ? [...lista, actual] : lista
 
-const Evidence = ({ edges, title }: { edges: Edge[]; title: ReactNode }) => {
+/**
+ * Una cita `archivo:línea`. Si el archivo es de una entidad del catálogo se puede pulsar y abre el
+ * visor en esa línea; si no (un transcript, por ejemplo) es solo texto.
+ */
+const Cita = ({
+  snapshot,
+  ev,
+  onVisor,
+}: {
+  snapshot: Snapshot
+  ev: Edge['evidence'][number]
+  onVisor?: (id: string, linea?: number) => void
+}) => {
   const t = useT()
+  const texto = `${shortPath(ev.path)}${ev.line ? `:${ev.line}` : ''}${
+    ev.field ? t('detail.ev.field', { field: ev.field }) : ''
+  }`
+  const dueno = entidadDeRuta(snapshot, ev.path)
+  if (!dueno || !onVisor) return <code>{texto}</code>
+  return (
+    <button
+      type="button"
+      className="cita"
+      title={t('detail.cite.title')}
+      onClick={() => onVisor(dueno.id, ev.line)}
+    >
+      {texto}
+    </button>
+  )
+}
+
+const Evidence = ({
+  snapshot,
+  edges,
+  title,
+  onVisor,
+}: {
+  snapshot: Snapshot
+  edges: Edge[]
+  title: ReactNode
+  onVisor?: (id: string, linea?: number) => void
+}) => {
   if (edges.length === 0) return null
   return (
     <section>
@@ -33,16 +91,104 @@ const Evidence = ({ edges, title }: { edges: Edge[]; title: ReactNode }) => {
           <div className="evidence" key={`${e.from}-${e.to}-${e.kind}-${e.layer}`}>
             <div>{e.to.split('/').pop() ?? e.to}</div>
             {ev?.excerpt && <div className="quote">“{ev.excerpt}”</div>}
-            {ev && (
-              <code>
-                {shortPath(ev.path)}
-                {ev.line ? `:${ev.line}` : ''}
-                {ev.field ? t('detail.ev.field', { field: ev.field }) : ''}
-              </code>
-            )}
+            {ev && <Cita snapshot={snapshot} ev={ev} onVisor={onVisor} />}
           </div>
         )
       })}
+    </section>
+  )
+}
+
+const NOMBRE_CAPA = {
+  proven: 'detail.who.proven',
+  preloaded: 'detail.who.preloaded',
+  declared: 'detail.who.declared',
+  command: 'detail.who.commands',
+} as const
+
+/**
+ * Quién usa una skill, en cuatro capas con su evidencia: lo que hicieron de verdad (con número de
+ * usos), quién la precarga, a quién se lo dice su prompt y qué comandos la nombran. Cada línea lleva
+ * a esa entidad.
+ */
+const QuienUsa = ({
+  snapshot,
+  skill,
+  onSelect,
+  onVisor,
+}: {
+  snapshot: Snapshot
+  skill: Skill
+  onSelect?: (id: string) => void
+  onVisor?: (id: string, linea?: number) => void
+}) => {
+  const t = useT()
+  const usos = quienUsa(snapshot, skill.id)
+  const nombreDe = (id: string): string =>
+    id === snapshot.mainThreadId
+      ? nombreHilo()
+      : ([...snapshot.catalog.agents, ...snapshot.catalog.commands].find((e) => e.id === id)
+          ?.name ??
+        id.split('/').pop() ??
+        id)
+  const capas = (['proven', 'preloaded', 'declared', 'command'] as CapaUso[]).filter((c) =>
+    usos.some((u) => u.capa === c),
+  )
+  return (
+    <section>
+      <h3>{t('detail.who')}</h3>
+      {capas.length === 0 && <p className="empty">{t('detail.who.none')}</p>}
+      {capas.map((capa) => (
+        <div key={capa}>
+          <h3 className="subtitulo">{conCodigo(t(NOMBRE_CAPA[capa]))}</h3>
+          {usos
+            .filter((u) => u.capa === capa)
+            .slice(0, 20)
+            .map((u) => {
+              const ev = u.edge.evidence[0]
+              return (
+                <div className="evidence" key={`${u.from}-${u.capa}`}>
+                  <div className="uso-cabecera">
+                    <button type="button" className="enlace" onClick={() => onSelect?.(u.from)}>
+                      {u.capa === 'command' ? `/${nombreDe(u.from)}` : nombreDe(u.from)}
+                    </button>
+                    {capa === 'proven' && (
+                      <span className="uso-cifras">
+                        {t('count.uses', { n: u.edge.uses ?? 0 })} · {relDate(u.edge.lastUsedAt)}
+                      </span>
+                    )}
+                  </div>
+                  {ev?.excerpt && <div className="quote">“{ev.excerpt}”</div>}
+                  {ev && <Cita snapshot={snapshot} ev={ev} onVisor={onVisor} />}
+                </div>
+              )
+            })}
+        </div>
+      ))}
+    </section>
+  )
+}
+
+/** Reparto por proyecto: las barras son relativas al proyecto con más usos. */
+const PorProyecto = ({ datos }: { datos: [string, number][] }) => {
+  const t = useT()
+  if (datos.length === 0) return null
+  const max = Math.max(...datos.map(([, n]) => n), 1)
+  return (
+    <section>
+      <h3>{t('detail.byProject')}</h3>
+      {datos.slice(0, 8).map(([proyecto, n]) => (
+        <div className="fila-proyecto" key={proyecto} title={proyecto}>
+          <span className="nombre-proyecto">{proyecto}</span>
+          <span className="barra-proyecto" aria-hidden="true">
+            <span style={{ width: `${Math.max(4, (n / max) * 100)}%` }} />
+          </span>
+          <span className="cifra-proyecto">{fmtNum(n)}</span>
+        </div>
+      ))}
+      {datos.length > 8 && (
+        <p className="nota">{t('detail.byProject.more', { n: datos.length - 8 })}</p>
+      )}
     </section>
   )
 }
@@ -52,7 +198,13 @@ const Explicacion = ({ vista }: { vista: Vista }) => {
   const t = useT()
   return (
     <p className="empty">
-      {t(vista === 'sala' ? 'detail.explain.office' : 'detail.explain.blueprint')}
+      {t(
+        vista === 'sala'
+          ? 'detail.explain.office'
+          : vista === 'plano'
+            ? 'detail.explain.blueprint'
+            : 'detail.explain.ledger',
+      )}
     </p>
   )
 }
@@ -65,7 +217,7 @@ const FichaVacia = ({
 }: {
   snapshot: Snapshot
   vista: Vista
-  onMutate?: (req: MutationRequest, title: string) => void
+  onMutate?: PedirMutacion
   onSelect?: (id: string) => void
 }) => {
   const t = useT()
@@ -118,15 +270,24 @@ const FichaImpl = ({
   vista,
   onEditFlow,
   onMutate,
+  onLote,
   onSelect,
+  visor,
+  onVisor,
+  onCerrarVisor,
 }: {
   snapshot: Snapshot
   id: string | null
   vista: Vista
   onEditFlow?: (commandId: string) => void
   /** Toda edición sale de aquí y pasa por el diálogo de diff antes de tocar el disco. */
-  onMutate?: (req: MutationRequest, title: string) => void
+  onMutate?: PedirMutacion
+  /** Varias ediciones de una vez (asignar una skill a varios agentes): un solo diff combinado. */
+  onLote?: PedirLote
   onSelect?: (id: string) => void
+  visor?: EstadoVisor | null
+  onVisor?: (id: string, linea?: number) => void
+  onCerrarVisor?: () => void
 }) => {
   const t = useT()
   if (!id) {
@@ -160,6 +321,11 @@ const FichaImpl = ({
       ? t(`kind.${tipo}`)
       : (tipo ?? '')
   const agente = entity?.kind === 'agent' ? (entity as Agent) : null
+  const visorEntidad = visor
+    ? [...snapshot.catalog.agents, ...snapshot.catalog.skills, ...snapshot.catalog.commands].find(
+        (e) => e.id === visor.id,
+      )
+    : undefined
   const archivado = agente ? estaArchivado(agente) : false
 
   return (
@@ -213,13 +379,26 @@ const FichaImpl = ({
                 </span>
               </span>
             </div>
+            {semanal(act) && (
+              <div
+                className="row"
+                title={t('detail.trend.src', { transcripts: fuenteTranscripts(snapshot) })}
+              >
+                <span>{t('detail.trend')}</span>
+                <span>
+                  <Sparkline valores={semanal(act) ?? []} />
+                </span>
+              </div>
+            )}
           </>
         )}
       </section>
+      <PorProyecto datos={porProyecto(act)} />
 
       {agente && onMutate && !archivado && (
         <section>
           <h3>{t('detail.edit')}</h3>
+          <AccionesAgente agente={agente} snapshot={snapshot} onMutate={onMutate} />
           <div className="editor">
             <label>
               {t('detail.color')}
@@ -296,9 +475,16 @@ const FichaImpl = ({
         </section>
       )}
 
-      {entity?.kind === 'skill' && onMutate && (
+      {entity?.kind === 'skill' && onMutate && onLote && (
         <section>
           <h3>{t('detail.edit')}</h3>
+          <AccionesSkill
+            skill={entity as Skill}
+            snapshot={snapshot}
+            vacios={snapshot.vocabularyGaps[id] ?? []}
+            onMutate={onMutate}
+            onLote={onLote}
+          />
           <button
             type="button"
             className="anadir"
@@ -379,30 +565,71 @@ const FichaImpl = ({
         </section>
       )}
 
-      {entity?.kind === 'command' && onEditFlow && (
+      {entity?.kind === 'command' && (onMutate || onEditFlow) && (
         <section>
-          <button type="button" className="anadir" onClick={() => onEditFlow(entity.id)}>
-            {t('detail.openFlow')}
-          </button>
+          <h3>{t('detail.edit')}</h3>
+          {onMutate && (
+            <AccionesComando comando={entity as Command} snapshot={snapshot} onMutate={onMutate} />
+          )}
+          {onEditFlow && (
+            <button type="button" className="anadir" onClick={() => onEditFlow(entity.id)}>
+              {t('detail.openFlow')}
+            </button>
+          )}
+          <p className="nota">{t('detail.openFlow.note')}</p>
         </section>
       )}
 
-      <Evidence edges={out.filter((e) => e.layer === 'proven')} title={t('detail.ev.proven')} />
+      {entity?.kind === 'skill' && (
+        <QuienUsa
+          snapshot={snapshot}
+          skill={entity as Skill}
+          onSelect={onSelect}
+          onVisor={onVisor}
+        />
+      )}
+
       <Evidence
+        snapshot={snapshot}
+        edges={out.filter((e) => e.layer === 'proven')}
+        title={t('detail.ev.proven')}
+        onVisor={onVisor}
+      />
+      <Evidence
+        snapshot={snapshot}
         edges={out.filter((e) => e.layer === 'preloaded')}
         title={conCodigo(t('detail.ev.preloaded'))}
+        onVisor={onVisor}
       />
       <Evidence
+        snapshot={snapshot}
         edges={out.filter((e) => e.layer === 'declared' && e.kind === 'agent-uses-skill')}
         title={t('detail.ev.declared')}
+        onVisor={onVisor}
       />
       <Evidence
+        snapshot={snapshot}
+        edges={out.filter((e) => e.kind === 'command-invokes-agent')}
+        title={t('detail.ev.callsAgents')}
+        onVisor={onVisor}
+      />
+      <Evidence
+        snapshot={snapshot}
+        edges={out.filter((e) => e.kind === 'command-invokes-skill')}
+        title={t('detail.ev.callsSkills')}
+        onVisor={onVisor}
+      />
+      <Evidence
+        snapshot={snapshot}
         edges={incoming.filter((e) => e.kind === 'command-invokes-agent')}
         title={t('detail.ev.commands')}
+        onVisor={onVisor}
       />
       <Evidence
+        snapshot={snapshot}
         edges={incoming.filter((e) => e.kind === 'skill-declares-client')}
         title={t('detail.ev.skills')}
+        onVisor={onVisor}
       />
 
       {entity && (
@@ -416,7 +643,26 @@ const FichaImpl = ({
               </div>
             )}
           </div>
+          {onVisor && (
+            <button
+              type="button"
+              className="anadir"
+              aria-expanded={visor?.id === entity.id}
+              onClick={() => (visor?.id === entity.id ? onCerrarVisor?.() : onVisor(entity.id))}
+            >
+              {t(visor?.id === entity.id ? 'viewer.hide' : 'viewer.show')}
+            </button>
+          )}
         </section>
+      )}
+
+      {visor && visorEntidad && onCerrarVisor && (
+        <VisorArchivo
+          entidad={visorEntidad}
+          linea={visor.linea}
+          disparo={visor.disparo}
+          onCerrar={onCerrarVisor}
+        />
       )}
     </aside>
   )

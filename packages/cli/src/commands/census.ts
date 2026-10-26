@@ -6,9 +6,14 @@ import {
   buildProvenGraph,
   formatDecimal,
   formatNumber,
+  liveCatalog,
   MAIN_THREAD_ID,
+  ownCatalog,
+  pluginStats,
   readHistoryWindowDays,
   renderPoster,
+  resolveScope,
+  type ScopeRequest,
   scanCatalogReport,
   scanHistory,
   scanTranscripts,
@@ -17,31 +22,38 @@ import {
 } from '@ai-office/providers'
 import type { Messages } from '../i18n.ts'
 import { bar, bold, cyan, dim, green, pct, red, relDate, yellow } from '../ui.ts'
+import { scopeLine } from './start.ts'
 
 const line = (label: string, value: string): string => `  ${label.padEnd(34)} ${value}`
 
+/** Hasta cuántos nombres se listan en una línea del censo antes de resumir con `+k`. */
+const names = (list: string[], max = 3): string =>
+  list.length > max ? `${list.slice(0, max).join(', ')} +${list.length - max}` : list.join(', ')
+
 export const census = async (
-  ctx: { lang: Lang; t: Messages },
+  ctx: { lang: Lang; t: Messages; scopeRequest?: ScopeRequest },
   posterPath?: string,
 ): Promise<void> => {
   const { lang } = ctx
   const t = ctx.t.census
   const n = (x: number) => formatNumber(x, lang)
   const t0 = Date.now()
-  const { catalog: full, errors } = await scanCatalogReport()
+  const resolved = await resolveScope(ctx.scopeRequest ?? { auto: true })
+  const { catalog: full, errors } = await scanCatalogReport(resolved.scope)
   process.stderr.write(dim(`${t.reading}\r`))
   const scan = await scanTranscripts()
   const history = await scanHistory()
   const windowDays = await readHistoryWindowDays()
   process.stderr.write(`${' '.repeat(42)}\r`)
 
-  // Los agentes archivados (`agents/.archive/`) no están puestos ante Claude Code: no cuentan.
-  const catalog = { ...full, agents: full.agents.filter((a) => !a.archived) }
-  const declared = buildDeclaredGraph(catalog)
-  const proven = buildProvenGraph(scan.invocations, catalog)
+  // Lo que cuenta es lo del usuario y del proyecto que Claude Code carga: ni los archivados, ni lo
+  // tapado por otro ámbito, ni lo de plugins (eso va en su propia sección).
+  const catalog = ownCatalog(full)
+  const declared = buildDeclaredGraph(full)
+  const proven = buildProvenGraph(scan.invocations, full)
   // Los slash commands no dejan rastro como herramienta: se miran en el historial tecleado, y en
   // la herramienta Skill cuando el modelo los invoca.
-  const activity = activityByTarget(scan.invocations, catalog, { commandUse: history.commandUse })
+  const activity = activityByTarget(scan.invocations, full, { commandUse: history.commandUse })
 
   const sk = skillStats(catalog, activity)
   const agentsUnused = catalog.agents.filter((a) => !activity.get(a.id)?.uses)
@@ -51,6 +63,7 @@ export const census = async (
 
   console.log()
   console.log(bold(`  ${t.title}`))
+  console.log(dim(`  ${scopeLine(resolved, ctx.t)}`))
   console.log(dim(`  ${catalog.roots.join('\n  ')}`))
   console.log()
   console.log(
@@ -78,6 +91,40 @@ export const census = async (
     ),
   )
   console.log()
+
+  // Plugins y servidores MCP: secciones breves que solo salen si hay algo que contar.
+  const ps = pluginStats(full, activity)
+  if (full.plugins.length) {
+    const idle = full.plugins.filter((p) => p.enabled && !activity.get(p.id)?.uses)
+    console.log(bold(`  ${t.pluginsTitle}`))
+    console.log(`    ${t.pluginsLine(ps.pluginsEnabled, ps.plugins, ps.pluginDescriptionTokens)}`)
+    console.log(
+      idle.length
+        ? `    ${yellow(t.pluginsIdle(names(idle.map((p) => p.name)), since))}`
+        : `    ${green(t.pluginsAllUsed)}`,
+    )
+    console.log()
+  }
+  const servers = liveCatalog(full).mcpServers
+  if (servers.length) {
+    const idle = servers.filter((s) => !activity.get(s.id)?.uses)
+    const tools = servers
+      .flatMap((s) =>
+        Object.entries(activity.get(s.id)?.byTool ?? {}).map(([tool, k]) => ({
+          label: `${s.name}.${tool}`,
+          k,
+        })),
+      )
+      .sort((a, b) => b.k - a.k)
+      .slice(0, 3)
+    console.log(bold(`  ${t.mcpTitle}`))
+    console.log(`    ${t.mcpLine(ps.mcpServers, ps.mcpUnused)}`)
+    if (idle.length) console.log(`    ${yellow(t.mcpIdle(names(idle.map((s) => s.name)), since))}`)
+    if (tools.length) {
+      console.log(`    ${dim(t.mcpTools(tools.map((x) => `${x.label} (${n(x.k)})`).join(', ')))}`)
+    }
+    console.log()
+  }
 
   console.log(`  ${bold(t.activeRatio)}  ${bar(sk.activeRatio)}  ${bold(pct(sk.activeRatio))}`)
   console.log(
@@ -131,8 +178,8 @@ export const census = async (
     console.log()
   }
 
-  const top = catalog.skills
-    .map((s) => ({ s, a: activity.get(s.id) }))
+  const top = liveCatalog(full)
+    .skills.map((s) => ({ s, a: activity.get(s.id) }))
     .filter((x) => x.a?.uses)
     .sort((x, y) => (y.a?.uses ?? 0) - (x.a?.uses ?? 0))
     .slice(0, 5)
