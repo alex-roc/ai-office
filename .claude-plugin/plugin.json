@@ -2,7 +2,7 @@
   "name": "ai-office",
   "displayName": "ai-office",
   "version": "0.1.0",
-  "description": "See, edit and measure your Claude Code agents, skills and slash commands: a pixel-art office, a live graph, safe edits with diffs, and real usage from your transcripts.",
+  "description": "See, edit and measure your Claude Code setup — agents, skills, slash commands, plugins and MCP servers — as a pixel-art office, a live graph and a ledger. Edits with a diff; runs locally.",
   "author": {
     "name": "Alex Ojeda Copa",
     "url": "https://github.com/alex-roc"

@@ -396,3 +396,43 @@ main > section[id] { scroll-margin-top: 64px; }
 
 /* Capas y actividad en vivo son parte de "Medir": sin filete propio, más pegadas al censo. */
 main > section.measure-sub { border-top: 0; padding-top: 0; }
+
+/* --- Lo que cubre: los cinco tipos, como etiquetas del mismo color que en la interfaz -------- */
+
+.kinds { list-style: none; display: flex; flex-wrap: wrap; gap: 8px; margin: 22px 0 0; padding: 0; }
+.kinds li {
+  font: 600 14px/1 var(--texto);
+  padding: 7px 11px;
+  border-radius: 999px;
+  border: 1px solid var(--linea);
+  color: var(--papel);
+  background: var(--madera-alta);
+}
+.kinds li:nth-child(1) { border-color: var(--ambar-hondo); }
+.kinds li:nth-child(2) { border-color: var(--salvia); }
+.kinds li:nth-child(3) { border-color: var(--pizarra); }
+.kinds li:nth-child(4) { border-color: #9a7cc4; }
+.kinds li:nth-child(5) { border-color: #6fb3c0; }
+
+/* --- Medir: el Ledger a todo el ancho antes del censo ---------------------------------------- */
+
+.ledger-shot { margin: 0 0 clamp(28px, 4vw, 48px); }
+.ledger-shot figcaption, .edit-grid figcaption {
+  font-size: 15px; color: var(--apagado); margin-top: 12px; max-width: 70ch;
+}
+
+/* --- Editar: qué se edita de cada tipo ------------------------------------------------------ */
+
+dl.edit-list { margin: 0; display: grid; gap: 18px; }
+dl.edit-list dt { font-weight: 700; font-size: 19px; color: var(--papel); }
+dl.edit-list dd { margin: 2px 0 0; color: var(--apagado); font-size: 16px; }
+
+/* --- Ámbito y configuración ----------------------------------------------------------------- */
+
+.scope-sec { border-top: 1px solid var(--linea); }
+.trio { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: clamp(24px, 4vw, 48px); }
+.trio .principle h3 { font-size: 24px; }
+.trio .principle p { color: var(--apagado); font-size: 16px; }
+@media (max-width: 900px) {
+  .trio { grid-template-columns: minmax(0, 1fr); }
+}

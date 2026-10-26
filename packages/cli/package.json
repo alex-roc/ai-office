@@ -1,7 +1,7 @@
 {
   "name": "ai-office",
   "version": "0.1.0",
-  "description": "See, edit and measure your Claude Code agents, skills and slash commands: a pixel-art office, a live graph, safe edits with diffs, and real usage from your transcripts. Runs locally.",
+  "description": "See, edit and measure your Claude Code setup — agents, skills, slash commands, plugins and MCP servers — as a pixel-art office, a live graph and a ledger. Edits with a diff; runs locally.",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -17,9 +17,12 @@
     "audit",
     "claude",
     "claude-code",
+    "claude-code-plugin",
     "cli",
     "developer-tools",
+    "mcp",
     "pixel-art",
+    "plugins",
     "skills",
     "slash-commands",
     "visualization"

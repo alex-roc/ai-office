@@ -20,7 +20,8 @@ const makeEn = () => {
   return {
     // --- ayuda y errores generales ---
     help: {
-      tagline: 'see, edit and measure your Claude Code agents',
+      tagline:
+        'see, edit and measure your Claude Code setup: agents, skills, commands, plugins and MCP servers',
       start: 'open the interface in the browser (also `ai-office start`)',
       noOpen: 'print the link only, do not open the browser',
       port: 'interface port (in the plugin, the "Port" option)',
@@ -188,7 +189,8 @@ const makeEs = (): Messages => {
   const n = (x: number) => formatNumber(x, 'es')
   return {
     help: {
-      tagline: 've, edita y mide tus agentes de Claude Code',
+      tagline:
+        've, edita y mide tu configuración de Claude Code: agentes, skills, comandos, plugins y servidores MCP',
       start: 'abre la interfaz en el navegador (también `ai-office start`)',
       noOpen: 'solo imprime el enlace, sin abrir el navegador',
       port: 'puerto de la interfaz (en el plugin, la opción «Puerto»)',

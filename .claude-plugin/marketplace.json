@@ -8,7 +8,7 @@
     {
       "name": "ai-office",
       "source": "./",
-      "description": "See, edit and measure your Claude Code agents, skills and slash commands.",
+      "description": "See, edit and measure your Claude Code agents, skills, commands, plugins and MCP servers.",
       "version": "0.1.0"
     }
   ],

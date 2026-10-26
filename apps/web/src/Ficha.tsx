@@ -582,12 +582,14 @@ const FichaImpl = ({
         snapshot={snapshot}
         edges={incoming.filter((e) => e.kind === 'command-invokes-agent')}
         title={t('detail.ev.commands')}
+        lado="from"
         onVisor={onVisor}
       />
       <Evidence
         snapshot={snapshot}
         edges={incoming.filter((e) => e.kind === 'skill-declares-client')}
         title={t('detail.ev.skills')}
+        lado="from"
         onVisor={onVisor}
       />
 

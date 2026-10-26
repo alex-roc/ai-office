@@ -65,6 +65,10 @@ export const COLOR_AGENTE = [
   P.cian,
 ] as const
 
+/** Las piezas de un plugin sin agente propio llevan el color de los plugins (el mismo ciruela del
+ * Plano): en madera, sobre la mampara de madera, sus lomos no se distinguían de la pared. */
+export const INDICE_PLUGIN = COLOR_AGENTE.indexOf(P.ciruela)
+
 /** Versión oscura de cada color de agente, para la cara en sombra de los volúmenes. */
 export const COLOR_AGENTE_OSCURO = [
   P.terracotaOscura,

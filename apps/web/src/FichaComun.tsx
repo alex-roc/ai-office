@@ -46,11 +46,15 @@ export const Evidence = ({
   edges,
   title,
   onVisor,
+  lado = 'to',
 }: {
   snapshot: Snapshot
   edges: Edge[]
   title: ReactNode
   onVisor?: (id: string, linea?: number) => void
+  /** Qué extremo de la arista se nombra: el destino en las salientes, el ORIGEN en las entrantes
+   * (en «comandos que lo convocan» hay que leer el comando, no el propio agente). */
+  lado?: 'from' | 'to'
 }) => {
   const t = useT()
   if (edges.length === 0) return null
@@ -59,7 +63,8 @@ export const Evidence = ({
       <h3>{title}</h3>
       {edges.slice(0, 12).map((e) => {
         const ev = e.evidence[0]
-        const nombre = e.to.split('/').pop() ?? e.to
+        const extremo = lado === 'from' ? e.from : e.to
+        const nombre = extremo.split('/').pop() ?? extremo
         return (
           <div className="evidence" key={`${e.from}-${e.to}-${e.kind}-${e.layer}`}>
             <div>

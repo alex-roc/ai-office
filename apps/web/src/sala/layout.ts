@@ -12,6 +12,7 @@ import type {
 } from '../types.ts'
 import { type Archetype, archetypeOf } from './archetypes.ts'
 import { FIGURA_DE, type Mueble, type Persona } from './catalogo-sprites.ts'
+import { INDICE_PLUGIN } from './paleta.ts'
 
 /**
  * Geometría de la PLANTA, en coordenadas de baldosa.
@@ -263,7 +264,11 @@ export const buildLayout = (snapshot: Snapshot): RoomLayout => {
       row,
       altura,
       grado: GRADO[a?.grade ?? 'unused'] ?? 1,
-      colorIndex: agente ? colorIndexOf(agente.color) : null,
+      colorIndex: agente
+        ? colorIndexOf(agente.color)
+        : ambitoDe(s) === 'plugin'
+          ? INDICE_PLUGIN
+          : null,
       duenio: agente?.name ?? null,
       unused: !a?.uses,
       uses: a?.uses ?? 0,

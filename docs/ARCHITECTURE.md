@@ -104,8 +104,8 @@ accumulates in `snapshot.scanErrors` (`path: reason`) and the UI can show it.
 ## What you can see, edit and measure
 
 This table is the contract: it says what exists and what does not. If something is not here, it is
-not done. Read it as what the daemon exposes (the snapshot, `/api/mutations`, `/api/entities`); the
-web interface surfaces it view by view. Everything in the "edit" column goes through the same diff,
+not done. It is what the daemon exposes (the snapshot, `/api/mutations`, `/api/entities`) and what
+the interface offers: the Office, the Blueprint, the Ledger and the side panel. Everything in the "edit" column goes through the same diff,
 etag, backup and audit engine (see [Editing](#editing)). The CLI only reads (`census`, `doctor`):
 edits happen through the daemon.
 
@@ -640,8 +640,10 @@ It has three uses, all on the same code as a real installation:
 
 - **`ai-office demo`** writes the office to a temporary directory, points `CLAUDE_HOME` there and
   starts the daemon on port 7379. Everything can be edited: writes go to the copy.
-- **The static demo** on the project page. `scripts/demo-snapshot.ts` builds the snapshot with the
-  daemon's `buildSnapshot` and the UI is compiled with `VITE_DEMO=1`. In that mode
+- **The static demo** on the project page. `scripts/demo-snapshot.ts` builds two snapshots with the
+  daemon's `buildSnapshot` — `snapshot.json` (user scope) and `snapshot-project.json` (the acme-web
+  project scope) — and the UI is compiled with `VITE_DEMO=1`; the scope selector switches between
+  them in memory. In that mode
   `apps/web/src/demo.ts` replaces the three network points of `api.ts`: the snapshot comes from the
   JSON, the flow canvas uses the real compiler in the browser, writes are rejected with a message
   explaining why, and the WebSocket is a script that replays the PROVEN graph.

@@ -3,15 +3,15 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>ai-office — see, edit and measure your Claude Code agents</title>
+    <title>ai-office — see, edit and measure your Claude Code setup</title>
     <meta
       name="description"
-      content="ai-office turns your Claude Code agents, skills and slash commands into a pixel-art office and a live graph: see how they are organised, edit them safely, and measure which ones actually do the work. Local, no telemetry, MIT."
+      content="ai-office turns your Claude Code agents, skills, slash commands, plugins and MCP servers into a pixel-art office, a live graph and a ledger: see how they fit together, edit them safely with a diff, and measure which ones actually do the work. Local, no telemetry, MIT."
     />
-    <meta property="og:title" content="ai-office — see, edit and measure your Claude Code agents" />
+    <meta property="og:title" content="ai-office — see, edit and measure your Claude Code setup" />
     <meta
       property="og:description"
-      content="Your agents, skills and slash commands as a pixel-art office and a live graph. Rewire them safely and measure what they actually do. Runs locally."
+      content="Agents, skills, slash commands, plugins and MCP servers as a pixel-art office, a live graph and a ledger. Edit them with a diff. Measure what really runs. Local."
     />
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://alex-roc.github.io/ai-office/" />
@@ -27,7 +27,7 @@
     />
     <link rel="stylesheet" href="styles.css" />
   </head>
-    <body>
+  <body>
     <a class="skip" href="#main" data-i18n="skip">Skip to content</a>
 
     <header class="nav">
@@ -48,12 +48,19 @@
     <main id="main">
       <section class="hero">
         <div class="hero-text">
-          <h1 data-i18n="hero.title">See, edit and measure your Claude Code agents</h1>
+          <h1 data-i18n="hero.title">See, edit and measure your Claude Code setup</h1>
           <p class="lede" data-i18n="hero.lede">
-            ai-office turns your agents, skills and slash commands into a pixel-art office and a
-            live graph. See how your team is organised, rewire it without fear, and measure which
-            agents and skills actually do the work.
+            ai-office turns everything your Claude Code runs on into a pixel-art office, a live
+            graph and a ledger. See how it fits together, change it without fear, and find out
+            what actually does the work.
           </p>
+          <ul class="kinds">
+            <li data-i18n="kind.agents">Agents</li>
+            <li data-i18n="kind.skills">Skills</li>
+            <li data-i18n="kind.commands">Slash commands</li>
+            <li data-i18n="kind.plugins">Plugins</li>
+            <li data-i18n="kind.mcp">MCP servers</li>
+          </ul>
           <div class="ctas">
             <a class="btn primary" href="demo/" data-i18n="hero.demo">Walk through the demo office</a>
             <a class="btn" href="#install" data-i18n="hero.install">Install in one command</a>
@@ -66,78 +73,77 @@
           <div class="hero-floor">
             <img
               src="img/sala-hero.png"
-              alt="The Office view: an isometric pixel-art floor plan where each room groups agents that cite the same skills"
+              alt="The Office view: an isometric pixel-art floor plan with rooms of agents, a room for a plugin and a server room for MCP servers"
               data-i18n-alt="hero.alt"
-              width="1180"
-              height="636"
+              width="1258"
+              height="680"
             />
           </div>
           <figcaption data-i18n="hero.caption">
-            The demo office. Each room groups the agents that share a skill or a command; greyed-out
-            people have never been delegated a task.
+            The demo office. Rooms group the agents that share a skill or a command; a plugin gets
+            its own room and MCP servers a rack each. Grey people have never been delegated a task.
           </figcaption>
         </figure>
       </section>
 
-      <!-- Los tres verbos del producto. Cada uno lo encarna un personaje de la Sala: el arte ya
-           está, y así la promesa se lee con la misma voz que la oficina. -->
+      <!-- Los tres verbos del producto, cada uno con un personaje de la Sala. -->
       <section class="pillars" aria-labelledby="pillars-title">
         <h2 id="pillars-title" class="visually-hidden" data-i18n="pillars.title">What ai-office does</h2>
         <a class="pillar" href="#see">
           <img src="sprites/investigador.png" alt="" width="25" height="72" />
           <h3 data-i18n="pillars.see.t">See</h3>
-          <p data-i18n="pillars.see.d">Every agent, skill and command you have written, laid out as rooms of people who work together and as a graph of who calls whom. Each link quotes the file and line it comes from.</p>
+          <p data-i18n="pillars.see.d">Every agent, skill, slash command, plugin and MCP server, laid out as an office and as a graph of who uses what. Each link quotes the file and line it comes from, and any file opens right there.</p>
         </a>
         <a class="pillar" href="#edit">
           <img src="sprites/ingeniero.png" alt="" width="31" height="71" />
           <h3 data-i18n="pillars.edit.t">Edit</h3>
-          <p data-i18n="pillars.edit.d">Wire an agent to a skill by dragging, change its model or colour, retire skills, archive agents and compose slash commands on a canvas. Every write shows the diff first.</p>
+          <p data-i18n="pillars.edit.d">Rewrite a prompt, a SKILL.md or a command, wire skills to agents, change models and tools, create new ones, and switch plugins and MCP servers on or off. Every write shows the diff first.</p>
         </a>
         <a class="pillar" href="#measure">
           <img src="sprites/analista.png" alt="" width="29" height="70" />
           <h3 data-i18n="pillars.measure.t">Measure</h3>
-          <p data-i18n="pillars.measure.d">Cross what your prompts promise with what your transcripts prove: who gets delegated, which skills get invoked, what the idle ones cost in context, and live activity as it happens.</p>
+          <p data-i18n="pillars.measure.d">A ledger of everything: uses, sessions, a 12-week trend, grade, usage by project and by MCP tool, and what idle skills cost in context. Over all your sessions, or just one project.</p>
         </a>
       </section>
 
       <section id="see" class="views">
         <div class="section-head">
           <h2 data-i18n="views.title">See your setup as it really is</h2>
-          <p data-i18n="views.lede">Two views of the same files, switchable without losing your selection. Nothing is a hand-drawn diagram: every room, shelf and line comes from something written in <code>~/.claude</code>.</p>
+          <p data-i18n="views.lede">Nothing here is a hand-drawn diagram: every room, shelf, rack and line comes from something written in your files or recorded in your transcripts.</p>
         </div>
         <div class="view">
           <figure>
-            <div class="shot-frame"><img src="img/sala-zoom.png" alt="Close-up of a room in the Office view" data-i18n-alt="views.sala.alt" loading="lazy" width="1258" height="916" /></div>
+            <div class="shot-frame"><img src="img/sala.png" alt="The Office with an agent selected and its details panel open" data-i18n-alt="views.sala.alt" loading="lazy" width="1600" height="1000" /></div>
           </figure>
           <div class="view-text">
             <h3 data-i18n="views.sala.t">The Office</h3>
             <p data-i18n="views.sala.d">
               A floor plan in isometric pixel art. Rooms are not invented themes: they come from
               which skills each agent cites and which commands call it, so every door carries the
-              name of a real skill or command and tells you why those people share it.
+              name of a real skill or command. Plugins get their own room, and MCP servers a rack
+              each in the server room.
             </p>
             <p data-i18n="views.sala.d2">
-              Position is data. A grey figure has never been delegated. The height of a book spine
-              is how established a skill is; a blank spine is a skill nobody has opened. The
-              archive of skills that half the floor cites faces the storeroom of skills nobody
-              claims.
+              Position is data. A grey figure has never been delegated, a book spine's height is
+              how established a skill is, a dark rack is a server nobody calls. Click anything and
+              the side panel tells you what it is, what it has done and which file says so.
             </p>
           </div>
         </div>
         <div class="view reverse">
           <figure>
-            <div class="shot-frame"><img src="img/plano.png" alt="The Blueprint view: a force-directed graph of agents, skills and commands" data-i18n-alt="views.plano.alt" loading="lazy" width="1258" height="916" /></div>
+            <div class="shot-frame"><img src="img/plano.png" alt="The Blueprint: a graph of agents, skills, commands, plugin pieces and MCP servers" data-i18n-alt="views.plano.alt" loading="lazy" width="940" height="830" /></div>
           </figure>
           <div class="view-text">
             <h3 data-i18n="views.plano.t">The Blueprint</h3>
             <p data-i18n="views.plano.d">
-              The graph with every layer at once. Dotted is what your prompts declare; solid is
-              what your transcripts prove. Select anything and the side panel quotes the file and
-              line behind each claim.
+              The graph of who uses what: agents, skills, commands, plugin pieces (ringed) and MCP
+              servers (hexagons). Dotted is what your prompts declare; solid is what your
+              transcripts prove.
             </p>
             <p data-i18n="views.plano.d2">
-              Press <kbd>/</kbd> to find any agent, skill or command, and <kbd>?</kbd> for the
-              legend and shortcuts.
+              Press <kbd>/</kbd> to find anything, <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> to switch
+              views and <kbd>?</kbd> for the legend.
             </p>
           </div>
         </div>
@@ -147,32 +153,33 @@
         <div class="section-head">
           <h2 data-i18n="edit.title">Edit it without fear</h2>
           <p data-i18n="edit.lede">
-            Everything you edit goes through the same door: the diff is shown before the disk is
+            Everything you change goes through the same door: the diff is shown before the disk is
             touched, a backup is kept, and a line lands in an audit log. Nothing is ever deleted.
           </p>
         </div>
         <div class="edit-grid">
           <figure>
-            <div class="shot-frame"><img src="img/flujo.png" alt="The flow canvas composing a slash command, with the exact Markdown preview" data-i18n-alt="edit.alt" loading="lazy" width="1020" height="650" /></div>
+            <div class="shot-frame"><img src="img/diff.png" alt="The diff shown before saving: two skills added to an agent's prompt" data-i18n-alt="edit.alt" loading="lazy" width="720" height="404" /></div>
+            <figcaption data-i18n="edit.caption">Two skills assigned to an agent: the exact lines that will be written, before anything is written.</figcaption>
           </figure>
-          <ul class="edit-list">
-            <li>
-              <strong data-i18n="edit.a.t">Draw a relation.</strong>
-              <span data-i18n="edit.a.d">Drag from an agent to a skill in the Blueprint and the citation is written into its prompt.</span>
-            </li>
-            <li>
-              <strong data-i18n="edit.b.t">Retire a skill.</strong>
-              <span data-i18n="edit.b.d">One click sets <code>disable-model-invocation</code>. Reversible, and the fastest way to raise your active ratio.</span>
-            </li>
-            <li>
-              <strong data-i18n="edit.c.t">Compose a slash command.</strong>
-              <span data-i18n="edit.c.d">Pick who takes part, in what order, consulting what. Steps in the same phase run in parallel, and the preview is the exact Markdown that will be written.</span>
-            </li>
-            <li>
-              <strong data-i18n="edit.d.t">Archive an agent.</strong>
-              <span data-i18n="edit.d.d">It moves aside, not to the bin, and comes back with one click.</span>
-            </li>
-          </ul>
+          <dl class="edit-list">
+            <div>
+              <dt data-i18n="edit.a.t">Agents</dt>
+              <dd data-i18n="edit.a.d">Description, prompt, model, colour, tools, preloaded skills and the skills it cites. Archive and restore. Create new ones.</dd>
+            </div>
+            <div>
+              <dt data-i18n="edit.b.t">Skills</dt>
+              <dd data-i18n="edit.b.d">Description (next to the words of it you never type), the SKILL.md itself, which agents it is assigned to. Retire it, or create a new one.</dd>
+            </div>
+            <div>
+              <dt data-i18n="edit.c.t">Slash commands</dt>
+              <dd data-i18n="edit.c.d">Description, argument hint and body, or compose it on a flow canvas: who takes part, in what order, steps in parallel. Create new ones.</dd>
+            </div>
+            <div>
+              <dt data-i18n="edit.d.t">Plugins and MCP servers</dt>
+              <dd data-i18n="edit.d.d">Switch them on or off in the settings file you choose (MCP servers per project, as Claude Code keeps them). Plugin files are never touched.</dd>
+            </div>
+          </dl>
         </div>
       </section>
 
@@ -180,11 +187,14 @@
         <div class="section-head">
           <h2 data-i18n="census.title">Measure what actually works</h2>
           <p data-i18n="census.lede">
-            Your prompts say who should do what. Your transcripts say who did. The census crosses both
-            in a few seconds, even over gigabytes of sessions, and the same numbers live in the
-            interface, each one citing its source.
+            Your prompts say who should do what. Your transcripts say who did. ai-office crosses
+            both in seconds, even over gigabytes of sessions, and every number cites its source.
           </p>
         </div>
+        <figure class="ledger-shot">
+          <div class="shot-frame"><img src="img/ledger.png" alt="The Ledger: a sortable table of every agent, skill, command, plugin and MCP server with uses, grade and a 12-week trend, and an MCP server's details" data-i18n-alt="ledger.alt" loading="lazy" width="1600" height="916" /></div>
+          <figcaption data-i18n="ledger.caption">The Ledger: everything in one sortable table, with a 12-week trend. Here an MCP server's details: which of its tools are really called, and from which projects.</figcaption>
+        </figure>
         <div class="census-grid">
           <pre class="terminal" aria-label="Census output"><code data-i18n="census.term"><span class="prompt">$</span> npx ai-office census
 
@@ -192,12 +202,13 @@
   skills               28   <b class="warn">14 unused in the last 90 days</b>
   custom commands       8   4 run at least once
 
-  active ratio  <span class="bar" data-ratio="0.32"><span></span></span>  32%
-  <span class="c">Goes up when you use what you have or retire what you won't.</span>
+  plugins       1 enabled of 2 installed · ~65 tokens
+  MCP servers   2 loaded · never called: postgres
 
-  the graph you wrote, and the one that exists
-  agent→skill cited in their prompt   41  declared
-  agent→skill proven                  13  in the history</code></pre>
+  active ratio  <span class="bar" data-ratio="0.36"><span></span></span>  36%
+
+  agent→skill cited in their prompt   40  declared
+  agent→skill proven                  14  in the history</code></pre>
           <ol class="margin-notes">
             <li>
               <strong data-i18n="census.n1.t">6 of 14 agents did nothing in 90 days.</strong>
@@ -208,11 +219,11 @@
               <span data-i18n="census.n2.d">Their descriptions still load into every session and cost tokens.</span>
             </li>
             <li>
-              <strong data-i18n="census.n3.t">Active ratio: 32%.</strong>
-              <span data-i18n="census.n3.d">It goes up when you use what you have, or retire what you won't. Never by spending more.</span>
+              <strong data-i18n="census.n3.t">An MCP server nobody calls.</strong>
+              <span data-i18n="census.n3.d">Configured, loaded, and never used once. Switch it off in the projects that don't need it.</span>
             </li>
             <li>
-              <strong data-i18n="census.n4.t">41 promises, 13 proofs.</strong>
+              <strong data-i18n="census.n4.t">40 promises, 14 proofs.</strong>
               <span data-i18n="census.n4.d">Agents cite skills in their prompts. Transcripts show which citations turned into calls. That gap is the product.</span>
             </li>
           </ol>
@@ -290,9 +301,29 @@
           <p data-i18n="live.d">
             With the hooks installed, the office comes alive while you work in another window:
             agents materialise when they are delegated and a skill's spine lights up when it is
-            invoked. Unlike a session viewer, each of those events leaves a permanent mark on the
-            records, so watching the work changes what things are.
+            invoked. Every event leaves a permanent mark on the records.
           </p>
+        </div>
+      </section>
+
+      <section class="scope-sec">
+        <div class="section-head">
+          <h2 data-i18n="scope.title">Your whole setup, or just one project</h2>
+          <p data-i18n="scope.lede">Configurable, so it shows what you need and never gets crowded.</p>
+        </div>
+        <div class="trio">
+          <div class="principle">
+            <h3 data-i18n="scope.a.t">Pick the scope</h3>
+            <p data-i18n="scope.a.d">User level, or one project: what a session there really loads, with project pieces that shadow user ones marked as such. Usage is then measured over that project's sessions only.</p>
+          </div>
+          <div class="principle">
+            <h3 data-i18n="scope.b.t">Choose what to draw</h3>
+            <p data-i18n="scope.b.d">Toggle agents, skills, commands, plugins and MCP servers in the Office and the Blueprint. The Ledger always lists everything, with its own filters.</p>
+          </div>
+          <div class="principle">
+            <h3 data-i18n="scope.c.t">English or Spanish</h3>
+            <p data-i18n="scope.c.d">Interface and CLI in both. Switch with the EN/ES button, <code>--lang es</code>, or the plugin's language option.</p>
+          </div>
         </div>
       </section>
 
@@ -300,15 +331,15 @@
         <h2 class="visually-hidden" data-i18n="principles.title">Principles</h2>
         <div class="principle">
           <h3 data-i18n="p1.t">Nothing leaves your machine</h3>
-          <p data-i18n="p1.d">No server, no telemetry, no account, no network. It reads <code>~/.claude</code> and a local daemon listens on 127.0.0.1 only, behind a token that changes on every start.</p>
+          <p data-i18n="p1.d">No server, no telemetry, no account, no network. A local daemon listens on 127.0.0.1 only, behind a token that changes on every start. MCP secrets are never shown: only the names of their variables.</p>
         </div>
         <div class="principle">
           <h3 data-i18n="p2.t">Every number cites its source</h3>
-          <p data-i18n="p2.d">If a figure cannot say which file and field it comes from, it is not shown. We even document the metric we tried and threw away because the data did not back it.</p>
+          <p data-i18n="p2.d">If a figure cannot say which file and field it comes from, it is not shown. That's why there is no token cost for MCP servers: it can't be known without connecting to them.</p>
         </div>
         <div class="principle">
           <h3 data-i18n="p3.t">No number improves by spending more</h3>
-          <p data-i18n="p3.d">A skill's grade saturates: the 50th use is worth no more than the 3rd, and it expires after 90 days without use.</p>
+          <p data-i18n="p3.d">A grade saturates: the 50th use is worth no more than the 3rd, and it expires after 90 days without use.</p>
         </div>
       </section>
 
@@ -320,7 +351,7 @@
         <div class="install-grid">
           <div class="install-card">
             <h3 data-i18n="install.npm.t">In one command</h3>
-            <p data-i18n="install.npm.d">Nothing to install globally. Opens the office in your browser.</p>
+            <p data-i18n="install.npm.d">Nothing to install globally. Run it inside a project to open that project's scope.</p>
             <pre class="terminal small"><code>npx ai-office          <span class="c" data-i18n="install.npm.c1"># the office</span>
 npx ai-office census   <span class="c" data-i18n="install.npm.c2"># the numbers</span>
 npx ai-office demo     <span class="c" data-i18n="install.npm.c3"># a fictional office, safe to edit</span></code></pre>
@@ -332,7 +363,6 @@ npx ai-office demo     <span class="c" data-i18n="install.npm.c3"># a fictional 
 claude plugin install ai-office@ai-office</code></pre>
           </div>
         </div>
-        <p class="note" data-i18n="install.lang">Interface and CLI in English and Spanish: switch with the EN/ES button or <code>--lang es</code>.</p>
       </section>
     </main>
 

@@ -104,9 +104,9 @@ cuentan en las estadísticas, ni entran en el grafo declarado, ni en el reparto 
 
 ## Qué puedes ver, editar y medir
 
-Esta tabla es el contrato: dice qué existe y qué no. Lo que no está aquí no está hecho. Léela como lo
-que expone el daemon (el snapshot, `/api/mutations`, `/api/entities`); la interfaz web lo va
-enseñando vista a vista. Todo lo de la columna «editar» pasa por el mismo motor de diff, etag, backup
+Esta tabla es el contrato: dice qué existe y qué no. Lo que no está aquí no está hecho. Es lo que
+expone el daemon (el snapshot, `/api/mutations`, `/api/entities`) y lo que ofrece la interfaz: la
+Sala, el Plano, el Registro y la ficha. Todo lo de la columna «editar» pasa por el mismo motor de diff, etag, backup
 y auditoría (ver [Edición](#edición)). La CLI solo lee (`census`, `doctor`): las ediciones pasan por
 el daemon.
 
@@ -656,8 +656,10 @@ Tiene tres usos, todos sobre el mismo código que una instalación real:
 
 - **`ai-office demo`** escribe la oficina en un directorio temporal, apunta `CLAUDE_HOME` ahí y
   arranca el daemon en el puerto 7379. Se puede editar todo: las escrituras van a la copia.
-- **La demo estática** de la página del proyecto. `scripts/demo-snapshot.ts` construye el snapshot
-  con `buildSnapshot` del daemon y la interfaz se compila con `VITE_DEMO=1`. En ese modo
+- **La demo estática** de la página del proyecto. `scripts/demo-snapshot.ts` construye dos snapshots
+  con `buildSnapshot` del daemon —`snapshot.json` (ámbito usuario) y `snapshot-project.json` (el
+  ámbito del proyecto acme-web)— y la interfaz se compila con `VITE_DEMO=1`; el selector de ámbito
+  alterna entre los dos en memoria. En ese modo
   `apps/web/src/demo.ts` sustituye los tres puntos de red de `api.ts`: el snapshot sale del JSON,
   el lienzo de flujos usa el compilador real en el navegador, las escrituras se rechazan con un
   mensaje que explica por qué, y el WebSocket es un guion que reproduce el grafo ACREDITADO.
