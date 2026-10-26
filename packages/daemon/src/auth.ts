@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto'
 import { chmod, mkdir, writeFile } from 'node:fs/promises'
 import { join, posix } from 'node:path'
 import type { FastifyInstance, FastifyRequest } from 'fastify'
+import { reject } from './errors.ts'
 
 /**
  * Seguridad del servidor local.
@@ -74,16 +75,16 @@ export const registerGuards = (app: FastifyInstance, cfg: AuthConfig): void => {
   app.addHook('onRequest', async (req, reply) => {
     // Anti DNS-rebinding: solo se atiende a quien dice venir de la dirección local.
     if (!hostIsLocal(req.headers.host)) {
-      return reply.code(403).send({ error: 'host no permitido' })
+      return reject(reply, 403, 'forbidden-host', 'host not allowed')
     }
     const origin = req.headers.origin
     if (typeof origin === 'string') {
       try {
         if (!hostIsLocal(new URL(origin).host)) {
-          return reply.code(403).send({ error: 'origen no permitido' })
+          return reject(reply, 403, 'forbidden-origin', 'origin not allowed')
         }
       } catch {
-        return reply.code(403).send({ error: 'origen ilegible' })
+        return reject(reply, 403, 'forbidden-origin', 'unreadable origin')
       }
     }
     // La página y sus estáticos son públicos para el navegador local; los datos no. Se decide con
@@ -104,11 +105,11 @@ export const registerGuards = (app: FastifyInstance, cfg: AuthConfig): void => {
     }
 
     if (tokenFromRequest(req) !== cfg.token) {
-      return reply.code(401).send({ error: 'token inválido' })
+      return reject(reply, 401, 'unauthorized', 'invalid token')
     }
     // Cabecera propia: obliga a preflight CORS y hace imposible el CSRF por formulario.
     if (req.method !== 'GET' && req.headers['x-ai-office'] !== '1') {
-      return reply.code(403).send({ error: 'falta la cabecera X-AI-Office' })
+      return reject(reply, 403, 'missing-header', 'missing X-AI-Office header')
     }
   })
 }

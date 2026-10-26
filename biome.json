@@ -8,16 +8,29 @@
       "**/*.json",
       "!**/dist",
       "!**/node_modules",
-      "!**/*.tsbuildinfo"
+      "!**/*.tsbuildinfo",
+      "!**/_site",
+      "!**/.playwright-mcp"
     ]
   },
-  "formatter": { "indentStyle": "space", "indentWidth": 2, "lineWidth": 100 },
+  "formatter": {
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 100
+  },
   "linter": {
     "enabled": true,
     "rules": {
       "preset": "recommended",
-      "style": { "noNonNullAssertion": "off" }
+      "style": {
+        "noNonNullAssertion": "off"
+      }
     }
   },
-  "javascript": { "formatter": { "quoteStyle": "single", "semicolons": "asNeeded" } }
+  "javascript": {
+    "formatter": {
+      "quoteStyle": "single",
+      "semicolons": "asNeeded"
+    }
+  }
 }

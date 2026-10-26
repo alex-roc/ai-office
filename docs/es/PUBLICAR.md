@@ -1,5 +1,7 @@
 # Publicar `ai-office` en npm
 
+[English](../PUBLISHING.md)
+
 Este documento son los pasos para publicar el paquete `ai-office` (lo que hoy vive en
 `packages/cli`). Léelo junto a `tsdown.config.ts`, que explica el porqué de la estrategia.
 
@@ -100,3 +102,7 @@ Son mecanismos distintos y no se mezclan: el plugin ejecuta `bin/ai-office`, que
 build) desde una instalación del propio monorepo del plugin. El paquete de npm, en cambio, existe
 para poder escribir `npx ai-office` sin clonar nada. `claude plugin validate .` sigue siendo el
 chequeo del plugin y es independiente de todo lo de este documento.
+
+Las dos vías llevan la misma interfaz y el mismo CLI, en inglés por defecto con español seleccionable
+(`--lang es` / `AI_OFFICE_LANG=es` en npm, la opción `language` en el plugin): ver la sección
+«Internacionalización» de [ARQUITECTURA](ARQUITECTURA.md).

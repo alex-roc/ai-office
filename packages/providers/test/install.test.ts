@@ -195,8 +195,8 @@ test('desinstalar no toca el grupo ajeno de PreToolUse aunque quede el único de
 })
 
 test('un settings.json ilegible no revienta con una excepción críptica', () => {
-  assert.throws(() => planInstall('{ esto no es json', RELAY_PATH), /ilegible/)
-  assert.throws(() => planInstall('[]', RELAY_PATH), /objeto JSON/)
+  assert.throws(() => planInstall('{ esto no es json', RELAY_PATH), /unreadable/)
+  assert.throws(() => planInstall('[]', RELAY_PATH), /JSON object/)
 })
 
 // --- eventos, creación, symlink, ruta estable --------------------------------------------------
@@ -253,7 +253,7 @@ test('un symlink roto no se reemplaza: error claro', async () => {
   const home = scratchHome()
   const link = join(home, 'settings.json')
   symlinkSync(join(home, 'no-existe.json'), link)
-  await assert.rejects(() => applyInstall(link, RELAY_PATH), /enlace roto/)
+  await assert.rejects(() => applyInstall(link, RELAY_PATH), /broken symlink/)
   assert.ok(lstatSync(link).isSymbolicLink())
 })
 

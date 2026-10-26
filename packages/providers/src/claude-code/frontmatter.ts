@@ -1,4 +1,6 @@
+import type { EntityProblem } from '@ai-office/core'
 import { parseDocument } from 'yaml'
+import { OfficeError } from './errors.ts'
 
 /**
  * Lectura y escritura de archivos Markdown con frontmatter YAML, preservando el original.
@@ -20,13 +22,13 @@ export interface ParsedDoc {
   /** Línea 1-indexada donde empieza el cuerpo, para poder citar evidencia. */
   bodyStartLine: number
   hasFrontmatter: boolean
-  problems: string[]
+  problems: EntityProblem[]
 }
 
 const DELIM = /^---[ \t]*\r?\n/
 
 export const parseMarkdownDoc = (text: string): ParsedDoc => {
-  const problems: string[] = []
+  const problems: EntityProblem[] = []
   if (!DELIM.test(text)) {
     return {
       data: {},
@@ -35,7 +37,7 @@ export const parseMarkdownDoc = (text: string): ParsedDoc => {
       bodyOffset: 0,
       bodyStartLine: 1,
       hasFrontmatter: false,
-      problems: ['sin frontmatter'],
+      problems: [{ code: 'no-frontmatter', message: 'no frontmatter' }],
     }
   }
   const openLen = text.match(DELIM)![0].length
@@ -51,7 +53,7 @@ export const parseMarkdownDoc = (text: string): ParsedDoc => {
       bodyOffset: 0,
       bodyStartLine: 1,
       hasFrontmatter: false,
-      problems: ['frontmatter sin cerrar'],
+      problems: [{ code: 'unclosed-frontmatter', message: 'unclosed frontmatter' }],
     }
   }
   const rawFrontmatter = rest.slice(0, closeMatch.index)
@@ -61,15 +63,23 @@ export const parseMarkdownDoc = (text: string): ParsedDoc => {
   let data: Record<string, unknown> = {}
   try {
     const doc = parseDocument(rawFrontmatter)
-    if (doc.errors.length > 0) problems.push(`YAML: ${doc.errors[0]?.message ?? 'error'}`)
+    if (doc.errors.length > 0) {
+      const detail = doc.errors[0]?.message ?? 'error'
+      problems.push({ code: 'yaml-error', message: `YAML: ${detail}`, params: { detail } })
+    }
     const json = doc.toJS()
     if (json && typeof json === 'object' && !Array.isArray(json)) {
       data = json as Record<string, unknown>
     } else if (json !== null) {
-      problems.push('el frontmatter no es un objeto')
+      problems.push({ code: 'frontmatter-not-object', message: 'the frontmatter is not an object' })
     }
   } catch (err) {
-    problems.push(`YAML ilegible: ${(err as Error).message}`)
+    const detail = (err as Error).message
+    problems.push({
+      code: 'yaml-unreadable',
+      message: `unreadable YAML: ${detail}`,
+      params: { detail },
+    })
   }
 
   const bodyStartLine = text.slice(0, bodyOffset).split('\n').length
@@ -86,7 +96,8 @@ export const setFrontmatterFields = (
   changes: Record<string, unknown>,
 ): { text: string; changed: boolean } => {
   const parsed = parseMarkdownDoc(text)
-  if (!parsed.hasFrontmatter) throw new Error('no se puede editar: el archivo no tiene frontmatter')
+  if (!parsed.hasFrontmatter)
+    throw new OfficeError('no-frontmatter', 'cannot edit: the file has no frontmatter')
 
   const doc = parseDocument(parsed.rawFrontmatter)
   let changed = false

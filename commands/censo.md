@@ -1,15 +1,15 @@
 ---
-description: Censo de tu configuración de Claude Code - qué tienes, qué usas y qué nunca has estrenado
+description: Census (alias of /census) of your Claude Code setup - what you have, what you use and what you have never tried
 ---
 
-Ejecuta el censo de ai-office y comenta el resultado con el usuario.
+Run the ai-office census and discuss the result with the user.
 
-1. Corre `ai-office censo` (o `node "${CLAUDE_PLUGIN_ROOT}/packages/cli/src/index.ts" censo` si el
-   binario no está en el PATH). Si el usuario pide una imagen compartible, añade
-   `--cartel ai-office-censo.svg`.
-2. Lee la salida y resume **lo que más sorprenda**, no todo: el número de agentes sin estrenar, el
-   de skills sin usar, y la brecha entre relaciones declaradas y demostradas.
-3. Propón como mucho tres acciones concretas, cada una nombrando el archivo que habría que tocar.
-   No las apliques sin que el usuario lo pida.
+1. Run `ai-office census` (or `node "${CLAUDE_PLUGIN_ROOT}/packages/cli/src/index.ts" census` if the
+   binary is not on the PATH). If the user asks for a shareable image, add
+   `--poster ai-office-census.svg`.
+2. Read the output and summarize **what stands out most**, not everything: the number of untried
+   agents, the number of unused skills, and the gap between declared and proven relations.
+3. Propose at most three concrete actions, each naming the file that would have to change.
+   Do not apply them unless the user asks.
 
-Si el usuario pasa $ARGUMENTS, úsalo para acotar el comentario (por ejemplo, a un agente concreto).
+If the user passes $ARGUMENTS, use it to narrow the discussion (for example, to a specific agent).

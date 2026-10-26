@@ -81,12 +81,24 @@ export const gradeOf = (input: GradeInput, now = Date.now()): Grade => {
   return 'tried'
 }
 
+/** Idiomas de la interfaz y de los textos que se escriben en archivos del usuario. El inglés es
+ * el idioma por defecto; el español es el segundo. */
+export type Lang = 'en' | 'es'
+
 /** Cómo se dice cada grado en la interfaz y en el censo: un solo sitio para las dos. */
-export const GRADE_LABEL: Record<Grade, string> = {
-  unused: 'sin estrenar',
-  tried: 'estrenada',
-  practicing: 'en práctica',
-  certified: 'acreditada',
+export const GRADE_LABELS: Record<Lang, Record<Grade, string>> = {
+  en: {
+    unused: 'unused',
+    tried: 'tried',
+    practicing: 'practicing',
+    certified: 'certified',
+  },
+  es: {
+    unused: 'sin estrenar',
+    tried: 'estrenada',
+    practicing: 'en práctica',
+    certified: 'acreditada',
+  },
 }
 
 /** Cuenta como activo lo que está en práctica o acreditado. */

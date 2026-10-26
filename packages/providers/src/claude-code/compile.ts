@@ -1,5 +1,6 @@
-import type { Agent, Command, Skill } from '@ai-office/core'
+import type { Agent, Command, Lang, Skill } from '@ai-office/core'
 import { stringify } from 'yaml'
+import { OfficeError } from './errors.ts'
 import { parseMarkdownDoc } from './frontmatter.ts'
 
 /**
@@ -33,6 +34,39 @@ export interface Flow {
 const MARK_START = '<!-- ai-office:flujo:inicio -->'
 const MARK_END = '<!-- ai-office:flujo:fin -->'
 
+/**
+ * La prosa que el compilador escribe en el archivo del usuario, por idioma. El inglés es el
+ * predeterminado. `importFlow` reconoce los dos idiomas (más abajo): un comando ya escrito en
+ * español sigue abriéndose en el lienzo aunque el usuario cambie de idioma.
+ */
+interface FlowProse {
+  parallel: string
+  delegate: (agent: string) => string
+  parallelAgent: (agent: string) => string
+  consult: string
+  context: string
+  noDescription: string
+}
+
+const PROSE: Record<Lang, FlowProse> = {
+  en: {
+    parallel: '**In parallel**, delegate at once:',
+    delegate: (agent) => `Delegate to the agent \`${agent}\`:`,
+    parallelAgent: (agent) => `agent \`${agent}\``,
+    consult: 'Consult',
+    context: "Use `$ARGUMENTS` as context for the user's request.",
+    noDescription: 'no description',
+  },
+  es: {
+    parallel: '**En paralelo**, delega a la vez:',
+    delegate: (agent) => `Delega al agente \`${agent}\`:`,
+    parallelAgent: (agent) => `agente \`${agent}\``,
+    consult: 'Consulta',
+    context: 'Usa `$ARGUMENTS` como contexto de la petición del usuario.',
+    noDescription: 'sin descripción',
+  },
+}
+
 /** Cierra la frase de la tarea si el usuario no puso puntuación, para que el texto fluya. */
 const endSentence = (text: string): string =>
   /[.!?:;]$/.test(text.trim()) ? text.trim() : `${text.trim()}.`
@@ -64,7 +98,8 @@ const sanitizeNotes = (notes: string): string =>
     .trim()
 
 /** Genera el Markdown de un slash command a partir del flujo. */
-export const compileFlow = (flow: Flow): string => {
+export const compileFlow = (flow: Flow, lang: Lang = 'en'): string => {
+  const prose = PROSE[lang]
   const phases = new Map<number, FlowStep[]>()
   flow.steps.forEach((step, i) => {
     const phase = step.phase ?? i + 1
@@ -91,11 +126,13 @@ export const compileFlow = (flow: Flow): string => {
   const ordered = [...phases.entries()].sort((a, b) => a[0] - b[0])
   for (const [phase, steps] of ordered) {
     if (steps.length > 1) {
-      lines.push(`${phase}. **En paralelo**, delega a la vez:`)
+      lines.push(`${phase}. ${prose.parallel}`)
       for (const s of steps) {
         lines.push(
-          `   - agente \`${s.agent}\`: ${oneLine(s.task)}${
-            s.skills?.length ? ` (consulta ${s.skills.map((k) => `\`${k}\``).join(', ')})` : ''
+          `   - ${prose.parallelAgent(s.agent)}: ${oneLine(s.task)}${
+            s.skills?.length
+              ? ` (${prose.consult.toLowerCase()} ${s.skills.map((k) => `\`${k}\``).join(', ')})`
+              : ''
           }`,
         )
       }
@@ -103,16 +140,16 @@ export const compileFlow = (flow: Flow): string => {
       const s = steps[0]
       if (!s) continue
       lines.push(
-        `${phase}. Delega al agente \`${s.agent}\`: ${
+        `${phase}. ${prose.delegate(s.agent)} ${
           s.skills?.length
-            ? `${endSentence(oneLine(s.task))} Consulta ${s.skills.map((k) => `\`${k}\``).join(', ')}.`
+            ? `${endSentence(oneLine(s.task))} ${prose.consult} ${s.skills.map((k) => `\`${k}\``).join(', ')}.`
             : oneLine(s.task)
         }`,
       )
     }
     lines.push('')
   }
-  lines.push('Usa `$ARGUMENTS` como contexto de la petición del usuario.')
+  lines.push(prose.context)
   lines.push('')
   lines.push(MARK_END)
   lines.push('')
@@ -121,9 +158,15 @@ export const compileFlow = (flow: Flow): string => {
 
 /**
  * Recupera los pasos de un comando ya escrito, para poder abrirlo en el lienzo.
- * Funciona con los generados por `compileFlow` y, de forma aproximada, con los escritos a mano.
+ * Funciona con los generados por `compileFlow` (en cualquier idioma) y, de forma aproximada, con
+ * los escritos a mano. `lang` solo decide el texto de relleno de un paso sin tarea.
  */
-export const importFlow = (command: Command, agents: Agent[], skills: Skill[]): Flow => {
+export const importFlow = (
+  command: Command,
+  agents: Agent[],
+  skills: Skill[],
+  lang: Lang = 'en',
+): Flow => {
   const doc = parseMarkdownDoc(`---\n---\n${command.body}`)
   const body = doc.body
   const agentNames = new Set(agents.map((a) => a.name))
@@ -140,7 +183,7 @@ export const importFlow = (command: Command, agents: Agent[], skills: Skill[]): 
     const numbered = /^(\d+)\./.exec(line)
     if (numbered) {
       phase = Number(numbered[1])
-      inParallel = /en paralelo/i.test(line)
+      inParallel = /(?:en paralelo|in parallel)/i.test(line)
     } else if (/^[-*]\s/.test(line)) {
       // Continúa una lista: si veníamos de una fase paralela, comparten número.
     } else {
@@ -154,8 +197,11 @@ export const importFlow = (command: Command, agents: Agent[], skills: Skill[]): 
       let task = line
         .replace(/^[\d.\-*\s]+/, '')
         .replace(/\*\*/g, '')
-        .replace(new RegExp(`^(agente\\s+)?\`?${escapeRegExp(name)}\`?[:,]?\\s*`, 'i'), '')
-        .replace(/^delega al agente\s+`?[a-z0-9-]+`?[:,]?\s*/i, '')
+        .replace(
+          new RegExp(`^(?:(?:agente|agent)\\s+)?\`?${escapeRegExp(name)}\`?[:,]?\\s*`, 'i'),
+          '',
+        )
+        .replace(/^(?:delega al agente|delegate to the agent)\s+`?[a-z0-9-]+`?[:,]?\s*/i, '')
         .trim()
       const mentioned = [...skillNames].filter((k) =>
         new RegExp(`(?<![A-Za-z0-9_-])${escapeRegExp(k)}(?![A-Za-z0-9_-])`).test(line),
@@ -163,11 +209,13 @@ export const importFlow = (command: Command, agents: Agent[], skills: Skill[]): 
       // La coletilla "Consulta `x`, `y`." la genera el compilador a partir del campo `skills`.
       // Si se dejara dentro del texto, al recompilar saldría dos veces.
       if (mentioned.length > 0) {
-        task = task.replace(/\s*\(?consulta\s+`[^`]+`(?:\s*,\s*`[^`]+`)*\.?\)?\s*$/i, '').trim()
+        task = task
+          .replace(/\s*\(?(?:consulta|consult)\s+`[^`]+`(?:\s*,\s*`[^`]+`)*\.?\)?\s*$/i, '')
+          .trim()
       }
       steps.push({
         agent: name,
-        task: task || 'sin descripción',
+        task: task || PROSE[lang].noDescription,
         phase: inParallel ? phase : phase || steps.length + 1,
         ...(mentioned.length ? { skills: mentioned } : {}),
       })
@@ -189,8 +237,10 @@ export const importFlow = (command: Command, agents: Agent[], skills: Skill[]): 
 export const flowFileName = (flow: Flow): string => {
   const name = slug(flow.name)
   if (!name) {
-    throw new Error(
-      `el nombre "${flow.name}" no sirve para un comando: usa al menos una letra o un número`,
+    throw new OfficeError(
+      'invalid-name',
+      `the name "${flow.name}" is not valid for a command: use at least one letter or number`,
+      { params: { name: flow.name } },
     )
   }
   return `${name}.md`

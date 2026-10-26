@@ -8,9 +8,9 @@
     {
       "name": "ai-office",
       "source": "./",
-      "description": "Visor y editor de tu arquitectura de agentes en Claude Code.",
+      "description": "See, edit and measure your Claude Code agents, skills and slash commands.",
       "version": "0.1.0"
     }
   ],
-  "description": "Herramientas para auditar y editar tu propia configuración de Claude Code."
+  "description": "See, edit and measure your own Claude Code configuration."
 }

@@ -1,22 +1,28 @@
 {
   "name": "ai-office",
   "version": "0.1.0",
-  "description": "Visor y editor de tu arquitectura de agentes en Claude Code: qué tienes, qué usas y qué nunca has estrenado.",
+  "description": "See, edit and measure your Claude Code agents, skills and slash commands: a pixel-art office, a live graph, safe edits with diffs, and real usage from your transcripts. Runs locally.",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/alex-roc/ai-office.git"
   },
-  "homepage": "https://github.com/alex-roc/ai-office#readme",
+  "homepage": "https://alex-roc.github.io/ai-office/",
   "bugs": {
     "url": "https://github.com/alex-roc/ai-office/issues"
   },
   "keywords": [
-    "claude-code",
     "agents",
-    "skills",
+    "ai-agents",
+    "audit",
+    "claude",
+    "claude-code",
     "cli",
-    "audit"
+    "developer-tools",
+    "pixel-art",
+    "skills",
+    "slash-commands",
+    "visualization"
   ],
   "type": "module",
   "engines": {

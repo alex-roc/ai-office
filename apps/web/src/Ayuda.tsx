@@ -1,78 +1,73 @@
 import { useState } from 'react'
 import { Dialogo } from './Dialogo.tsx'
+import type { Clave } from './i18n/index.ts'
+import { useT } from './i18n/react.ts'
+import { conCodigo } from './Rico.tsx'
 
 /** Panel de ayuda (`?`): atajos de teclado y cómo leer cada vista. */
 
-const ATAJOS: { teclas: string; que: string }[] = [
-  { teclas: '1', que: 'ver la Sala' },
-  { teclas: '2', que: 'ver el Plano' },
-  { teclas: '/', que: 'buscar un agente, skill o comando y llevar la vista hasta él' },
-  { teclas: '+  −', que: 'acercar o alejar' },
-  { teclas: '0', que: 'encuadrar todo' },
-  { teclas: 'Esc', que: 'cerrar el diálogo abierto o quitar la selección' },
-  { teclas: '?', que: 'abrir esta ayuda' },
+const ATAJOS: { teclas: string; que: Clave }[] = [
+  { teclas: '1', que: 'help.key.office' },
+  { teclas: '2', que: 'help.key.blueprint' },
+  { teclas: '/', que: 'help.key.search' },
+  { teclas: '+  −', que: 'help.key.zoom' },
+  { teclas: '0', que: 'help.key.fit' },
+  { teclas: 'Esc', que: 'help.key.esc' },
+  { teclas: '?', que: 'help.key.help' },
 ]
 
-export const Ayuda = ({ onCerrar }: { onCerrar: () => void }) => (
-  <Dialogo titulo="Ayuda" onCerrar={onCerrar} claseModal="ayuda">
-    <h4 className="sub-ayuda">Atajos de teclado</h4>
-    <dl className="atajos">
-      {ATAJOS.map((a) => (
-        <div key={a.teclas}>
-          <dt>
-            <kbd>{a.teclas}</kbd>
-          </dt>
-          <dd>{a.que}</dd>
-        </div>
-      ))}
-    </dl>
-    <p className="nota-dialogo">
-      Los atajos no actúan mientras escribes en un campo de texto ni con un diálogo abierto.
-    </p>
+const LEYENDA_SALA: Clave[] = [
+  'help.office.room',
+  'help.office.grey',
+  'help.office.spine',
+  'help.office.shelves',
+  'help.office.card',
+]
 
-    <h4 className="sub-ayuda">Cómo leer la Sala</h4>
-    <ul className="leyenda-lista">
-      <li>
-        Cada <b>despacho</b> agrupa agentes que citan las mismas skills o que convocan los mismos
-        comandos; la placa de la puerta dice por qué.
-      </li>
-      <li>
-        <b>Persona en gris</b>: agente al que nunca has delegado. En color: ya ha trabajado.
-      </li>
-      <li>
-        <b>Lomo</b> de una skill: su alto es el grado (sin estrenar, estrenada, en práctica,
-        acreditada) y su color, el agente que más la usa. Sin tejuelo dorado: nunca usada.
-      </li>
-      <li>
-        <b>Archivo común</b>: skills que cita media planta. <b>Depósito</b>: skills que no cita
-        ningún agente.
-      </li>
-      <li>
-        <b>Tarjeta</b> clavada en la mampara: un comando. Chincheta roja, se ha ejecutado; gris,
-        nunca.
-      </li>
-    </ul>
+const LEYENDA_PLANO: Clave[] = [
+  'help.blueprint.lines',
+  'help.blueprint.shapes',
+  'help.blueprint.edit',
+]
 
-    <h4 className="sub-ayuda">Cómo leer el Plano</h4>
-    <ul className="leyenda-lista">
-      <li>
-        Línea <b>punteada</b>: lo que tus prompts dicen que debería pasar. Línea <b>sólida verde</b>
-        : lo que los transcripts demuestran que pasó. La distancia entre ambas es el trabajo
-        pendiente.
-      </li>
-      <li>Círculo: agente. Cuadrado: skill. Rectángulo: comando. Relleno vacío: nunca usado.</li>
-      <li>
-        <b>editar grafo</b> (solo en el Plano): arrastra de un agente a una skill para escribir esa
-        relación en su prompt. Siempre se enseña el diff antes de tocar el archivo.
-      </li>
-    </ul>
-    <div className="acciones">
-      <button type="button" className="primario" onClick={onCerrar}>
-        Entendido
-      </button>
-    </div>
-  </Dialogo>
-)
+export const Ayuda = ({ onCerrar }: { onCerrar: () => void }) => {
+  const t = useT()
+  return (
+    <Dialogo titulo={t('help.title')} onCerrar={onCerrar} claseModal="ayuda">
+      <h4 className="sub-ayuda">{t('help.keys.title')}</h4>
+      <dl className="atajos">
+        {ATAJOS.map((a) => (
+          <div key={a.teclas}>
+            <dt>
+              <kbd>{a.teclas}</kbd>
+            </dt>
+            <dd>{t(a.que)}</dd>
+          </div>
+        ))}
+      </dl>
+      <p className="nota-dialogo">{t('help.keys.note')}</p>
+
+      <h4 className="sub-ayuda">{t('help.office.title')}</h4>
+      <ul className="leyenda-lista">
+        {LEYENDA_SALA.map((k) => (
+          <li key={k}>{conCodigo(t(k))}</li>
+        ))}
+      </ul>
+
+      <h4 className="sub-ayuda">{t('help.blueprint.title')}</h4>
+      <ul className="leyenda-lista">
+        {LEYENDA_PLANO.map((k) => (
+          <li key={k}>{conCodigo(t(k))}</li>
+        ))}
+      </ul>
+      <div className="acciones">
+        <button type="button" className="primario" onClick={onCerrar}>
+          {t('help.ok')}
+        </button>
+      </div>
+    </Dialogo>
+  )
+}
 
 const CLAVE_BIENVENIDA = 'ai-office-bienvenida'
 
@@ -86,6 +81,7 @@ const yaVista = (): boolean => {
 
 /** Banda de bienvenida, solo la primera vez. Descartarla se recuerda en `localStorage`. */
 export const Bienvenida = ({ onAyuda }: { onAyuda: () => void }) => {
+  const t = useT()
   const [visible, setVisible] = useState(() => !yaVista())
   if (!visible) return null
   const descartar = () => {
@@ -97,30 +93,21 @@ export const Bienvenida = ({ onAyuda }: { onAyuda: () => void }) => {
     setVisible(false)
   }
   return (
-    <section className="bienvenida" aria-label="Bienvenida">
+    <section className="bienvenida" aria-label={t('welcome.aria')}>
       <div>
-        <h2>Esto es tu configuración de Claude Code, cruzada con lo que de verdad pasó</h2>
+        <h2>{t('welcome.title')}</h2>
         <ul>
-          <li>
-            <b>Sala</b>: una oficina donde cada agente es una persona, cada skill un lomo en una
-            balda y cada comando una tarjeta. Lo gris es lo que nunca has usado.
-          </li>
-          <li>
-            <b>Plano</b>: el mismo catálogo como grafo. Punteado = lo que tus prompts dicen; sólido
-            = lo que los transcripts demuestran.
-          </li>
-          <li>
-            <b>Ficha</b> (a la derecha): pulsa cualquier cosa para ver qué dice de sí misma, qué ha
-            hecho y de qué archivo sale cada dato. Desde ahí puedes editarla, siempre con diff.
-          </li>
+          <li>{conCodigo(t('welcome.office'))}</li>
+          <li>{conCodigo(t('welcome.blueprint'))}</li>
+          <li>{conCodigo(t('welcome.details'))}</li>
         </ul>
       </div>
       <div className="bienvenida-acciones">
         <button type="button" onClick={onAyuda}>
-          Ver atajos
+          {t('welcome.shortcuts')}
         </button>
         <button type="button" className="primario" onClick={descartar}>
-          Entendido
+          {t('help.ok')}
         </button>
       </div>
     </section>

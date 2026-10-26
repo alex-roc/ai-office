@@ -6,12 +6,13 @@ import { Buscador } from './Buscador.tsx'
 import { Cabecera } from './Cabecera.tsx'
 import { hayDialogoAbierto } from './Dialogo.tsx'
 import { DiffDialog } from './Diff.tsx'
-import { DEMO } from './demo.ts'
+import { DEMO, urlInstalar } from './demo.ts'
 import { erroresDeEscaneo, sinArchivados } from './derivados.ts'
 import { ApiError, mensajeDeError } from './errores.ts'
 import { Ficha, type Vista } from './Ficha.tsx'
 import { FlowEditor } from './FlowEditor.tsx'
 import { type Flow, openFlow, planFlow, saveFlow } from './flows.ts'
+import { useLang, useT } from './i18n/react.ts'
 import { useLiveConnection, useLiveSelector } from './live.ts'
 import {
   applyMutation,
@@ -22,7 +23,6 @@ import {
 import { Plano } from './Plano.tsx'
 import { conCodigo } from './Rico.tsx'
 import { Sala } from './sala/Sala.tsx'
-import { plural } from './texto.ts'
 import type { Snapshot } from './types.ts'
 import type { ControlVista } from './vista.ts'
 
@@ -37,37 +37,38 @@ interface Pendiente {
 
 /** Pantalla cuando aún no hay snapshot y no se pudo conseguir: qué pasó y cómo arreglarlo. */
 const PantallaError = ({
-  mensaje,
+  error,
   cargando,
   onReintentar,
 }: {
-  mensaje: string
+  error: unknown
   cargando: boolean
   onReintentar: () => void
-}) => (
-  <div className="pantalla-error" role="alert">
-    <h1>No se pudo leer tu configuración</h1>
-    <p>{conCodigo(mensaje)}</p>
-    <ol>
-      <li>
-        Arranca el daemon: <code>ai-office</code>, o <code>pnpm dev</code> dentro del repo.
-      </li>
-      <li>
-        Abre el enlace que imprime, que acaba en <code>#t=…</code>: lleva el token. También puedes
-        pegarlo en esta pestaña; se recargará sola.
-      </li>
-      <li>El token cambia en cada arranque del daemon, así que un enlace viejo deja de valer.</li>
-    </ol>
-    <button type="button" className="primario" onClick={onReintentar} disabled={cargando}>
-      {cargando ? 'Reintentando…' : 'Reintentar'}
-    </button>
-  </div>
-)
+}) => {
+  const t = useT()
+  return (
+    <div className="pantalla-error" role="alert">
+      <h1>{t('app.error.title')}</h1>
+      <p>{conCodigo(mensajeDeError(error))}</p>
+      <ol>
+        <li>{conCodigo(t('app.error.step1'))}</li>
+        <li>{conCodigo(t('app.error.step2'))}</li>
+        <li>{conCodigo(t('app.error.step3'))}</li>
+      </ol>
+      <button type="button" className="primario" onClick={onReintentar} disabled={cargando}>
+        {cargando ? t('app.retrying') : t('app.retry')}
+      </button>
+    </div>
+  )
+}
 
 const App = () => {
+  const t = useT()
+  const lang = useLang()
   const token = useSyncExternalStore(subscribeToken, getToken)
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  // El error se guarda sin traducir y se redacta al pintarlo: cambia de idioma con el conmutador.
+  const [error, setError] = useState<unknown>(null)
   const [cargando, setCargando] = useState(true)
   const [selected, setSelected] = useState<string | null>(null)
   const [vista, setVista] = useState<Vista>('sala')
@@ -90,7 +91,7 @@ const App = () => {
   // en una banda con "reintentar". Solo si nunca hubo snapshot hay pantalla de error. La
   // secuencia descarta respuestas viejas: un reintento lento no debe pisar a uno más reciente.
   const secuencia = useRef(0)
-  const errorRef = useRef<string | null>(null)
+  const errorRef = useRef<unknown>(null)
   errorRef.current = error
   const reload = useCallback(() => {
     const n = ++secuencia.current
@@ -104,7 +105,7 @@ const App = () => {
       },
       (e: unknown) => {
         if (n !== secuencia.current) return
-        setError(mensajeDeError(e))
+        setError(e)
         setCargando(false)
       },
     )
@@ -130,7 +131,7 @@ const App = () => {
   const [flow, setFlow] = useState<{ flow: Flow; clave: number } | null>(null)
   const [pending, setPending] = useState<Pendiente | null>(null)
   const [saving, setSaving] = useState(false)
-  const [diffError, setDiffError] = useState<string | null>(null)
+  const [diffError, setDiffError] = useState<unknown>(null)
 
   /** Abre un comando en el lienzo, recuperando los pasos que ya tuviera escritos. */
   const editarFlujo = useCallback(
@@ -165,13 +166,16 @@ const App = () => {
         setPending({
           flow: f,
           plan,
-          title: `/${f.name} · ${plural(f.steps.length, 'paso', 'pasos')}`,
+          title: t('diff.title.flow', {
+            name: f.name,
+            steps: t('count.steps', { n: f.steps.length }),
+          }),
         })
       } catch (e) {
         avisar('error', mensajeDeError(e))
       }
     },
-    [avisar],
+    [avisar, t],
   )
 
   /**
@@ -185,10 +189,7 @@ const App = () => {
       const agent = snapshot.catalog.agents.find((a) => a.id === fromId)
       const skill = snapshot.catalog.skills.find((sk) => sk.id === toId)
       if (!agent) {
-        avisar(
-          'info',
-          'Solo un agente tiene un prompt donde escribir la relación. Arrastra desde un agente.',
-        )
+        avisar('info', t('toast.agentOnly'))
         return
       }
       if (!skill) return
@@ -198,7 +199,7 @@ const App = () => {
         .filter(Boolean)
       if (actuales.includes(skill.name)) {
         // No es un fallo: la relación ya está escrita y no hay nada que hacer.
-        avisar('info', `${agent.name} ya menciona ${skill.name} en su prompt.`)
+        avisar('info', t('toast.alreadyMentions', { agent: agent.name, skill: skill.name }))
         return
       }
       const req: MutationRequest = {
@@ -209,12 +210,16 @@ const App = () => {
       try {
         const plan = await planMutation(req)
         setDiffError(null)
-        setPending({ req, plan, title: `${agent.name} consultará ${skill.name}` })
+        setPending({
+          req,
+          plan,
+          title: t('diff.title.consult', { agent: agent.name, skill: skill.name }),
+        })
       } catch (e) {
         avisar('error', mensajeDeError(e))
       }
     },
-    [snapshot, avisar],
+    [snapshot, avisar, t],
   )
 
   /** Cualquier edición de la ficha: se planea, se enseña el diff y solo entonces se escribe. */
@@ -246,7 +251,7 @@ const App = () => {
       if (pending.flow) {
         await saveFlow(pending.flow, pending.plan.etag)
         setFlow(null)
-        avisar('ok', `Guardado el comando /${pending.flow.name}.`)
+        avisar('ok', t('toast.flowSaved', { name: pending.flow.name }))
       } else if (pending.req) {
         await applyMutation({ ...pending.req, etag: pending.plan.etag })
         const { kind, entityId } = pending.req
@@ -254,11 +259,11 @@ const App = () => {
           // Un agente archivado deja de dibujarse: seguir mostrando su ficha como si estuviera
           // ahí despistaba.
           if (selectedRef.current === entityId) setSelected(null)
-          avisar('ok', 'Agente archivado. Puedes restaurarlo desde la ficha vacía.')
+          avisar('ok', t('toast.archived'))
         } else if (kind === 'agent.unarchive') {
-          avisar('ok', 'Agente restaurado.')
+          avisar('ok', t('toast.unarchived'))
         } else {
-          avisar('ok', `Guardado: ${pending.title}.`)
+          avisar('ok', t('toast.saved', { title: pending.title }))
         }
       }
       setPending(null)
@@ -271,12 +276,12 @@ const App = () => {
         avisar('error', e.message)
         reload()
       } else {
-        setDiffError(mensajeDeError(e))
+        setDiffError(e)
       }
     } finally {
       setSaving(false)
     }
-  }, [pending, avisar, reload])
+  }, [pending, avisar, reload, t])
 
   // --- Vistas, búsqueda y teclado -------------------------------------------------------------
   const elegirVista = useCallback((v: Vista) => {
@@ -293,13 +298,10 @@ const App = () => {
       setSelected(id)
       const ok = controlActivo()?.centrarEn(id)
       if (ok === false) {
-        avisar(
-          'info',
-          `La ${vista === 'sala' ? 'Sala' : 'vista actual'} no dibuja esto (los agentes archivados, por ejemplo). Mira su ficha a la derecha.`,
-        )
+        avisar('info', t(vista === 'sala' ? 'toast.notDrawn.office' : 'toast.notDrawn.current'))
       }
     },
-    [controlActivo, avisar, vista],
+    [controlActivo, avisar, vista, t],
   )
 
   const avisoInfo = useCallback((texto: string) => avisar('info', texto), [avisar])
@@ -351,12 +353,8 @@ const App = () => {
 
   // --- Pintado --------------------------------------------------------------------------------
   if (!snapshot || !dibujado) {
-    if (error) return <PantallaError mensaje={error} cargando={cargando} onReintentar={reload} />
-    return (
-      <div className="loading">
-        {DEMO ? 'abriendo la oficina de demostración…' : 'leyendo ~/.claude…'}
-      </div>
-    )
+    if (error) return <PantallaError error={error} cargando={cargando} onReintentar={reload} />
+    return <div className="loading">{t(DEMO ? 'app.loading.demo' : 'app.loading')}</div>
   }
 
   const erroresEscaneo = erroresDeEscaneo(snapshot)
@@ -376,31 +374,21 @@ const App = () => {
       />
       {DEMO && (
         <div className="banda demo" role="note">
-          <span>
-            Demo de solo lectura con una instalación ficticia. Los destellos reproducen lo que
-            consta en sus transcripts.
-          </span>
-          <a href="https://alex-roc.github.io/ai-office/?lang=es#install">Instálalo en la tuya</a>
+          <span>{t('demo.band')}</span>
+          <a href={urlInstalar(lang)}>{t('demo.install')}</a>
         </div>
       )}
-      {error && (
+      {error !== null && (
         <div className="banda error" role="alert">
-          <span>{conCodigo(error)}</span>
+          <span>{conCodigo(mensajeDeError(error))}</span>
           <button type="button" onClick={reload} disabled={cargando}>
-            {cargando ? 'reintentando…' : 'reintentar'}
+            {cargando ? t('band.retrying') : t('band.retry')}
           </button>
         </div>
       )}
       {erroresEscaneo.length > 0 && (
         <details className="banda escaneo">
-          <summary>
-            {plural(
-              erroresEscaneo.length,
-              'archivo no se pudo leer',
-              'archivos no se pudieron leer',
-            )}{' '}
-            y falta en lo que ves
-          </summary>
+          <summary>{t('band.scan', { n: erroresEscaneo.length })}</summary>
           <ul>
             {erroresEscaneo.map((m) => (
               <li key={m}>
@@ -459,7 +447,7 @@ const App = () => {
           plan={pending.plan}
           title={pending.title}
           busy={saving}
-          error={diffError}
+          error={diffError ? mensajeDeError(diffError) : null}
           onCancel={cancelarDiff}
           onConfirm={confirmar}
         />

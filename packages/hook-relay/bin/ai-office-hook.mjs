@@ -84,7 +84,7 @@ process.on('unhandledRejection', (err) => {
 })
 
 const watchdog = setTimeout(() => {
-  logError('watchdog', new Error('el hook no terminó a tiempo'))
+  logError('watchdog', new Error('the hook did not finish in time'))
   finish()
 }, WATCHDOG_MS)
 watchdog.unref?.()
@@ -118,7 +118,7 @@ const toSpool = (line) => {
       const marker = join(SPOOL_DIR, SPOOL_FULL_MARKER)
       if (!existsSync(marker)) {
         writeFileSync(marker, `${new Date().toISOString()}\n`)
-        logError('spool', new Error('spool lleno (5 MB): se descartan los eventos nuevos'))
+        logError('spool', new Error('spool full (5 MB): new events are dropped'))
       }
       return finish()
     }

@@ -1,4 +1,5 @@
 import { type ReactNode, useEffect, useId, useRef } from 'react'
+import { useT } from './i18n/react.ts'
 
 /**
  * Diálogo modal accesible: `role="dialog"`, foco inicial dentro, trampa de foco, Esc para
@@ -137,7 +138,7 @@ export const Confirmar = ({
   titulo,
   texto,
   confirmar,
-  cancelar = 'Seguir editando',
+  cancelar,
   onConfirmar,
   onCancelar,
 }: {
@@ -147,16 +148,19 @@ export const Confirmar = ({
   cancelar?: string
   onConfirmar: () => void
   onCancelar: () => void
-}) => (
-  <Dialogo titulo={titulo} onCerrar={onCancelar} claseModal="chico" inicial="[data-cancelar]">
-    <p className="texto-dialogo">{texto}</p>
-    <div className="acciones">
-      <button type="button" data-cancelar onClick={onCancelar}>
-        {cancelar}
-      </button>
-      <button type="button" className="peligro" onClick={onConfirmar}>
-        {confirmar}
-      </button>
-    </div>
-  </Dialogo>
-)
+}) => {
+  const t = useT()
+  return (
+    <Dialogo titulo={titulo} onCerrar={onCancelar} claseModal="chico" inicial="[data-cancelar]">
+      <p className="texto-dialogo">{texto}</p>
+      <div className="acciones">
+        <button type="button" data-cancelar onClick={onCancelar}>
+          {cancelar ?? t('dialog.keepEditing')}
+        </button>
+        <button type="button" className="peligro" onClick={onConfirmar}>
+          {confirmar}
+        </button>
+      </div>
+    </Dialogo>
+  )
+}

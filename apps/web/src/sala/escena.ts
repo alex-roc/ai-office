@@ -1,6 +1,7 @@
 import { Application, Container, Graphics, Sprite, Text, type Texture } from 'pixi.js'
 import { claveDeConjunto } from '../derivados.ts'
-import { gradoEtiqueta, NOMBRE_HILO, plural } from '../texto.ts'
+import { t } from '../i18n/index.ts'
+import { gradoEtiqueta, nombreHilo, nombreSala, razonTexto } from '../texto.ts'
 import type { Snapshot } from '../types.ts'
 import { type Atlas, cargarAtlas } from './atlas.ts'
 import {
@@ -56,7 +57,7 @@ import {
  */
 const ESCALAS = [0.5, 1, 2, 3, 4]
 
-/** Grado numérico del lomo (1 a 4) → clave de grado, para citarlo en el tooltip en español. */
+/** Grado numérico del lomo (1 a 4) → clave de grado, para citarlo en el tooltip. */
 const GRADO_DE = ['unused', 'unused', 'tried', 'practicing', 'certified']
 
 /** Cuánto dura encendida una figura tras un evento en vivo. */
@@ -474,8 +475,8 @@ export class Escena {
   private placa(b: Bahia): void {
     const esHub = b.tipo === 'hub'
     const p = toScreen((b.col0 + b.col1) / 2, b.row0)
-    const t = new Text({
-      text: esHub ? b.nombre : `${b.nombre}  ·  ${b.agentes.length}`,
+    const placa = new Text({
+      text: esHub ? t('room.hub') : `${nombreSala(b)}  ·  ${b.agentes.length}`,
       style: {
         fontFamily: 'ui-monospace, monospace',
         fontSize: 11,
@@ -485,21 +486,22 @@ export class Escena {
         stroke: { color: UI.noche, width: 4 },
       },
     }) as Placa
-    t.anchor.set(0.5, 1)
-    t.mundoX = p.x
-    t.mundoY = p.y - MAMPARA_H - 12
-    this.hud.addChild(t)
-    this.placas.push(t)
+    placa.anchor.set(0.5, 1)
+    placa.mundoX = p.x
+    placa.mundoY = p.y - MAMPARA_H - 12
+    this.hud.addChild(placa)
+    this.placas.push(placa)
 
-    // La placa es la vía para leer el motivo, que es lo que hace honesta la agrupación.
-    t.eventMode = 'static'
-    t.cursor = 'help'
-    t.on('pointerover', () => {
+    // La placa es la vía para leer el motivo, que es lo que hace honesta la agrupación. La frase
+    // se redacta al señalar, con el idioma de ese momento.
+    placa.eventMode = 'static'
+    placa.cursor = 'help'
+    placa.on('pointerover', () => {
       this.hover = b.id
       this.hoverBahia = b.id
-      this.mostrarTooltip(b.motivo)
+      this.mostrarTooltip(esHub ? t('room.hub.reason') : razonTexto(b))
     })
-    t.on('pointerout', () => {
+    placa.on('pointerout', () => {
       if (this.hover === b.id) this.ocultarTooltip()
     })
   }
@@ -566,8 +568,12 @@ export class Escena {
       this.hoverBahia = bahiaId
       this.mostrarTooltip(
         seat.unused
-          ? `${seat.name} · nunca delegado`
-          : `${seat.name} · ${plural(seat.uses, 'delegación', 'delegaciones')} · ${gradoEtiqueta(seat.grade)}`,
+          ? t('tip.agent.never', { name: seat.name })
+          : t('tip.agent', {
+              name: seat.name,
+              delegations: t('count.delegations', { n: seat.uses }),
+              grade: gradoEtiqueta(seat.grade),
+            }),
       )
     })
     cuerpo.on('pointerout', () => {
@@ -615,8 +621,12 @@ export class Escena {
       this.hover = l.id
       this.mostrarTooltip(
         l.unused
-          ? `${l.name} · nunca usada`
-          : `${l.name} · ${plural(l.uses, 'uso', 'usos')} · ${gradoEtiqueta(GRADO_DE[l.grado])}${l.duenio ? ` · sobre todo ${l.duenio}` : ''}`,
+          ? t('tip.skill.never', { name: l.name })
+          : t('tip.skill', {
+              name: l.name,
+              uses: t('count.uses', { n: l.uses }),
+              grade: gradoEtiqueta(GRADO_DE[l.grado]),
+            }) + (l.duenio ? t('tip.skill.owner', { owner: l.duenio }) : ''),
       )
     })
     s.on('pointerout', () => {
@@ -626,7 +636,7 @@ export class Escena {
     this.lomos.push({ id: l.id, sprite: s, baseY: s.y, destelloHasta: 0 })
   }
 
-  private tarjetaEn(t: {
+  private tarjetaEn(tarj: {
     id: string
     name: string
     col: number
@@ -634,27 +644,29 @@ export class Escena {
     altura: number
     used: boolean
   }): void {
-    const tex = cacheada(`tarjeta:${t.used}`, () => tarjeta(t.used, 26, 17))
+    const tex = cacheada(`tarjeta:${tarj.used}`, () => tarjeta(tarj.used, 26, 17))
     const s = new Sprite(tex)
     s.anchor.set(0.5, 0.5)
-    const p = toScreen(t.col, t.row)
-    s.position.set(Math.round(p.x - TILE.w / 4), Math.round(p.y + TILE.h / 4 - t.altura))
-    s.zIndex = depthOf(t.col, t.row, -290)
+    const p = toScreen(tarj.col, tarj.row)
+    s.position.set(Math.round(p.x - TILE.w / 4), Math.round(p.y + TILE.h / 4 - tarj.altura))
+    s.zIndex = depthOf(tarj.col, tarj.row, -290)
     s.eventMode = 'static'
     s.cursor = 'pointer'
     s.on('pointertap', (e) => {
       e.stopPropagation()
-      this.opciones.onSelect(t.id)
+      this.opciones.onSelect(tarj.id)
     })
     s.on('pointerover', () => {
-      this.hover = t.id
-      this.mostrarTooltip(`/${t.name} · ${t.used ? 'ejecutado' : 'nunca ejecutado'}`)
+      this.hover = tarj.id
+      this.mostrarTooltip(
+        t(tarj.used ? 'tip.command.run' : 'tip.command.never', { name: tarj.name }),
+      )
     })
     s.on('pointerout', () => {
-      if (this.hover === t.id) this.ocultarTooltip()
+      if (this.hover === tarj.id) this.ocultarTooltip()
     })
     this.capaObjetos.addChild(s)
-    this.tarjetas.push({ id: t.id, sprite: s, baseY: s.y, destelloHasta: 0 })
+    this.tarjetas.push({ id: tarj.id, sprite: s, baseY: s.y, destelloHasta: 0 })
   }
 
   /** El hilo principal: el único puesto de la planta que no sale de ningún archivo. */
@@ -667,7 +679,7 @@ export class Escena {
     this.figura(
       {
         id: snapshot.mainThreadId,
-        name: NOMBRE_HILO,
+        name: nombreHilo(),
         col: c.col,
         row: c.row,
         figura: 'ingeniero',
@@ -679,7 +691,10 @@ export class Escena {
         fase: 0,
       },
       'hub',
-      `${NOMBRE_HILO} · ${plural(snapshot.stats.mainThreadSkills, 'skill', 'skills')}`,
+      t('tip.main', {
+        name: nombreHilo(),
+        skills: t('count.skills', { n: snapshot.stats.mainThreadSkills }),
+      }),
     )
 
     const foco = new Graphics()
@@ -1096,6 +1111,10 @@ export class Escena {
   encajar(): void {
     if (!this.layout) return
     this.camaraManual = false
+    // El observador de tamaño ignora los cambios que llegan mientras cargan las texturas, así que
+    // el renderer puede seguir con el tamaño de arranque (o el de antes de quitarse la pantalla de
+    // carga). Encuadrar con ese tamaño dejaba la planta fuera de la vista: se sincroniza primero.
+    if (this.estado === 'lista') this.app.resize()
     const w = this.app.renderer.width
     const h = this.app.renderer.height
     // La pared izquierda sobresale media baldosa del vértice del suelo; encuadrar sin contarlo

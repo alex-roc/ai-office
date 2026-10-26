@@ -32,13 +32,24 @@ const FRACCION_COMUN = 0.34
 
 export type TipoSala = 'skill' | 'command' | 'suelto'
 
+export interface SalaRazon {
+  tipo: 'skill' | 'command' | 'loose'
+  nombre: string
+  cuantos: number
+  total: number
+}
+
 export interface Sala {
   id: string
   /** El rasgo que une a sus ocupantes: el nombre de una skill o de un comando reales. */
   nombre: string
   tipo: TipoSala
-  /** Frase citable para la placa de la puerta. */
+  /** Frase citable para la placa de la puerta, en inglés. Es el respaldo: la interfaz la redacta
+   * en su idioma a partir de `razon`, que trae los mismos hechos en forma de datos. */
   motivo: string
+  /** Por qué están ahí, como datos: `cuantos` de los `total` agentes comparten `nombre` (una skill
+   * o un comando) o, en una sala suelta, no comparten nada (`nombre` vacío). */
+  razon: SalaRazon
   agents: string[]
   skills: string[]
   commands: string[]
@@ -124,19 +135,19 @@ const aglomerar = (
 
 const nombreDe = (id: string): string => id.split('/').pop() ?? id
 
-/** La frase de la placa. Se redacta aparte porque en un despacho de una sola persona la versión
- * en plural ("1 de sus 1 agentes") queda ridícula y resta credibilidad a todo lo demás. */
+/** La frase de la placa (en inglés: es el respaldo de `razon`). Se redacta aparte porque en un
+ * despacho de una sola persona la versión en plural ("1 of its 1 agents") queda ridícula y resta
+ * credibilidad a todo lo demás. */
 const motivoDe = (esComando: boolean, nombre: string, cuantos: number, total: number): string => {
   if (total === 1) {
     return esComando
-      ? `Lo convoca /${nombre}, y no lo convoca ningún comando más.`
-      : `Cita \`${nombre}\` en su prompt, y no la comparte con nadie.`
+      ? `Summoned by /${nombre}, and by no other command.`
+      : `Cites \`${nombre}\` in its prompt, and shares it with no one.`
   }
-  const todos = cuantos === total
-  const sujeto = todos ? `Los ${total}` : `${cuantos} de los ${total}`
+  const sujeto = cuantos === total ? `All ${total}` : `${cuantos} of ${total}`
   return esComando
-    ? `${sujeto} son convocados por /${nombre}.`
-    : `${sujeto} citan \`${nombre}\` en su prompt.`
+    ? `${sujeto} are summoned by /${nombre}.`
+    : `${sujeto} cite \`${nombre}\` in their prompt.`
 }
 
 export const agruparEnSalas = (completo: Catalog, edges: Edge[]): Planta => {
@@ -170,12 +181,13 @@ export const agruparEnSalas = (completo: Catalog, edges: Edge[]): Planta => {
     if (!candidato) {
       return {
         id: `sala/${i}`,
-        nombre: 'sin vínculos',
+        nombre: 'unlinked',
         tipo: 'suelto' as const,
         motivo:
           agentes.length === 1
-            ? 'Su prompt no cita ninguna skill y ningún comando lo convoca.'
-            : 'No comparten ninguna skill ni ningún comando.',
+            ? 'Its prompt cites no skill and no command summons it.'
+            : 'They share no skill and no command.',
+        razon: { tipo: 'loose' as const, nombre: '', cuantos: 0, total: agentes.length },
         agents: agentes,
         skills: [],
         commands: [],
@@ -190,6 +202,12 @@ export const agruparEnSalas = (completo: Catalog, edges: Edge[]): Planta => {
       nombre: esComando ? `/${nombre}` : nombre,
       tipo: esComando ? ('command' as const) : ('skill' as const),
       motivo: motivoDe(esComando, nombre, cuantos, agentes.length),
+      razon: {
+        tipo: esComando ? ('command' as const) : ('skill' as const),
+        nombre,
+        cuantos,
+        total: agentes.length,
+      },
       agents: agentes,
       skills: [],
       commands: [],

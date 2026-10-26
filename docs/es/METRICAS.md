@@ -1,5 +1,7 @@
 # Métricas: qué se midió y qué se descartó
 
+[English](../METRICS.md)
+
 Regla del proyecto: **todo indicador que se muestra cita su fuente y significa algo**. Una métrica
 que suena bien pero no se sostiene contra los datos no entra, por vistosa que sea.
 

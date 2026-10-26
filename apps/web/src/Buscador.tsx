@@ -1,7 +1,9 @@
 import { useId, useMemo, useState } from 'react'
 import { Dialogo } from './Dialogo.tsx'
 import { estaArchivado } from './derivados.ts'
-import { NOMBRE_HILO, normalizar, plural } from './texto.ts'
+import { type Lang, tr } from './i18n/index.ts'
+import { useLang, useT } from './i18n/react.ts'
+import { nombreHilo, normalizar } from './texto.ts'
 import type { Snapshot } from './types.ts'
 
 /**
@@ -10,17 +12,32 @@ import type { Snapshot } from './types.ts'
  * actual; es la forma de encontrar una skill entre cuarenta lomos o un nodo entre cien.
  */
 
+type TipoOpcion = 'agente' | 'skill' | 'comando' | 'hilo'
+
+/** `tipo` es también la clase CSS de la etiqueta; lo que se lee sale de estas claves. */
+const ROTULO_TIPO = {
+  agente: 'kind.agent',
+  skill: 'kind.skill',
+  comando: 'kind.command',
+  hilo: 'kind.main',
+} as const
+
 interface Opcion {
   id: string
   nombre: string
-  tipo: 'agente' | 'skill' | 'comando' | 'hilo'
+  tipo: TipoOpcion
   detalle: string
 }
 
 const MAXIMO = 40
 
-const opcionesDe = (s: Snapshot): Opcion[] => [
-  { id: s.mainThreadId, nombre: NOMBRE_HILO, tipo: 'hilo', detalle: 'tu sesión, sin subagente' },
+const opcionesDe = (s: Snapshot, lang: Lang): Opcion[] => [
+  {
+    id: s.mainThreadId,
+    nombre: nombreHilo(lang),
+    tipo: 'hilo',
+    detalle: tr(lang, 'search.main.detail'),
+  },
   ...s.catalog.agents
     .filter((a) => !estaArchivado(a))
     .map((a) => ({ id: a.id, nombre: a.name, tipo: 'agente' as const, detalle: a.description })),
@@ -66,14 +83,16 @@ export const Buscador = ({
 }) => {
   const [consulta, setConsulta] = useState('')
   const [activa, setActiva] = useState(0)
+  const t = useT()
+  const lang = useLang()
   const idLista = useId()
-  const todas = useMemo(() => opcionesDe(snapshot), [snapshot])
+  const todas = useMemo(() => opcionesDe(snapshot, lang), [snapshot, lang])
   const resultados = useMemo(() => filtrar(todas, consulta), [todas, consulta])
   const actual = resultados[Math.min(activa, resultados.length - 1)]
   const idOpcion = (i: number) => `${idLista}-${i}`
 
   return (
-    <Dialogo titulo="Buscar agente, skill o comando" onCerrar={onCerrar} claseModal="buscador">
+    <Dialogo titulo={t('search.title')} onCerrar={onCerrar} claseModal="buscador">
       <input
         className="buscador-campo"
         role="combobox"
@@ -81,8 +100,8 @@ export const Buscador = ({
         aria-controls={idLista}
         aria-autocomplete="list"
         aria-activedescendant={actual ? idOpcion(resultados.indexOf(actual)) : undefined}
-        aria-label="Nombre de lo que buscas"
-        placeholder="escribe un nombre…"
+        aria-label={t('search.label')}
+        placeholder={t('search.placeholder')}
         value={consulta}
         onChange={(e) => {
           setConsulta(e.target.value)
@@ -101,7 +120,7 @@ export const Buscador = ({
           }
         }}
       />
-      <div className="buscador-lista" id={idLista} role="listbox" aria-label="Resultados">
+      <div className="buscador-lista" id={idLista} role="listbox" aria-label={t('search.results')}>
         {resultados.map((o, i) => (
           <div
             key={o.id}
@@ -117,16 +136,14 @@ export const Buscador = ({
             }}
             onMouseMove={() => setActiva(i)}
           >
-            <span className={`etiqueta ${o.tipo}`}>{o.tipo}</span>
+            <span className={`etiqueta ${o.tipo}`}>{t(ROTULO_TIPO[o.tipo])}</span>
             <span className="nombre">{o.nombre}</span>
             <span className="detalle">{o.detalle.slice(0, 90)}</span>
           </div>
         ))}
       </div>
       <p className="nota-dialogo" role="status">
-        {resultados.length === 0
-          ? 'Nada coincide con lo escrito.'
-          : `${plural(resultados.length, 'resultado', 'resultados')} · ↑↓ para moverte, Intro para elegir, Esc para cerrar`}
+        {resultados.length === 0 ? t('search.none') : t('search.count', { n: resultados.length })}
       </p>
     </Dialogo>
   )

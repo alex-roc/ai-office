@@ -1,5 +1,6 @@
-import { abrirSocketDemo, DEMO, demoPost, demoSnapshot, MSG_DEMO } from './demo.ts'
-import { ApiError, esDaemonCaido, MSG_AUTH, MSG_CONFLICTO, MSG_RED } from './errores.ts'
+import { abrirSocketDemo, DEMO, demoPost, demoSnapshot } from './demo.ts'
+import { ApiError, apiError, errorDeCodigo, esDaemonCaido } from './errores.ts'
+import { t } from './i18n/index.ts'
 import type { Snapshot } from './types.ts'
 
 /**
@@ -63,6 +64,31 @@ export const subscribeToken = (f: () => void): (() => void) => {
   }
 }
 
+/**
+ * Un fallo de `demoPost` → `ApiError`. El compilador de flujos del navegador lanza `OfficeError`
+ * (con `code` y `params`, sin imports de Node): se traduce igual que un error del daemon.
+ */
+const errorDeDemo = (err: unknown): ApiError => {
+  if (err instanceof ApiError) return err
+  const e = err as {
+    message?: string
+    code?: unknown
+    kind?: string
+    params?: Record<string, string | number>
+  }
+  if (typeof e.code === 'string') {
+    return errorDeCodigo(
+      e.kind ?? 'invalid-request',
+      e.message ?? '',
+      400,
+      undefined,
+      e.code,
+      e.params,
+    )
+  }
+  return new ApiError('http', e.message || t('demo.error'), 403)
+}
+
 const headers = (conCuerpo: boolean): HeadersInit => ({
   authorization: `Bearer ${token}`,
   'x-ai-office': '1',
@@ -78,25 +104,38 @@ const pedir = async <T>(url: string, init: RequestInit): Promise<T> => {
       const cuerpo = typeof init.body === 'string' ? JSON.parse(init.body) : undefined
       return (await demoPost(url, cuerpo)) as T
     } catch (err) {
-      throw new ApiError('http', (err as Error).message || MSG_DEMO, 403)
+      throw errorDeDemo(err)
     }
   }
   let res: Response
   try {
     res = await fetch(url, init)
   } catch {
-    throw new ApiError('red', MSG_RED)
+    throw apiError('red', 'err.red')
   }
   const text = await res.text()
-  if (res.status === 401) throw new ApiError('auth', MSG_AUTH, 401)
-  if (esDaemonCaido(res.status)) throw new ApiError('red', MSG_RED, res.status)
+  if (res.status === 401) throw apiError('auth', 'err.auth', 401)
+  if (esDaemonCaido(res.status)) throw apiError('red', 'err.red', res.status)
   if (!res.ok) {
-    let mensaje = `El servidor respondió ${res.status}`
+    let mensaje: string | undefined
+    let code: string | undefined
+    let reason: string | undefined
+    let params: Record<string, string | number> | undefined
     let currentEtag: string | undefined
     let esJson = false
     try {
-      const parsed = JSON.parse(text) as { error?: string; message?: string; currentEtag?: string }
-      mensaje = parsed.error ?? parsed.message ?? mensaje
+      const parsed = JSON.parse(text) as {
+        error?: string
+        message?: string
+        code?: string
+        reason?: string
+        params?: Record<string, string | number>
+        currentEtag?: string
+      }
+      mensaje = parsed.error ?? parsed.message
+      code = parsed.code
+      reason = parsed.reason
+      params = parsed.params
       currentEtag = parsed.currentEtag
       esJson = true
     } catch {
@@ -104,18 +143,18 @@ const pedir = async <T>(url: string, init: RequestInit): Promise<T> => {
     }
     // El daemon siempre contesta sus errores con JSON. Un 5xx SIN cuerpo JSON no es del daemon:
     // es el proxy de Vite sin nadie detrás (devuelve un 500 vacío al rechazarse la conexión).
-    if (res.status >= 500 && !esJson) throw new ApiError('red', MSG_RED, res.status)
-    if (res.status === 409) throw new ApiError('conflicto', MSG_CONFLICTO, 409, currentEtag)
-    throw new ApiError('http', mensaje, res.status)
+    if (res.status >= 500 && !esJson) throw apiError('red', 'err.red', res.status)
+    if (res.status === 409) throw apiError('conflicto', 'err.conflict', 409, currentEtag)
+    // Con `code` se traduce por código; sin él (o desconocido) queda el texto del daemon, y si
+    // tampoco hay texto, el estado HTTP.
+    if (!code && !mensaje)
+      throw apiError('http', 'err.http', res.status, undefined, { status: res.status })
+    throw errorDeCodigo(code, mensaje ?? '', res.status, currentEtag, reason, params)
   }
   try {
     return JSON.parse(text) as T
   } catch {
-    throw new ApiError(
-      'json',
-      'El servidor respondió algo que no es JSON. Suele ser el servidor de desarrollo sin daemon detrás: arranca `pnpm dev` y recarga.',
-      res.status,
-    )
+    throw apiError('json', 'err.json', res.status)
   }
 }
 

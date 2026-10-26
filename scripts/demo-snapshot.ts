@@ -14,7 +14,9 @@ import { join, resolve } from 'node:path'
 import { writeDemoHome } from '../packages/cli/src/demo/synth.ts'
 
 const out = resolve(process.argv[2] ?? 'snapshot.json')
-const home = await mkdtemp(join(tmpdir(), 'ai-office-demo-'))
+// realpath: en macOS el tmp cuelga de un symlink (/var -> /private/var) y, sin resolverlo, cada
+// archivo de la demo se vería como un enlace simbólico (y no se podría archivar).
+const home = await realpath(await mkdtemp(join(tmpdir(), 'ai-office-demo-')))
 try {
   await writeDemoHome(home)
   process.env.CLAUDE_CONFIG_DIR = home

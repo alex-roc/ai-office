@@ -1,3 +1,5 @@
+import { apiError, errorDeCodigo } from './errores.ts'
+import { getLang, type Lang } from './i18n/index.ts'
 import type { LiveEvent, LiveSession } from './live.ts'
 import type { Snapshot } from './types.ts'
 
@@ -13,8 +15,9 @@ import type { Snapshot } from './types.ts'
 
 export const DEMO = import.meta.env.VITE_DEMO === '1'
 
-export const MSG_DEMO =
-  'Esto es una demo de solo lectura con una instalación ficticia. Instala ai-office para editar tu propia configuración: todo cambio enseña el diff antes de escribir.'
+/** La página de instalación del proyecto, en el idioma de la interfaz (la web lo lee de `?lang=`). */
+export const urlInstalar = (lang: Lang): string =>
+  `https://alex-roc.github.io/ai-office/${lang === 'es' ? '?lang=es' : ''}#install`
 
 let snapshot: Promise<Snapshot> | null = null
 
@@ -66,6 +69,8 @@ const guion = (s: Snapshot): Paso[] => {
  * demanda para que no pese en la interfaz normal. Lo que escribe en disco se rechaza.
  */
 export const demoPost = async (url: string, body: unknown): Promise<unknown> => {
+  // El idioma de la petición manda; sin él, el de la interfaz.
+  const lang = (body as { lang?: Lang } | undefined)?.lang ?? getLang()
   if (url === '/api/flows/open' || url === '/api/flows/preview') {
     const [s, c] = await Promise.all([
       demoSnapshot(),
@@ -75,12 +80,15 @@ export const demoPost = async (url: string, body: unknown): Promise<unknown> => 
     if (url === '/api/flows/open') {
       const { commandId } = body as { commandId: string }
       const command = s.catalog.commands.find((x) => x.id === commandId)
-      if (!command) throw new Error(`no existe el comando ${commandId}`)
+      if (!command) {
+        throw errorDeCodigo('not-found', '', 404, undefined, 'command-not-found', { id: commandId })
+      }
       // biome-ignore lint/suspicious/noExplicitAny: el catálogo del snapshot es el de core, tipado aparte en la web
-      const flow = c.importFlow(command as any, s.catalog.agents as any, s.catalog.skills as any)
+      const [cmd, agentes, skills] = [command, s.catalog.agents, s.catalog.skills] as any[]
+      const flow = c.importFlow(cmd, agentes, skills, lang)
       return {
         flow,
-        markdown: c.compileFlow(flow),
+        markdown: c.compileFlow(flow, lang),
         path: command.source.realPath,
         etag: '',
         exists: true,
@@ -96,13 +104,13 @@ export const demoPost = async (url: string, body: unknown): Promise<unknown> => 
     const existe = s.catalog.commands.some((x) => `${x.name}.md` === nombre)
     return {
       flow,
-      markdown: c.compileFlow(flow),
+      markdown: c.compileFlow(flow, lang),
       path: `${raiz}/${nombre}`,
       etag: '',
       exists: existe,
     }
   }
-  throw new Error(MSG_DEMO)
+  throw apiError('http', 'demo.error', 403)
 }
 
 const SESION = 'demo-session'

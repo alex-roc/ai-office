@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { CERTIFICATION_TTL_DAYS, gradeOf, isActiveGrade } from '../src/graph/types.ts'
+import { CERTIFICATION_TTL_DAYS, GRADE_LABELS, gradeOf, isActiveGrade } from '../src/graph/types.ts'
 
 const DAY = 86400000
 const now = Date.now()
@@ -33,4 +33,10 @@ test('solo cuentan como activos practicing y certified', () => {
   assert.equal(isActiveGrade('practicing'), true)
   assert.equal(isActiveGrade('tried'), false)
   assert.equal(isActiveGrade('unused'), false)
+})
+
+test('las etiquetas de grado existen en los dos idiomas y cubren los mismos grados', () => {
+  assert.deepEqual(Object.keys(GRADE_LABELS.es).sort(), Object.keys(GRADE_LABELS.en).sort())
+  assert.equal(GRADE_LABELS.en.certified, 'certified')
+  assert.equal(GRADE_LABELS.es.certified, 'acreditada')
 })

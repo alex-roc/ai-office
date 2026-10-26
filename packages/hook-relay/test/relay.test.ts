@@ -97,12 +97,21 @@ test('socket vivo: entrega la línea y recorta los payloads grandes', async () =
   mkdirSync(join(home, '.claude', 'ai-office', 'run'), { recursive: true })
 
   const received: string[] = []
+  // El proceso del hook puede terminar ANTES de que el servidor procese el `end` del socket: se
+  // espera a la línea en vez de suponer que ya llegó cuando el proceso sale.
+  let llegó: () => void = () => {}
+  const recibida = new Promise<void>((resolve) => {
+    llegó = resolve
+  })
   const server = createServer((socket) => {
     let buf = ''
     socket.on('data', (d) => {
       buf += String(d)
     })
-    socket.on('end', () => received.push(buf))
+    socket.on('end', () => {
+      received.push(buf)
+      llegó()
+    })
   })
   await new Promise<void>((resolve) => server.listen(sockPath, resolve))
 
@@ -120,6 +129,7 @@ test('socket vivo: entrega la línea y recorta los payloads grandes', async () =
   const r = await runHook(JSON.stringify(payload), home, {
     AI_OFFICE_SOCKET_TIMEOUT_MS: '3000',
   })
+  await Promise.race([recibida, new Promise((resolve) => setTimeout(resolve, 2000))])
   server.close()
 
   assert.equal(r.code, 0)
@@ -267,5 +277,5 @@ test('spool lleno: descarta lo nuevo y lo anota una sola vez', async () => {
   for (let i = 0; i < 2; i++) assert.equal((await runHook(payload, home)).code, 0)
   assert.deepEqual(readdirSync(spool).sort(), ['.lleno', '2020-01-01.ndjson'])
   const log = readFileSync(join(home, '.claude', 'ai-office', 'logs', 'hook-relay.log'), 'utf8')
-  assert.equal(log.split('spool lleno').length - 1, 1)
+  assert.equal(log.split('spool full').length - 1, 1)
 })

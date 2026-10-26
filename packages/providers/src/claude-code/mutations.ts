@@ -14,9 +14,10 @@ import { homedir } from 'node:os'
 import { basename, dirname, join, resolve, sep } from 'node:path'
 import { makeId } from '@ai-office/core'
 import { removeSection, upsertSection } from './body-sections.ts'
+import { OfficeError } from './errors.ts'
 import { etagOf } from './etag.ts'
 import { estimateTokens, parseMarkdownDoc, setFrontmatterFields } from './frontmatter.ts'
-import { paths } from './paths.ts'
+import { ARCHIVE_DIR, paths } from './paths.ts'
 
 /**
  * Capa de escritura segura para agentes y skills de Claude Code.
@@ -36,6 +37,17 @@ import { paths } from './paths.ts'
 // Tipos públicos
 // ---------------------------------------------------------------------------------------------
 
+/**
+ * Un aviso del plan. `message` es el texto en inglés; `code` + `params` dejan a la interfaz
+ * redactarlo en su idioma. Códigos: `unknown-model` (model, known), `broken-citation` (skill),
+ * `preload-cost` (tokens), `handwritten-command`.
+ */
+export interface PlanWarning {
+  code: string
+  message: string
+  params?: Record<string, string | number>
+}
+
 export interface MutationPlan {
   /** El realPath donde se escribirá cuando se aplique. */
   path: string
@@ -44,7 +56,9 @@ export interface MutationPlan {
   /** Diff unificado legible (formato `diff -u`), vacío si `changed` es `false`. */
   diff: string
   changed: boolean
+  /** Los `message` (en inglés) de `warningDetails`, en el mismo orden. */
   warnings: string[]
+  warningDetails: PlanWarning[]
 }
 
 export interface ApplyResult {
@@ -61,7 +75,7 @@ export class ConflictError extends Error {
   readonly currentText: string
 
   constructor(path: string, currentEtag: string, currentText: string) {
-    super(`el archivo cambió en disco desde que se leyó su etag: ${path}`)
+    super(`the file changed on disk since its etag was read: ${path}`)
     this.name = 'ConflictError'
     this.path = path
     this.currentEtag = currentEtag
@@ -250,8 +264,10 @@ const assertWithinRoots = async (realTarget: string, extraRoots: string[] = []):
   )
   const ok = roots.some((root) => realTarget === root || realTarget.startsWith(root + sep))
   if (!ok) {
-    throw new Error(
-      `ruta fuera de las raíces permitidas: ${realTarget} (raíces: ${roots.join(', ')})`,
+    throw new OfficeError(
+      'path-outside-roots',
+      `path outside the allowed roots: ${realTarget} (roots: ${roots.join(', ')})`,
+      { params: { path: realTarget } },
     )
   }
 }
@@ -327,7 +343,11 @@ const writeAtomic = async (path: string, data: string, mode: number): Promise<vo
 // Motor genérico compartido por las mutaciones de texto (frontmatter y secciones del cuerpo)
 // ---------------------------------------------------------------------------------------------
 
-type ComputeFn = (before: string) => { after: string; changed: boolean; warnings: string[] }
+type ComputeFn = (before: string) => {
+  after: string
+  changed: boolean
+  warnings: PlanWarning[]
+}
 
 const planTextChange = (path: string, before: string, compute: ComputeFn): MutationPlan => {
   const { after, changed, warnings } = compute(before)
@@ -337,7 +357,8 @@ const planTextChange = (path: string, before: string, compute: ComputeFn): Mutat
     after,
     diff: changed ? buildUnifiedDiff(path, before, after) : '',
     changed,
-    warnings,
+    warnings: warnings.map((w) => w.message),
+    warningDetails: warnings,
   }
 }
 
@@ -386,7 +407,11 @@ const applyTextMutation = async (args: ApplyTextArgs): Promise<ApplyResult> => {
 
 const computeSetAgentColor = (color: AgentColor | null): ComputeFn => {
   if (color !== null && !AGENT_COLORS.includes(color)) {
-    throw new Error(`color inválido: "${color}". Valores permitidos: ${AGENT_COLORS.join(', ')}`)
+    throw new OfficeError(
+      'invalid-color',
+      `invalid color: "${color}". Allowed values: ${AGENT_COLORS.join(', ')}`,
+      { params: { color } },
+    )
   }
   return (before) => {
     const r = setFrontmatterFields(before, { color: color ?? undefined })
@@ -424,12 +449,15 @@ export const applySetAgentColor = (
 const computeSetAgentModel =
   (model: string | null): ComputeFn =>
   (before) => {
-    const warnings: string[] = []
+    const warnings: PlanWarning[] = []
     if (model !== null && !(KNOWN_AGENT_MODELS as readonly string[]).includes(model)) {
-      warnings.push(
-        `"${model}" no es uno de los alias conocidos (${KNOWN_AGENT_MODELS.join(', ')}); ` +
-          'se guarda igual como id de modelo literal',
-      )
+      warnings.push({
+        code: 'unknown-model',
+        message:
+          `"${model}" is not one of the known aliases (${KNOWN_AGENT_MODELS.join(', ')}); ` +
+          'it is saved anyway as a literal model id',
+        params: { model, known: KNOWN_AGENT_MODELS.join(', ') },
+      })
     }
     const r = setFrontmatterFields(before, { model: model ?? undefined })
     return { after: r.text, changed: r.changed, warnings }
@@ -502,22 +530,29 @@ export const applySetAgentTools = (
 const computeSetAgentPreloadedSkills =
   (skillNames: string[], skillsCatalog: SkillRef[]): ComputeFn =>
   (before) => {
-    const warnings: string[] = []
+    const warnings: PlanWarning[] = []
     const byName = new Map(skillsCatalog.map((s) => [s.name, s]))
     let totalTokens = 0
     for (const name of skillNames) {
       const found = byName.get(name)
       if (!found) {
-        warnings.push(`cita rota: "${name}" no existe en el catálogo de skills`)
+        warnings.push({
+          code: 'broken-citation',
+          message: `broken citation: "${name}" does not exist in the skills catalog`,
+          params: { skill: name },
+        })
         continue
       }
       totalTokens += estimateTokens(found.body)
     }
     if (skillNames.length > 0) {
-      warnings.push(
-        'precargar no añade capacidad: el subagente podría invocar estas skills igual bajo demanda ' +
-          `si las necesitara. Solo adelanta el coste: ~${totalTokens} tokens estimados en cada arranque.`,
-      )
+      warnings.push({
+        code: 'preload-cost',
+        message:
+          'preloading adds no capability: the subagent could invoke these skills on demand anyway ' +
+          `if it needed them. It only brings the cost forward: ~${totalTokens} estimated tokens at every start.`,
+        params: { tokens: totalTokens },
+      })
     }
     const value = skillNames.length === 0 ? undefined : skillNames.join(', ')
     const r = setFrontmatterFields(before, { skills: value })
@@ -689,8 +724,10 @@ export const applyUnretireSkill = (
 // 8. Archivar / desarchivar un agente
 // ---------------------------------------------------------------------------------------------
 
-/** Nombre del directorio de retirados: reversible por construcción, nunca se borra nada. */
-const ARCHIVE_DIRNAME = '.archivo'
+/** Nombre del directorio de retirados: reversible por construcción, nunca se borra nada. Los
+ * agentes archivados por versiones antiguas viven en `.archivo` y se restauran igual (el destino
+ * de restaurar es siempre la carpeta padre, sea cual sea el nombre). */
+const ARCHIVE_DIRNAME = ARCHIVE_DIR
 
 export const planArchiveAgent = (sourcePath: string, before: string): MutationPlan => {
   const destPath = join(dirname(sourcePath), ARCHIVE_DIRNAME, basename(sourcePath))
@@ -698,9 +735,10 @@ export const planArchiveAgent = (sourcePath: string, before: string): MutationPl
     path: destPath,
     before,
     after: before,
-    diff: `${sourcePath} -> ${destPath}\n(el contenido no cambia; solo se traslada el archivo a los retirados)\n`,
+    diff: `${sourcePath} -> ${destPath}\n(the content does not change; the file is only moved to the archive)\n`,
     changed: true,
     warnings: [],
+    warningDetails: [],
   }
 }
 
@@ -710,9 +748,10 @@ export const planUnarchiveAgent = (archivedPath: string, before: string): Mutati
     path: destPath,
     before,
     after: before,
-    diff: `${archivedPath} -> ${destPath}\n(el contenido no cambia; el archivo vuelve a estar activo)\n`,
+    diff: `${archivedPath} -> ${destPath}\n(the content does not change; the file becomes active again)\n`,
     changed: true,
     warnings: [],
+    warningDetails: [],
   }
 }
 
@@ -733,7 +772,11 @@ const assertFree = async (path: string): Promise<void> => {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') return
     throw err
   }
-  throw new Error(`ya hay un archivo en ${path}: renómbralo o muévelo antes, para no pisarlo`)
+  throw new OfficeError(
+    'target-exists',
+    `a file already exists at ${path}: rename or move it first, so it is not overwritten`,
+    { params: { path } },
+  )
 }
 
 export const applyArchiveAgent = async (
@@ -745,8 +788,10 @@ export const applyArchiveAgent = async (
   // Un agente que es symlink vive en otro store: moverlo dejaría aquí un enlace roto y el agente
   // desaparecería de la vista sin poder restaurarse desde ella.
   if ((await lstat(visibleSourcePath)).isSymbolicLink()) {
-    throw new Error(
-      `${visibleSourcePath} es un enlace simbólico: archiva el agente en su origen, no en la proyección`,
+    throw new OfficeError(
+      'symlink-archive',
+      `${visibleSourcePath} is a symbolic link: archive the agent at its source, not at the projection`,
+      { params: { path: visibleSourcePath } },
     )
   }
   const realSource = await resolveWriteTarget(visibleSourcePath)
@@ -828,8 +873,12 @@ const computeWriteCommand =
     warnings:
       before.trim() && !before.includes('ai-office:flujo:inicio')
         ? [
-            'Este comando lo escribiste a mano. Al guardar desde el lienzo se reemplaza por la ' +
-              'versión compilada: revisa el diff, porque lo que el lienzo no supo importar se pierde.',
+            {
+              code: 'handwritten-command',
+              message:
+                'You wrote this command by hand. Saving from the canvas replaces it with the ' +
+                'compiled version: review the diff, because whatever the canvas could not import is lost.',
+            },
           ]
         : [],
   })
@@ -880,8 +929,10 @@ export const applyCreateFile = async (
     await writeFile(target, content, { encoding: 'utf8', mode: 0o644, flag: 'wx' })
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'EEXIST') {
-      throw new Error(
-        `ya existe un archivo en ${target}: usa la operación de edición, no la de creación`,
+      throw new OfficeError(
+        'file-exists',
+        `a file already exists at ${target}: use the edit operation, not the create one`,
+        { params: { path: target } },
       )
     }
     throw err

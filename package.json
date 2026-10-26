@@ -7,6 +7,7 @@
     "node": ">=22.18"
   },
   "scripts": {
+    "census": "node packages/cli/src/index.ts census",
     "censo": "node packages/cli/src/index.ts censo",
     "typecheck": "tsc -b --pretty && tsc --noEmit -p apps/web",
     "lint": "biome check .",

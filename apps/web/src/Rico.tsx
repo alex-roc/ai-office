@@ -1,12 +1,23 @@
 import type { ReactNode } from 'react'
 
 /**
- * Los mensajes de error y de ayuda se escriben con `código` entre acentos graves. Mostrarlos tal
- * cual deja los backticks a la vista como si fueran parte del texto; aquí se convierten en <code>.
+ * Los textos traducidos llevan un marcado mínimo: `código` entre acentos graves y **negrita** entre
+ * dobles asteriscos. Mostrarlos tal cual dejaría los símbolos a la vista; aquí se convierten en
+ * <code> y <b>.
  */
+const MARCAS = /(\*\*[^*]+\*\*|`[^`]+`)/
+
 export const conCodigo = (texto: string): ReactNode[] =>
   texto
-    .split('`')
+    .split(MARCAS)
     // El número de trozo es la identidad de un fragmento de texto fijo: nunca se reordena.
-    .map((trozo, n) => ({ n, trozo, codigo: n % 2 === 1 }))
-    .map(({ n, trozo, codigo }) => (codigo ? <code key={n}>{trozo}</code> : trozo))
+    .map((trozo, n) => ({ n, trozo }))
+    .map(({ n, trozo }) => {
+      if (trozo.length > 1 && trozo.startsWith('`') && trozo.endsWith('`')) {
+        return <code key={n}>{trozo.slice(1, -1)}</code>
+      }
+      if (trozo.length > 4 && trozo.startsWith('**') && trozo.endsWith('**')) {
+        return <b key={n}>{trozo.slice(2, -2)}</b>
+      }
+      return trozo
+    })

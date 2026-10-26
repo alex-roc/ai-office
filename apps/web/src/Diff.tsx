@@ -1,7 +1,8 @@
 import { Dialogo } from './Dialogo.tsx'
+import { useT } from './i18n/react.ts'
 import type { MutationPlan } from './mutations.ts'
 import { conCodigo } from './Rico.tsx'
-import { shortPath } from './texto.ts'
+import { detalleTexto, shortPath } from './texto.ts'
 
 /** Muestra el diff antes de escribir. Es la única puerta por la que pasa toda escritura. */
 export const DiffDialog = ({
@@ -19,14 +20,15 @@ export const DiffDialog = ({
   onCancel: () => void
   onConfirm: () => void
 }) => {
+  const t = useT()
   // El diff es texto plano y sus líneas pueden repetirse: el número de línea es su identidad.
   const lineas = plan.diff.split('\n').map((texto, n) => ({ n, texto }))
   return (
     <Dialogo titulo={title} onCerrar={onCancel} inicial="[data-cancelar]">
       <code className="ruta">{shortPath(plan.path)}</code>
-      {plan.warnings.map((w) => (
+      {plan.warnings.map((w, i) => (
         <p className="aviso" key={w} role="status">
-          {w}
+          {detalleTexto('warn', plan.warningDetails?.[i], w)}
         </p>
       ))}
       <pre className="diff">
@@ -47,13 +49,12 @@ export const DiffDialog = ({
       )}
       {!plan.changed && (
         <p className="aviso" role="status">
-          Este cambio no modifica el archivo: el contenido que se escribiría es idéntico al que ya
-          hay, así que no hay nada que guardar.
+          {t('diff.noChange')}
         </p>
       )}
       <div className="acciones">
         <button type="button" data-cancelar onClick={onCancel}>
-          Cancelar
+          {t('diff.cancel')}
         </button>
         <button
           type="button"
@@ -62,7 +63,7 @@ export const DiffDialog = ({
           disabled={busy || !plan.changed}
           onClick={onConfirm}
         >
-          {busy ? 'Guardando…' : 'Guardar en el archivo'}
+          {busy ? t('diff.saving') : t('diff.save')}
         </button>
       </div>
     </Dialogo>

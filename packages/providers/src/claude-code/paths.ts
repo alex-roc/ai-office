@@ -32,5 +32,11 @@ export const paths = () => {
   }
 }
 
+/** Carpeta (dentro de `agents/`) donde ai-office aparta los agentes archivados. */
+export const ARCHIVE_DIR = '.archive'
+
+/** Nombre antiguo de esa carpeta (versiones en español): se sigue leyendo y restaurando. */
+export const LEGACY_ARCHIVE_DIR = '.archivo'
+
 /** `/Users/x/dev/p` -> `-Users-x-dev-p`, que es como Claude Code nombra sus carpetas de proyecto. */
 export const slugForCwd = (cwd: string): string => cwd.replace(/[/.]/g, '-')

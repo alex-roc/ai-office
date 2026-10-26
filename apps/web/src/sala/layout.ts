@@ -1,4 +1,4 @@
-import type { Activity, Agent, Sala, Snapshot, TipoSala } from '../types.ts'
+import type { Activity, Agent, RazonSala, Sala, Snapshot, TipoSala } from '../types.ts'
 import { type Archetype, archetypeOf } from './archetypes.ts'
 import { FIGURA_DE, type Mueble, type Persona } from './catalogo-sprites.ts'
 
@@ -96,7 +96,12 @@ export interface Bahia {
   id: string
   nombre: string
   tipo: TipoSala | 'hub'
+  /**
+   * El texto de la placa NO se guarda aquí: depende del idioma y la planta se calcula una vez. Se
+   * lleva el dato (`razon`, o el `motivo` ya redactado de un daemon antiguo) y la escena redacta.
+   */
   motivo: string
+  razon?: RazonSala
   /** Rectángulo que ocupa, en baldosas (los bordes son la mampara). */
   col0: number
   row0: number
@@ -323,6 +328,7 @@ export const buildLayout = (snapshot: Snapshot): RoomLayout => {
       nombre: sala.nombre,
       tipo: sala.tipo,
       motivo: sala.motivo,
+      razon: sala.razon,
       col0,
       row0,
       col1,
@@ -381,9 +387,10 @@ export const buildLayout = (snapshot: Snapshot): RoomLayout => {
 
     return {
       id: 'hub',
-      nombre: 'vestíbulo',
+      // Nombre y motivo del vestíbulo salen del catálogo de idiomas al rotular (ver `Escena.placa`).
+      nombre: 'hub',
       tipo: 'hub',
-      motivo: 'El hilo principal, el archivo de lo que usa media planta y el depósito.',
+      motivo: '',
       col0,
       row0,
       col1,

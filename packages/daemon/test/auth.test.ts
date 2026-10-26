@@ -25,7 +25,9 @@ const auth = { authorization: `Bearer ${TOKEN}` }
 
 test('sin token o con token erróneo, la API responde 401', async () => {
   const app = await buildApp()
-  assert.equal((await app.inject({ url: '/api/snapshot' })).statusCode, 401)
+  const sinToken = await app.inject({ url: '/api/snapshot' })
+  assert.equal(sinToken.statusCode, 401)
+  assert.deepEqual(sinToken.json(), { error: 'invalid token', code: 'unauthorized' })
   const wrong = await app.inject({
     url: '/api/snapshot',
     headers: { authorization: 'Bearer otro' },
@@ -80,6 +82,7 @@ test('un POST con token pero sin X-AI-Office se rechaza', async () => {
   const app = await buildApp()
   const sin = await app.inject({ method: 'POST', url: '/api/mutations/apply', headers: auth })
   assert.equal(sin.statusCode, 403)
+  assert.equal(sin.json().code, 'missing-header')
   const con = await app.inject({
     method: 'POST',
     url: '/api/mutations/apply',
@@ -96,11 +99,13 @@ test('Host y Origin no locales se rechazan antes de mirar el token', async () =>
     headers: { host: 'evil.example.com' },
   })
   assert.equal(host.statusCode, 403)
+  assert.equal(host.json().code, 'forbidden-host')
   const origin = await app.inject({
     url: '/api/snapshot',
     headers: { ...auth, origin: 'https://evil.example.com' },
   })
   assert.equal(origin.statusCode, 403)
+  assert.equal(origin.json().code, 'forbidden-origin')
   const local = await app.inject({
     url: '/api/snapshot',
     headers: { ...auth, origin: 'http://localhost:7378' },

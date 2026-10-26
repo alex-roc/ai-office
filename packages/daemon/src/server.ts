@@ -4,19 +4,23 @@ import type { AddressInfo } from 'node:net'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
-import type { SessionState } from '@ai-office/core'
+import type { Lang, SessionState } from '@ai-office/core'
 import { paths, scanCatalogReport } from '@ai-office/providers'
 import fastifyStatic from '@fastify/static'
 import fastifyWebsocket from '@fastify/websocket'
 import Fastify from 'fastify'
 import { type AuthConfig, createToken, persistToken, registerGuards } from './auth.ts'
 import { createEventBus } from './bus.ts'
+import { reject, sendError } from './errors.ts'
 import { startIngestSocket } from './ingest/socket.ts'
 import { createDedupeCache, watchSpool } from './ingest/spool.ts'
 import { openFlow, planFlow, previewFlow, saveFlow } from './mutations/flows.ts'
 import { applyMutation, type MutationRequest, planMutation } from './mutations/router.ts'
 import { createPresenceStore } from './presence.ts'
 import { assembleSnapshot, type HistoricalData, type Snapshot, scanHistorical } from './snapshot.ts'
+
+/** El idioma que pide la interfaz; cualquier otra cosa (o nada) es el inglés por defecto. */
+const parseLang = (v: unknown): Lang => (v === 'es' ? 'es' : 'en')
 
 /** Plazo por defecto del primer frame del WebSocket. */
 const HELLO_TIMEOUT_MS = 5000
@@ -74,7 +78,7 @@ export const startServer = async (port = 7377, opts: ServerOptions = {}): Promis
   // el spool. Se avisa con claridad en vez de morir con un EADDRINUSE crudo.
   if (await aiOfficeAt(port)) {
     throw new Error(
-      `ya hay un ai-office escuchando en el puerto ${port}. Usa ese (su enlace con token se imprimió al arrancarlo) o elige otro puerto con AI_OFFICE_PORT.`,
+      `ai-office is already listening on port ${port}. Use that one (its link with the token was printed at startup) or pick another port with AI_OFFICE_PORT.`,
     )
   }
   const p = paths()
@@ -82,6 +86,7 @@ export const startServer = async (port = 7377, opts: ServerOptions = {}): Promis
   const app = Fastify({ logger: false })
   await app.register(fastifyWebsocket)
   registerGuards(app, auth)
+  app.setNotFoundHandler((_req, reply) => reject(reply, 404, 'not-found', 'not found'))
 
   app.addHook('onSend', async (req, reply) => {
     const origin = req.headers.origin
@@ -144,7 +149,7 @@ export const startServer = async (port = 7377, opts: ServerOptions = {}): Promis
           sessionId: closed.sessionId,
           cwd: closed.cwd,
           actor: { kind: 'main' },
-          detail: 'cerrada al reconciliar con el censo de sesiones',
+          detail: 'closed while reconciling with the session census',
         })
       }
     })
@@ -208,11 +213,12 @@ export const startServer = async (port = 7377, opts: ServerOptions = {}): Promis
   app.get('/api/sessions', async () => ({ sessions: presence.list() }))
 
   // --- escritura -----------------------------------------------------------------------------
+  // Los errores salen siempre como `{ error, code, ... }` (ver `errors.ts`).
   app.post('/api/mutations/plan', async (req, reply) => {
     try {
       return await planMutation((await getSnapshot()).catalog, req.body as MutationRequest)
     } catch (err) {
-      return reply.code(400).send({ error: (err as Error).message })
+      return sendError(reply, err)
     }
   })
 
@@ -224,58 +230,52 @@ export const startServer = async (port = 7377, opts: ServerOptions = {}): Promis
       invalidateCatalog()
       return result
     } catch (err) {
-      const e = err as Error & { name?: string; currentEtag?: string }
-      if (e.name === 'ConflictError') {
-        return reply.code(409).send({ error: e.message, currentEtag: e.currentEtag })
-      }
-      return reply.code(400).send({ error: e.message })
+      return sendError(reply, err)
     }
   })
 
   // --- flujos (el editor de comandos) --------------------------------------------------------
+  // `lang` ('en' | 'es', por defecto 'en') decide el idioma de la prosa que se escribe en el
+  // archivo del comando.
   app.post('/api/flows/open', async (req, reply) => {
     try {
-      const { commandId } = req.body as { commandId: string }
-      return await openFlow((await getSnapshot()).catalog, commandId)
+      const { commandId, lang } = req.body as { commandId: string; lang?: unknown }
+      return await openFlow((await getSnapshot()).catalog, commandId, parseLang(lang))
     } catch (err) {
-      return reply.code(400).send({ error: (err as Error).message })
+      return sendError(reply, err)
     }
   })
 
   app.post('/api/flows/preview', async (req, reply) => {
     try {
-      return await previewFlow(
-        (req.body as { flow: Parameters<typeof previewFlow>[0] }).flow,
-        (await getSnapshot()).catalog,
-      )
+      const { flow, lang } = req.body as { flow: Parameters<typeof previewFlow>[0]; lang?: unknown }
+      return await previewFlow(flow, (await getSnapshot()).catalog, parseLang(lang))
     } catch (err) {
-      return reply.code(400).send({ error: (err as Error).message })
+      return sendError(reply, err)
     }
   })
 
   app.post('/api/flows/plan', async (req, reply) => {
     try {
-      return await planFlow(
-        (req.body as { flow: Parameters<typeof planFlow>[0] }).flow,
-        (await getSnapshot()).catalog,
-      )
+      const { flow, lang } = req.body as { flow: Parameters<typeof planFlow>[0]; lang?: unknown }
+      return await planFlow(flow, (await getSnapshot()).catalog, parseLang(lang))
     } catch (err) {
-      return reply.code(400).send({ error: (err as Error).message })
+      return sendError(reply, err)
     }
   })
 
   app.post('/api/flows/save', async (req, reply) => {
     try {
-      const { flow, etag } = req.body as { flow: Parameters<typeof saveFlow>[0]; etag: string }
-      const result = await saveFlow(flow, etag, (await getSnapshot()).catalog)
+      const { flow, etag, lang } = req.body as {
+        flow: Parameters<typeof saveFlow>[0]
+        etag: string
+        lang?: unknown
+      }
+      const result = await saveFlow(flow, etag, (await getSnapshot()).catalog, parseLang(lang))
       invalidateCatalog()
       return result
     } catch (err) {
-      const e = err as Error & { name?: string; currentEtag?: string }
-      if (e.name === 'ConflictError') {
-        return reply.code(409).send({ error: e.message, currentEtag: e.currentEtag })
-      }
-      return reply.code(400).send({ error: e.message })
+      return sendError(reply, err)
     }
   })
 
@@ -339,8 +339,8 @@ export const startServer = async (port = 7377, opts: ServerOptions = {}): Promis
         .type('text/html')
         .send(
           '<!doctype html><meta charset="utf-8"><title>ai-office</title>' +
-            '<p style="font:14px system-ui;padding:2rem">La interfaz no esta construida. ' +
-            'En desarrollo: <code>pnpm dev:web</code>.</p>',
+            '<p style="font:14px system-ui;padding:2rem">The interface is not built. ' +
+            'In development: <code>pnpm dev:web</code>.</p>',
         ),
     )
   }
@@ -353,7 +353,7 @@ export const startServer = async (port = 7377, opts: ServerOptions = {}): Promis
     await socketHandle?.close()
     if ((err as NodeJS.ErrnoException).code === 'EADDRINUSE') {
       throw new Error(
-        `el puerto ${port} está ocupado por otro programa. Elige otro con AI_OFFICE_PORT.`,
+        `port ${port} is in use by another program. Pick another with AI_OFFICE_PORT.`,
       )
     }
     throw err

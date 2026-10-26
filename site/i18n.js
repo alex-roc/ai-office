@@ -8,26 +8,28 @@
 ;(() => {
   const ES = {
     skip: 'Saltar al contenido',
-    'nav.census': 'Censo',
-    'nav.views': 'Vistas',
     'nav.install': 'Instalar',
-    'hero.title': '¿Qué mitad de tu configuración de Claude Code no usas nunca?',
+    'hero.title':
+      'Ve, edita y mide tus agentes de Claude Code',
     'hero.lede':
-      'ai-office lee tus agentes, skills y comandos, los cruza con lo que de verdad ha pasado en tus sesiones y te enseña las dos cosas juntas: el organigrama que escribiste y el que existe.',
+      'ai-office convierte tus agentes, skills y comandos en una oficina en pixel art y un grafo vivo. Mira cómo está organizado tu equipo, recámbialo sin miedo y mide qué agentes y skills hacen de verdad el trabajo.',
     'hero.demo': 'Recorre la oficina de demostración',
-    'hero.install': 'Instálalo en tu configuración',
+    'hero.install':
+      'Instálalo con un comando',
     'hero.fine':
-      'Libre y de código abierto (MIT). Corre en tu máquina, lee <code>~/.claude</code> y no envía nada a ningún sitio.',
+      'Libre y de código abierto (MIT). Corre en tu máquina a partir de <code>~/.claude</code>; nada sale de ella.',
     'hero.alt':
       'La vista Sala: una planta isométrica en pixel art donde cada despacho agrupa a los agentes que citan la misma skill',
     'hero.caption':
-      'La oficina de demostración. Cada despacho reúne a los agentes que citan la misma skill; las figuras en gris nunca han recibido una tarea.',
-    'census.title': 'Un comando, las cifras incómodas',
+      'La oficina de demostración. Cada despacho reúne a los agentes que comparten una skill o un comando; las figuras en gris nunca han recibido una tarea.',
+    'census.title':
+      'Mide lo que de verdad funciona',
     'census.lede':
-      'Pasa el censo sobre tu propia instalación. Tarda unos segundos, incluso sobre gigabytes de transcripts.',
+      'Tus prompts dicen quién debería hacer qué. Tus transcripts dicen quién lo hizo. El censo cruza las dos cosas en unos segundos, incluso sobre gigabytes de sesiones, y las mismas cifras viven en la interfaz, cada una citando su fuente.',
     'census.n1.t': '6 de 14 agentes, nada en 90 días.',
     'census.n1.d': 'Escribiste sus prompts. Ninguna sesión de los últimos 90 días les ha delegado nada.',
-    'census.n2.t': 'La mitad de las skills, sin estrenar.',
+    'census.n2.t':
+      'La mitad de las skills, ociosas.',
     'census.n2.d': 'Sus descriptions se cargan igual en cada sesión y cuestan tokens.',
     'census.n3.t': 'Ratio activo: 32 %.',
     'census.n3.d':
@@ -36,7 +38,7 @@
     'census.n4.d':
       'Los agentes citan skills en su prompt. Los transcripts dicen qué citas se convirtieron en llamadas. Esa brecha es el producto.',
     'census.lang':
-      'El CLI y la interfaz hablan español. Las cifras de arriba salen de la instalación de demostración que viene con el proyecto.',
+      'Cifras de la instalación de demostración que viene con el proyecto. Ejecuta <code>npx ai-office demo --lang es</code> para recorrerla.',
     'layers.title': 'El grafo ya está escrito, en prosa',
     'layers.lede':
       'Los agentes se dicen a sí mismos «lee primero la skill style-guide». Los comandos nombran a los agentes que convocan. Nada de eso es un campo estructurado, así que ninguna herramienta lo ve. ai-office lo extrae, con el archivo y la línea que justifican cada relación, y lo superpone a lo que tus transcripts demuestran.',
@@ -53,7 +55,8 @@
     'layers.d.s': 'tus transcripts',
     'layers.d.d':
       'Lo hizo, N veces, la última tal día. Esta capa manda: es la única respaldada por hechos.',
-    'views.title': 'Dos maneras de mirar la misma oficina',
+    'views.title':
+      'Mira tu configuración tal como es',
     'views.sala.alt': 'Detalle de un despacho en la vista Sala',
     'views.sala.t': 'La Sala',
     'views.sala.d':
@@ -66,7 +69,8 @@
       'El grafo con todas las capas a la vez. Punteado lo que tus prompts declaran; sólido lo que tus transcripts demuestran. Selecciona cualquier cosa y la ficha lateral cita el archivo y la línea de cada afirmación.',
     'views.plano.d2':
       'Pulsa <kbd>/</kbd> para buscar cualquier agente, skill o comando, y <kbd>?</kbd> para la leyenda y los atajos.',
-    'edit.title': 'Cámbialo sin miedo',
+    'edit.title':
+      'Edítalo sin miedo',
     'edit.lede':
       'Todo lo que editas pasa por la misma puerta: se enseña el diff antes de tocar el disco, se guarda una copia y queda una línea en un registro de auditoría. Nunca se borra nada.',
     'edit.alt': 'El lienzo de flujos componiendo un slash command, con la vista previa exacta del Markdown',
@@ -99,14 +103,45 @@
       'Requiere Node 22.18 o posterior. Nada se escribe en tu configuración sin enseñarte antes el diff.',
     'install.plugin.t': 'Como plugin de Claude Code',
     'install.plugin.d':
-      'Recomendado. Los hooks los declara el plugin, así que tu <code>settings.json</code> no se toca. Añade el comando <code>/censo</code>.',
-    'install.src.t': 'Desde el código',
-    'install.src.d': 'Clónalo, pasa el censo, abre la oficina.',
-    'install.src.c1': '# las cifras',
-    'install.src.c2': '# la oficina, en tu navegador',
-    'install.src.c3': '# una oficina ficticia, para editar sin riesgo',
+      'Para la actividad en vivo. Los hooks los declara el plugin, así que tu <code>settings.json</code> no se toca. Añade el comando <code>/census</code> (y <code>/censo</code>).',
     'foot.d':
       'ai-office tiene licencia MIT y lo hace <a href="https://github.com/alex-roc">Alex Ojeda Copa</a>. Sin relación con Anthropic.',
+    'nav.see':
+      'Ver',
+    'nav.edit':
+      'Editar',
+    'nav.measure':
+      'Medir',
+    'pillars.title':
+      'Qué hace ai-office',
+    'pillars.see.t':
+      'Ver',
+    'pillars.see.d':
+      'Cada agente, skill y comando que has escrito, repartidos en despachos de gente que trabaja junta y en un grafo de quién llama a quién. Cada relación cita el archivo y la línea de donde sale.',
+    'pillars.edit.t':
+      'Editar',
+    'pillars.edit.d':
+      'Conecta un agente con una skill arrastrando, cambia su modelo o su color, jubila skills, archiva agentes y compón slash commands en un lienzo. Toda escritura enseña antes el diff.',
+    'pillars.measure.t':
+      'Medir',
+    'pillars.measure.d':
+      'Cruza lo que tus prompts prometen con lo que tus transcripts demuestran: a quién se delega, qué skills se invocan, cuánto contexto cuestan las ociosas y la actividad en vivo mientras ocurre.',
+    'views.lede':
+      'Dos vistas de los mismos archivos, que se alternan sin perder la selección. Nada es un diagrama dibujado a mano: cada despacho, balda y línea sale de algo escrito en <code>~/.claude</code>.',
+    'install.npm.t':
+      'Con un comando',
+    'install.npm.d':
+      'Sin instalar nada global. Abre la oficina en tu navegador.',
+    'install.npm.c1':
+      '# la oficina',
+    'install.npm.c2':
+      '# las cifras',
+    'install.npm.c3':
+      '# una oficina ficticia, para editar sin riesgo',
+    'install.lang':
+      'Interfaz y CLI en inglés y español: cambia con el botón EN/ES o con <code>--lang es</code>.',
+    'census.term':
+      '<span class="prompt">$</span> npx ai-office census --lang es\n\n  agentes              14   <b class="warn">6 no han trabajado en los últimos 90 días</b>\n  skills               28   <b class="warn">14 sin usar en los últimos 90 días</b>\n  comandos propios      8   4 ejecutados alguna vez\n\n  ratio activo  <span class="bar" data-ratio="0.32"><span></span></span>  32%\n  <span class="c">Sube al usar lo que tienes o al jubilar lo que no usarás.</span>\n\n  el grafo que ya escribiste, y el que existe\n  agente→skill citadas en su prompt   41  declaradas\n  agente→skill demostradas            13  en el historial',
     'foot.repo': 'Código en GitHub',
     'foot.issues': 'Reportar un problema',
   }
@@ -116,7 +151,7 @@
   const alts = document.querySelectorAll('[data-i18n-alt]')
   for (const n of nodes) EN[n.dataset.i18n] = n.innerHTML
   for (const n of alts) EN[n.dataset.i18nAlt] = n.getAttribute('alt')
-  const titles = { en: document.title, es: 'ai-office — la configuración de Claude Code que escribiste y la que usas' }
+  const titles = { en: document.title, es: 'ai-office — ve, edita y mide tus agentes de Claude Code' }
 
   const store = {
     get: () => {
@@ -153,10 +188,8 @@
   }
 
   const params = new URLSearchParams(location.search)
-  let lang =
-    params.get('lang') ||
-    store.get() ||
-    ((navigator.language || 'en').toLowerCase().startsWith('es') ? 'es' : 'en')
+  // Inglés primero: el español se elige (botón o ?lang=es), no se deduce del navegador.
+  let lang = params.get('lang') || store.get() || 'en'
   if (lang !== 'es') lang = 'en'
   apply(lang)
   toggle.addEventListener('click', () => {
@@ -165,20 +198,27 @@
     apply(lang)
   })
 
-  // La barra del censo: el único movimiento que no pide nadie, y solo una vez.
-  const bar = document.querySelector('.bar')
-  if (bar) {
+  // La barra del censo: el único movimiento que no pide nadie, y solo una vez. Cambiar de idioma
+  // reescribe el bloque del censo (y la barra con él): la nueva sale ya llena si la vieja lo estaba.
+  let barraVista = false
+  const prepararBarra = () => {
+    const bar = document.querySelector('.bar')
+    if (!bar) return
     bar.style.setProperty('--fill', bar.dataset.ratio)
     const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches
-    if (reduce || !('IntersectionObserver' in window)) bar.classList.add('lleno')
-    else {
-      const io = new IntersectionObserver((entries) => {
-        if (entries.some((e) => e.isIntersecting)) {
-          bar.classList.add('lleno')
-          io.disconnect()
-        }
-      })
-      io.observe(bar)
+    if (barraVista || reduce || !('IntersectionObserver' in window)) {
+      bar.classList.add('lleno')
+      return
     }
+    const io = new IntersectionObserver((entries) => {
+      if (entries.some((e) => e.isIntersecting)) {
+        barraVista = true
+        bar.classList.add('lleno')
+        io.disconnect()
+      }
+    })
+    io.observe(bar)
   }
+  prepararBarra()
+  toggle.addEventListener('click', prepararBarra)
 })()

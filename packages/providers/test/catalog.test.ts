@@ -53,6 +53,33 @@ test('un symlink roto no tumba el escaneo: se acumula en errors', async () => {
   assert.ok(errors.some((e) => e.startsWith(join(home, 'skills/enlace-roto'))))
 })
 
+test('se leen los archivados de .archive y de la carpeta antigua .archivo', async () => {
+  const home = fixture()
+  mkdirSync(join(home, 'agents/.archive'), { recursive: true })
+  writeFileSync(join(home, 'agents/.archive/nuevo.md'), agentDoc('nuevo'))
+  const { catalog } = await scanCatalogReport()
+  const archived = catalog.agents.filter((a) => a.archived)
+  assert.deepEqual(archived.map((a) => a.name).sort(), ['nuevo', 'ok', 'viejo'])
+  assert.ok(archived.some((a) => a.id === 'agent:claude-code/user/.archive/nuevo'))
+  assert.ok(archived.some((a) => a.id === 'agent:claude-code/user/.archivo/viejo'))
+})
+
+test('los problemas de un archivo llevan código además del texto en inglés', async () => {
+  const home = fixture()
+  writeFileSync(join(home, 'agents/sin.md'), '---\nname: otro\n---\ncuerpo\n')
+  const { catalog } = await scanCatalogReport()
+  const sin = catalog.agents.find((a) => !a.archived && a.name === 'otro')
+  assert.deepEqual(sin?.problemDetails?.map((p) => p.code).sort(), [
+    'agent-no-description',
+    'name-mismatch',
+  ])
+  assert.deepEqual(
+    sin?.problems,
+    sin?.problemDetails?.map((p) => p.message),
+  )
+  assert.match(sin?.problems[0] ?? '', /description|does not match/)
+})
+
 test('los agentes de .archivo se listan como archivados, con id propio', async () => {
   fixture()
   const { catalog } = await scanCatalogReport()

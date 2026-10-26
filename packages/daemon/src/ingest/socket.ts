@@ -25,7 +25,7 @@ const clearStaleSocket = (socketPath: string): Promise<void> =>
     const probe = createConnection(socketPath)
     probe.once('connect', () => {
       probe.destroy()
-      reject(new Error(`ya hay un proceso escuchando en ${socketPath}`))
+      reject(new Error(`another process is already listening on ${socketPath}`))
     })
     probe.once('error', () => {
       unlinkSync(socketPath)

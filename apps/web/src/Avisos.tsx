@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useT } from './i18n/react.ts'
 import { conCodigo } from './Rico.tsx'
 
 /**
@@ -63,19 +64,22 @@ export const Avisos = ({
 }: {
   avisos: Aviso[]
   onCerrar: (id: number) => void
-}) => (
-  <div className="avisos">
-    {avisos.map((a) => (
-      <div
-        key={a.id}
-        className={`aviso-flotante ${a.tipo}`}
-        role={a.tipo === 'error' ? 'alert' : 'status'}
-      >
-        <span>{conCodigo(a.texto)}</span>
-        <button type="button" onClick={() => onCerrar(a.id)} aria-label="Cerrar el aviso">
-          ✕
-        </button>
-      </div>
-    ))}
-  </div>
-)
+}) => {
+  const t = useT()
+  return (
+    <div className="avisos">
+      {avisos.map((a) => (
+        <div
+          key={a.id}
+          className={`aviso-flotante ${a.tipo}`}
+          role={a.tipo === 'error' ? 'alert' : 'status'}
+        >
+          <span>{conCodigo(a.texto)}</span>
+          <button type="button" onClick={() => onCerrar(a.id)} aria-label={t('toast.close')}>
+            ✕
+          </button>
+        </div>
+      ))}
+    </div>
+  )
+}

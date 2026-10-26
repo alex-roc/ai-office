@@ -9,7 +9,7 @@ import { paths } from './paths.ts'
  * vocabulario predice el uso de una skill. Se probó contra el historial real (40 skills,
  * 7.007 prompts) y NO es cierto: la correlación de Spearman con el uso real es 0,21-0,29
  * según la variante, peor que un baseline tonto (la longitud de la description, 0,47).
- * Ver docs/METRICAS.md.
+ * Ver docs/es/METRICAS.md (en inglés: docs/METRICS.md).
  *
  * Por eso aquí no se expone ningún ratio con pinta de predictor. Lo que sí es un hecho
  * comprobable, y lo único que se muestra al usuario, es la lista de términos de la

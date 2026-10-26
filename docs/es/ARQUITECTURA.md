@@ -1,5 +1,7 @@
 # Arquitectura
 
+[English](../ARCHITECTURE.md)
+
 ## Fuentes de datos, por fiabilidad
 
 | Fuente | Qué da | Estabilidad |
@@ -65,11 +67,12 @@ porque su description ya no se carga en cada sesión: jubilar lo que no usas SÍ
 lo que promete el README. Se calcula en `providers/claude-code/stats.ts` y lo comparten el snapshot
 y el censo, para que no puedan discrepar. `stats.skillsRetired` dice cuántas hay.
 
-**Agentes archivados.** `agent.archive` mueve el `.md` a `agents/.archivo/`; `scanAgents` los lista
-con `archived: true` (y un id propio, `…/user/.archivo/<nombre>`, para que no choquen con uno activo
-del mismo nombre) y la mutación `agent.unarchive` los restaura. Viajan en `catalog.agents` para que
-la interfaz pueda ofrecer «restaurar», pero no cuentan en las estadísticas, ni entran en el grafo
-declarado, ni en el reparto de despachos.
+**Agentes archivados.** `agent.archive` mueve el `.md` a `agents/.archive/`; `scanAgents` los lista
+con `archived: true` (y un id propio, `…/user/.archive/<nombre>`, para que no choquen con uno activo
+del mismo nombre) y la mutación `agent.unarchive` los restaura. Los archivados por versiones
+anteriores en `agents/.archivo/` se siguen leyendo y listando igual; los nuevos van siempre a
+`.archive/`. Viajan en `catalog.agents` para que la interfaz pueda ofrecer «restaurar», pero no
+cuentan en las estadísticas, ni entran en el grafo declarado, ni en el reparto de despachos.
 
 **Lo que no se pudo leer.** Un symlink roto o un `.md` ilegible no tumba el escaneo: se acumula en
 `snapshot.scanErrors` (`ruta: motivo`) y la interfaz lo puede enseñar.
@@ -119,8 +122,8 @@ La ficha lateral (`Ficha.tsx`) es común a las dos y siempre cita el archivo del
 
 **Red en un solo módulo.** Toda llamada al daemon pasa por `api.ts` (`apiGet`, `apiPost`,
 `abrirSocketVivo`); `flows.ts`, `mutations.ts` y `live.ts` no tocan `fetch` ni `WebSocket`. Ahí se
-enchufará un modo demo estático (`import.meta.env.VITE_DEMO`). Los errores se traducen a español en
-`errores.ts`.
+enchufará un modo demo estático (`import.meta.env.VITE_DEMO`). Los errores se traducen en
+`errores.ts` a partir del `code` estable del daemon, al idioma activo.
 
 **Estado en vivo fuera de React.** `live.ts` es un almacén con suscripción por selector: un evento
 no re-renderiza `App`, solo el indicador de conexión; la Sala recibe los destellos por `onEvento`.
@@ -132,6 +135,18 @@ solo se reencuadra al cambiar el conjunto de entidades (`claveDeConjunto`), no e
 **Fases de un flujo** (`fases.ts`, puro y con tests): un grupo "a la vez" es una racha de pasos con
 el mismo número de fase; todas las operaciones (mover, unir, separar) trabajan por bloques y
 renumeran a 1..n.
+
+**Internacionalización.** El inglés es el idioma por defecto y el español es seleccionable en todas
+las superficies: la interfaz web (conmutador EN/ES en la cabecera, o `?lang=es` en la URL), el CLI
+(`--lang es` o `AI_OFFICE_LANG=es`) y el plugin (opción `language`, que llega al CLI como
+`CLAUDE_PLUGIN_OPTION_LANGUAGE`). Cada superficie tiene su propio catálogo de mensajes y el inglés es
+la fuente de verdad: un test comprueba que el español tiene exactamente las mismas claves. Los
+textos de Pixi de la Sala no son React, así que la escena los regenera al cambiar de idioma (ver
+[GOTCHAS](GOTCHAS.md)).
+
+**Los errores del daemon llevan un `code` estable.** El mensaje es para personas y puede reformularse
+o traducirse; el `code` es el contrato. La interfaz asigna cada `code` a su entrada del catálogo y,
+si no lo conoce, recurre al mensaje del daemon.
 
 ## Cómo se agrupan los despachos
 
@@ -159,7 +174,9 @@ porque significan lo contrario: el **archivo común** (skills que cita media pla
 
 `compile.ts` traduce entre un flujo (`{name, description, steps[]}`) y un slash command en
 Markdown. El archivo generado debe ser indistinguible de uno escrito a mano: no se inventa un
-formato propio. `importFlow` recupera los pasos de los comandos existentes —incluidos los escritos
+formato propio. El Markdown sale en el idioma elegido (inglés por defecto; los encabezados y marcadores
+estructurales cambian con `--lang`/`language`) e `importFlow` reconoce ambos, así que un comando
+compilado en un idioma se vuelve a leer tras cambiar al otro. `importFlow` recupera los pasos de los comandos existentes —incluidos los escritos
 a mano— buscando nombres de agentes conocidos; sobre una instalación real recupera pasos de 21 de
 27 comandos, que son exactamente los que nombran agentes.
 
@@ -168,7 +185,7 @@ a mano— buscando nombres de agentes conocidos; sobre una instalación real rec
 **Guard de autenticación.** Decide con la ruta NORMALIZADA (percent-decoding, también el doble,
 `//`, `..`, mayúsculas) y con la ruta que el router resolvió, y lo público es una lista blanca
 exacta (`/api/health`, `/api/live` y los estáticos). Todo lo demás bajo `/api` exige token y, si no
-es GET, la cabecera `X-AI-Office`. Ver el gotcha en `docs/GOTCHAS.md`.
+es GET, la cabecera `X-AI-Office`. Ver el gotcha en `docs/es/GOTCHAS.md`.
 
 **Arranque.** El token solo se escribe a disco cuando el servidor ya escucha: un segundo arranque
 con el puerto ocupado no invalida el del primero. Si el puerto lo ocupa otro ai-office lo dice (sonda
@@ -191,15 +208,16 @@ WebSocket que no manda su primer frame (el del token) en 5 s se cierra.
 
 ## Distribución
 
-`.claude-plugin/plugin.json` declara el plugin; `hooks/hooks.json` sus hooks, todos con
+Requiere Node ≥ 22.18. `.claude-plugin/plugin.json` declara el plugin; `hooks/hooks.json` sus hooks, todos con
 `"async": true` para no entrar nunca en el camino crítico de una sesión; `bin/ai-office` entra en
 el PATH de la herramienta Bash. `claude plugin validate .` debe pasar antes de publicar.
 
 `bin/ai-office` comprueba que el plugin tenga sus dependencias (se clona sin `node_modules`) y, si
 faltan, dice el comando exacto (`pnpm install --prod` en el directorio del plugin) en vez de un
-`ERR_MODULE_NOT_FOUND`. Las dos opciones de `userConfig` llegan por la convención de Claude Code,
-`CLAUDE_PLUGIN_OPTION_<CLAVE>`: `port` lo lee la CLI (`packages/cli/src/env.ts`) y `telemetry` el
-relay. Fuera del plugin valen `AI_OFFICE_PORT` y `AI_OFFICE_TELEMETRY=0`.
+`ERR_MODULE_NOT_FOUND`. Las opciones de `userConfig` llegan por la convención de Claude Code,
+`CLAUDE_PLUGIN_OPTION_<CLAVE>`: `port` y `language` los lee la CLI (`packages/cli/src/env.ts`) y
+`telemetry` el relay. Fuera del plugin valen `AI_OFFICE_PORT`, `AI_OFFICE_LANG` y
+`AI_OFFICE_TELEMETRY=0`.
 
 **Hooks por settings.json.** `hooks install` copia el relay a `~/.claude/ai-office/bin/` y registra
 esa ruta: la del paquete puede vivir en la caché de `npx`, que se purga, y Claude Code ignora en

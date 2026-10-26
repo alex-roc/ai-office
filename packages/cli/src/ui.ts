@@ -1,3 +1,5 @@
+import type { Messages } from './i18n.ts'
+
 /** Formato de terminal. Sin dependencias: son ocho secuencias ANSI. */
 const useColor = process.stdout.isTTY && process.env.NO_COLOR === undefined
 
@@ -19,12 +21,12 @@ export const bar = (ratio: number, width = 24): string => {
 
 export const pct = (ratio: number): string => `${Math.round(ratio * 100)}%`
 
-export const relDate = (ts: number | null): string => {
-  if (!ts) return 'nunca'
+export const relDate = (ts: number | null, rel: Messages['census']['rel']): string => {
+  if (!ts) return rel.never
   const days = Math.floor((Date.now() - ts) / 86400000)
-  if (days <= 0) return 'hoy'
-  if (days === 1) return 'ayer'
-  if (days < 30) return `hace ${days} días`
-  if (days < 365) return `hace ${Math.floor(days / 30)} meses`
-  return `hace ${Math.floor(days / 365)} años`
+  if (days <= 0) return rel.today
+  if (days === 1) return rel.yesterday
+  if (days < 30) return rel.days(days)
+  if (days < 365) return rel.months(Math.floor(days / 30))
+  return rel.years(Math.floor(days / 365))
 }

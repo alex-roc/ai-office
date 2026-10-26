@@ -6,13 +6,13 @@ import {
   applyInstall,
   applyUninstall,
   installRelay,
-  formatNumber as n,
   paths,
   planInstall,
   planUninstall,
   removeRelay,
   stableRelayPath,
 } from '@ai-office/providers'
+import type { Messages } from '../i18n.ts'
 import { bold, dim, green, red, yellow } from '../ui.ts'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -40,7 +40,11 @@ const printDiff = (diff: string) => {
  * Lo que se registra es una copia del relay en `~/.claude/ai-office/bin/`, no el archivo del
  * paquete: sobrevive a que se purgue la caché de npx o se mueva el repositorio.
  */
-export const hooksInstall = async (opts: { yes: boolean; dryRun: boolean }): Promise<void> => {
+export const hooksInstall = async (
+  opts: { yes: boolean; dryRun: boolean },
+  m: Messages,
+): Promise<void> => {
+  const t = m.hooks
   const settingsPath = paths().settings
   // Un settings.json que aún no existe se trata como vacío: instalar lo crea.
   const before = await readFile(settingsPath, 'utf8').catch(() => '{}\n')
@@ -49,64 +53,65 @@ export const hooksInstall = async (opts: { yes: boolean; dryRun: boolean }): Pro
 
   console.log()
   if (!plan.changed) {
-    console.log(`  ${green('Los hooks de ai-office ya están instalados.')}`)
+    console.log(`  ${green(t.alreadyInstalled)}`)
     // Una versión nueva del paquete trae un relay nuevo: se refresca la copia estable.
     if (!opts.dryRun && (await installRelay(relayPath()))) {
-      console.log(dim(`  Relay actualizado en ${stable}`))
+      console.log(dim(`  ${t.relayUpdated(stable)}`))
     }
     console.log()
     return
   }
-  console.log(`  Cambios en ${bold(settingsPath)}:`)
+  console.log(`  ${t.changesIn(bold(settingsPath))}`)
   console.log()
   printDiff(plan.diff)
   console.log()
   console.log(
-    dim('  Tus hooks actuales no se tocan: los nuestros se añaden al final de cada grupo\n') +
-      dim('  y todos son async, así que no pueden bloquear ni alterar una decisión.\n') +
-      dim(`  El relay se copia a ${stable}.`),
+    dim(`  ${t.yoursUntouched[0]}\n`) +
+      dim(`  ${t.yoursUntouched[1]}\n`) +
+      dim(`  ${t.relayCopied(stable)}`),
   )
   console.log()
 
   if (opts.dryRun) {
-    console.log(dim('  (--dry-run: no se ha escrito nada)'))
+    console.log(dim(`  ${t.dryRunDone}`))
     console.log()
     return
   }
   if (!opts.yes) {
-    console.log(`  Para aplicarlo: ${bold('ai-office hooks install --yes')}`)
-    console.log(dim('  Se guarda una copia previa en ~/.claude/ai-office/backups/ y es reversible'))
-    console.log(dim('  con `ai-office hooks uninstall`.'))
+    console.log(`  ${t.toApply(bold('ai-office hooks install --yes'))}`)
+    console.log(dim(`  ${t.backupNote[0]}`))
+    console.log(dim(`  ${t.backupNote[1]}`))
     console.log()
     return
   }
   // Primero el relay: así, si falla la copia, settings.json no queda apuntando a un archivo ausente.
   await installRelay(relayPath())
   await applyInstall(settingsPath, stable)
-  console.log(`  ${green('Hooks instalados.')} Abre una sesión nueva de Claude Code para verlos.`)
+  console.log(`  ${green(t.installed)} ${t.installedNext}`)
   console.log()
 }
 
-export const hooksUninstall = async (opts: { yes: boolean }): Promise<void> => {
+export const hooksUninstall = async (opts: { yes: boolean }, m: Messages): Promise<void> => {
+  const t = m.hooks
   const settingsPath = paths().settings
   const before = await readFile(settingsPath, 'utf8').catch(() => '{}\n')
   const plan = planUninstall(before)
   console.log()
   if (!plan.changed) {
-    console.log('  No hay hooks de ai-office en tu settings.json.')
+    console.log(`  ${t.noneToRemove}`)
     console.log()
     return
   }
   printDiff(plan.diff)
   console.log()
   if (!opts.yes) {
-    console.log(`  Para aplicarlo: ${bold('ai-office hooks uninstall --yes')}`)
+    console.log(`  ${t.toApply(bold('ai-office hooks uninstall --yes'))}`)
     console.log()
     return
   }
   await applyUninstall(settingsPath)
   await removeRelay()
-  console.log(`  ${green('Hooks retirados.')}`)
+  console.log(`  ${green(t.removed)}`)
   console.log()
 }
 
@@ -149,37 +154,32 @@ const spoolPending = async (dir: string): Promise<number> => {
 }
 
 /** Comprueba que todo esté en su sitio y dice qué falta, sin arreglar nada por su cuenta. */
-export const doctor = async (port = 7377): Promise<void> => {
+export const doctor = async (port: number, m: Messages): Promise<void> => {
+  const t = m.doctor
   const p = paths()
   const settings = await readFile(p.settings, 'utf8').catch(() => null)
   const ok = (s: string) => console.log(`  ${green('ok')}   ${s}`)
   const warn = (s: string) => console.log(`  ${yellow('··')}   ${s}`)
 
   console.log()
-  console.log(bold('  ai-office · doctor'))
+  console.log(bold(`  ${t.title}`))
   console.log()
-  console.log(`  Claude Code en ${dim(p.home)}`)
+  console.log(`  ${t.claudeAt(dim(p.home))}`)
 
   const inSettings = settings?.includes('ai-office-hook') ?? false
   const plugin = await pluginInstalled(p.home)
 
-  if (plugin) ok('plugin de ai-office instalado')
-  if (inSettings) ok('hooks de ai-office instalados en settings.json')
+  if (plugin) ok(t.pluginOk)
+  if (inSettings) ok(t.hooksOk)
   if (!plugin && !inSettings) {
-    warn(
-      'ni el plugin ni los hooks de settings.json están instalados: la sala no recibirá actividad ' +
-        'en vivo. Instala el plugin, o usa `ai-office hooks install`.',
-    )
+    warn(t.neither)
   }
   if (plugin && inSettings) {
-    warn(
-      'el plugin Y los hooks de settings.json están activos: cada evento llega dos veces. ' +
-        'Quita uno (`ai-office hooks uninstall` retira los de settings.json).',
-    )
+    warn(t.both)
   }
 
   if (settings === null) {
-    warn('no se pudo leer settings.json')
+    warn(t.settingsUnreadable)
   } else {
     // Coexistencia: se listan los hooks de terceros para que el usuario sepa con quién convive.
     try {
@@ -204,37 +204,32 @@ export const doctor = async (port = 7377): Promise<void> => {
           }
         }
       }
-      if (ajenos.size) ok(`convive con ${n(ajenos.size)} hooks tuyos: ${[...ajenos].join(', ')}`)
+      if (ajenos.size) ok(t.coexists(ajenos.size, [...ajenos].join(', ')))
       // Un hook registrado desde la caché de npx deja de funcionar cuando esa caché se purga.
       for (const ruta of propios) {
         if (ruta && !existsSync(ruta)) {
-          warn(
-            `un hook de settings.json apunta a ${ruta}, que ya no existe. ` +
-              'Corre `ai-office hooks install --yes` para registrar la copia estable.',
-          )
+          warn(t.staleHook(ruta))
         }
       }
     } catch {
-      warn('settings.json no es JSON válido')
+      warn(t.invalidJson)
     }
 
     if (/"disableAllHooks"\s*:\s*true/.test(settings)) {
-      warn('disableAllHooks está activo: ningún hook se ejecutará')
+      warn(t.hooksDisabled)
     }
   }
 
-  if (existsSync(relayPath())) ok(`relay en ${dim(relayPath())}`)
-  else warn(`no encuentro el relay en ${relayPath()}`)
+  if (existsSync(relayPath())) ok(t.relayAt(dim(relayPath())))
+  else warn(t.relayMissing(relayPath()))
 
-  if (await daemonAlive(port)) ok(`daemon vivo en el puerto ${port}`)
-  else warn(`el daemon no responde en el puerto ${port} (arráncalo con \`ai-office\`)`)
+  if (await daemonAlive(port)) ok(t.daemonUp(port))
+  else warn(t.daemonDown(port))
 
   const pending = await spoolPending(join(p.ours, 'spool'))
   if (pending > 0) {
-    warn(
-      `${n(pending)} eventos pendientes en el spool: el daemon estaba apagado y los recogerá al arrancar`,
-    )
-  } else ok('sin eventos pendientes en el spool')
+    warn(t.spoolPending(pending))
+  } else ok(t.spoolEmpty)
 
   console.log()
 }

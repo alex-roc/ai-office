@@ -31,7 +31,7 @@ test('con pocas skills el cartel mide lo de siempre; con muchas crece en vez de 
   const grande = renderPoster(input(200))
   assert.ok(height(grande) > 800)
   // La banda del ratio cuelga del final y la última fila de skills queda por encima.
-  const ys = [...grande.matchAll(/<text x="64" y="(\d+)"[^>]*>RATIO ACTIVO/g)].map((m) =>
+  const ys = [...grande.matchAll(/<text x="64" y="(\d+)"[^>]*>ACTIVE RATIO/g)].map((m) =>
     Number(m[1]),
   )
   const rects = [...grande.matchAll(/<rect x="\d+" y="(\d+)" width="25" height="25"/g)].map((m) =>
@@ -57,7 +57,7 @@ test('los comandos usados salen rellenos', () => {
     ],
   ])
   const svg = renderPoster(input(3, activity))
-  assert.match(svg, /1 no se han ejecutado nunca/)
+  assert.match(svg, /1 not run so far/)
   const cards = [
     ...svg.matchAll(/<rect x="[\d-]+" y="\d+" width="36" height="19"[^>]*fill="(#[0-9a-f]+)"/g),
   ]
@@ -69,6 +69,22 @@ test('los comandos usados salen rellenos', () => {
 
 test('con ventana de historial, "nunca" dice en cuántos días', () => {
   const svg = renderPoster(input(3, new Map(), { historyWindowDays: 30 }))
+  assert.match(svg, /have not worked in the last 30 days/)
+  assert.match(svg, /~12,345 tokens/)
+})
+
+test('el cartel en español lleva los textos y los números en es-ES', () => {
+  const svg = renderPoster(input(3, new Map(), { historyWindowDays: 30, lang: 'es' }))
+  assert.match(svg, /Mi configuración de Claude Code/)
   assert.match(svg, /no han trabajado en los últimos 30 días/)
   assert.match(svg, /~12\.345 tokens/)
+  assert.match(svg, /RATIO ACTIVO/)
+  assert.doesNotMatch(svg, /have not worked/)
+})
+
+test('el cartel por defecto está en inglés', () => {
+  const svg = renderPoster(input(3))
+  assert.match(svg, /My Claude Code setup/)
+  assert.match(svg, /ACTIVE RATIO/)
+  assert.doesNotMatch(svg, /Mi configuración/)
 })

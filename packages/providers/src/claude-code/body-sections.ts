@@ -1,3 +1,5 @@
+import { OfficeError } from './errors.ts'
+
 /**
  * Gestión de "secciones" delimitadas dentro del cuerpo de un Markdown.
  *
@@ -49,7 +51,11 @@ export const upsertSection = (body: string, name: string, content: string): stri
   if (startIdx !== -1) {
     const endIdx = body.indexOf(end, startIdx + start.length)
     if (endIdx === -1)
-      throw new Error(`sección "${name}": hay marcador de inicio pero no de cierre`)
+      throw new OfficeError(
+        'section-unclosed',
+        `section "${name}": start marker found but no end marker`,
+        { params: { section: name } },
+      )
     return body.slice(0, startIdx) + block + body.slice(endIdx + end.length)
   }
 
@@ -71,7 +77,13 @@ export const removeSection = (body: string, name: string): string => {
   const startIdx = body.indexOf(start)
   if (startIdx === -1) return body
   const endIdx = body.indexOf(end, startIdx + start.length)
-  if (endIdx === -1) throw new Error(`sección "${name}": hay marcador de inicio pero no de cierre`)
+  if (endIdx === -1) {
+    throw new OfficeError(
+      'section-unclosed',
+      `section "${name}": start marker found but no end marker`,
+      { params: { section: name } },
+    )
+  }
 
   const head = body.slice(0, startIdx).replace(/\n+$/, '')
   const tail = body.slice(endIdx + end.length).replace(/^\n+/, '')

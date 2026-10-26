@@ -63,7 +63,7 @@ const snapshot = async (): Promise<Snapshot> =>
 test('el token se guarda al escuchar, y un segundo arranque no lo invalida', async () => {
   const tokenPath = join(home, 'ai-office/run/token')
   assert.equal(readFileSync(tokenPath, 'utf8'), server.token)
-  await assert.rejects(() => startServer(server.port), /ya hay un ai-office escuchando/)
+  await assert.rejects(() => startServer(server.port), /already listening on port/)
   assert.equal(readFileSync(tokenPath, 'utf8'), server.token, 'el token del primero sigue vigente')
 })
 
@@ -127,7 +127,10 @@ test('restaurar un agente que no está archivado se rechaza', async () => {
   const id = snap.catalog.agents.find((a) => a.name === 'activo')?.id as string
   const res = await api('/api/mutations/plan', { kind: 'agent.unarchive', entityId: id })
   assert.equal(res.status, 400)
-  assert.match(((await res.json()) as { error: string }).error, /no está archivado/)
+  const body = (await res.json()) as { error: string; code: string; reason: string }
+  assert.match(body.error, /is not archived/)
+  assert.equal(body.code, 'invalid-request')
+  assert.equal(body.reason, 'not-archived')
 })
 
 test('un WebSocket que no manda su primer frame se cierra', async () => {
@@ -152,3 +155,49 @@ const startServerForSocket = async (): Promise<ServerHandle> => {
   // El primero ya ocupa el socket de ingesta: el segundo sigue funcionando sin él (`.catch`).
   return startServer(0, { helloTimeoutMs: 150 })
 }
+
+test('los errores salen como { error, code } con un código estable', async () => {
+  const noToken = await fetch(`http://127.0.0.1:${server.port}/api/snapshot`)
+  assert.equal(noToken.status, 401)
+  assert.equal(((await noToken.json()) as { code: string }).code, 'unauthorized')
+
+  const noHeader = await fetch(`http://127.0.0.1:${server.port}/api/refresh`, {
+    method: 'POST',
+    headers: { authorization: `Bearer ${server.token}`, 'content-type': 'application/json' },
+    body: '{}',
+  })
+  assert.equal(noHeader.status, 403)
+  assert.equal(((await noHeader.json()) as { code: string }).code, 'missing-header')
+
+  const badOrigin = await fetch(`http://127.0.0.1:${server.port}/api/snapshot`, {
+    headers: { origin: 'http://evil.example', authorization: `Bearer ${server.token}` },
+  })
+  assert.equal(badOrigin.status, 403)
+  assert.equal(((await badOrigin.json()) as { code: string }).code, 'forbidden-origin')
+
+  const missing = await api('/api/mutations/plan', { kind: 'agent.color', entityId: 'nope' })
+  assert.equal(missing.status, 404)
+  const body = (await missing.json()) as { error: string; code: string; reason: string }
+  assert.equal(body.code, 'not-found')
+  assert.equal(body.reason, 'entity-not-found')
+  assert.match(body.error, /does not exist/)
+
+  const unknown = await api('/api/no-such-route', {})
+  assert.equal(unknown.status, 404)
+  assert.equal(((await unknown.json()) as { code: string }).code, 'not-found')
+})
+
+test('un conflicto de etag es 409 con code conflict y currentEtag', async () => {
+  const snap = await snapshot()
+  const id = snap.catalog.agents.find((a) => a.name === 'activo')?.id as string
+  const res = await api('/api/mutations/apply', {
+    kind: 'agent.color',
+    entityId: id,
+    value: 'blue',
+    etag: 'etag-viejo',
+  })
+  assert.equal(res.status, 409)
+  const body = (await res.json()) as { code: string; currentEtag: string }
+  assert.equal(body.code, 'conflict')
+  assert.ok(body.currentEtag)
+})

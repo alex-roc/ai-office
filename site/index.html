@@ -3,15 +3,15 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>ai-office — the Claude Code setup you wrote, and the one you use</title>
+    <title>ai-office — see, edit and measure your Claude Code agents</title>
     <meta
       name="description"
-      content="ai-office reads your Claude Code agents, skills and slash commands, checks them against your real sessions, and shows which half you never use — as a pixel-art office and a graph. Local, no telemetry, MIT."
+      content="ai-office turns your Claude Code agents, skills and slash commands into a pixel-art office and a live graph: see how they are organised, edit them safely, and measure which ones actually do the work. Local, no telemetry, MIT."
     />
-    <meta property="og:title" content="ai-office — which half of your Claude Code setup do you never use?" />
+    <meta property="og:title" content="ai-office — see, edit and measure your Claude Code agents" />
     <meta
       property="og:description"
-      content="Your agents, skills and commands, checked against what actually happened in your sessions. A pixel-art office and a graph. Nothing leaves your machine."
+      content="Your agents, skills and slash commands as a pixel-art office and a live graph. Rewire them safely and measure what they actually do. Runs locally."
     />
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://alex-roc.github.io/ai-office/" />
@@ -27,7 +27,7 @@
     />
     <link rel="stylesheet" href="styles.css" />
   </head>
-  <body>
+    <body>
     <a class="skip" href="#main" data-i18n="skip">Skip to content</a>
 
     <header class="nav">
@@ -36,8 +36,9 @@
         <span>ai-office</span>
       </a>
       <nav aria-label="Main">
-        <a href="#census" data-i18n="nav.census">Census</a>
-        <a href="#views" data-i18n="nav.views">Views</a>
+        <a href="#see" data-i18n="nav.see">See</a>
+        <a href="#edit" data-i18n="nav.edit">Edit</a>
+        <a href="#measure" data-i18n="nav.measure">Measure</a>
         <a href="#install" data-i18n="nav.install">Install</a>
         <a href="https://github.com/alex-roc/ai-office" class="gh">GitHub</a>
         <button class="lang" type="button" data-lang-toggle aria-label="Leer en español">ES</button>
@@ -45,22 +46,20 @@
     </header>
 
     <main id="main">
-      <!-- Hero: la oficina es lo primero que se ve. Las notas al margen señalan cosas de verdad
-           de la captura (la demo), no adornos. -->
       <section class="hero">
         <div class="hero-text">
-          <h1 data-i18n="hero.title">Which half of your Claude Code setup do you never use?</h1>
+          <h1 data-i18n="hero.title">See, edit and measure your Claude Code agents</h1>
           <p class="lede" data-i18n="hero.lede">
-            ai-office reads your agents, skills and slash commands, checks them against what
-            actually happened in your sessions, and shows you both at once: the org chart you
-            wrote, and the one that exists.
+            ai-office turns your agents, skills and slash commands into a pixel-art office and a
+            live graph. See how your team is organised, rewire it without fear, and measure which
+            agents and skills actually do the work.
           </p>
           <div class="ctas">
             <a class="btn primary" href="demo/" data-i18n="hero.demo">Walk through the demo office</a>
-            <a class="btn" href="#install" data-i18n="hero.install">Install it on your setup</a>
+            <a class="btn" href="#install" data-i18n="hero.install">Install in one command</a>
           </div>
           <p class="fine" data-i18n="hero.fine">
-            Free and open source (MIT). Runs on your machine, reads <code>~/.claude</code>, sends nothing anywhere.
+            Free and open source (MIT). Runs on your machine from <code>~/.claude</code>; nothing leaves it.
           </p>
         </div>
         <figure class="hero-shot">
@@ -74,40 +73,138 @@
             />
           </div>
           <figcaption data-i18n="hero.caption">
-            The demo office. Each room is a group of agents that cite the same skill; greyed-out
+            The demo office. Each room groups the agents that share a skill or a command; greyed-out
             people have never been delegated a task.
           </figcaption>
         </figure>
       </section>
 
-      <section id="census" class="census">
+      <!-- Los tres verbos del producto. Cada uno lo encarna un personaje de la Sala: el arte ya
+           está, y así la promesa se lee con la misma voz que la oficina. -->
+      <section class="pillars" aria-labelledby="pillars-title">
+        <h2 id="pillars-title" class="visually-hidden" data-i18n="pillars.title">What ai-office does</h2>
+        <a class="pillar" href="#see">
+          <img src="sprites/investigador.png" alt="" width="25" height="72" />
+          <h3 data-i18n="pillars.see.t">See</h3>
+          <p data-i18n="pillars.see.d">Every agent, skill and command you have written, laid out as rooms of people who work together and as a graph of who calls whom. Each link quotes the file and line it comes from.</p>
+        </a>
+        <a class="pillar" href="#edit">
+          <img src="sprites/ingeniero.png" alt="" width="31" height="71" />
+          <h3 data-i18n="pillars.edit.t">Edit</h3>
+          <p data-i18n="pillars.edit.d">Wire an agent to a skill by dragging, change its model or colour, retire skills, archive agents and compose slash commands on a canvas. Every write shows the diff first.</p>
+        </a>
+        <a class="pillar" href="#measure">
+          <img src="sprites/analista.png" alt="" width="29" height="70" />
+          <h3 data-i18n="pillars.measure.t">Measure</h3>
+          <p data-i18n="pillars.measure.d">Cross what your prompts promise with what your transcripts prove: who gets delegated, which skills get invoked, what the idle ones cost in context, and live activity as it happens.</p>
+        </a>
+      </section>
+
+      <section id="see" class="views">
         <div class="section-head">
-          <h2 data-i18n="census.title">One command, the uncomfortable numbers</h2>
+          <h2 data-i18n="views.title">See your setup as it really is</h2>
+          <p data-i18n="views.lede">Two views of the same files, switchable without losing your selection. Nothing is a hand-drawn diagram: every room, shelf and line comes from something written in <code>~/.claude</code>.</p>
+        </div>
+        <div class="view">
+          <figure>
+            <div class="shot-frame"><img src="img/sala-zoom.png" alt="Close-up of a room in the Office view" data-i18n-alt="views.sala.alt" loading="lazy" width="1258" height="916" /></div>
+          </figure>
+          <div class="view-text">
+            <h3 data-i18n="views.sala.t">The Office</h3>
+            <p data-i18n="views.sala.d">
+              A floor plan in isometric pixel art. Rooms are not invented themes: they come from
+              which skills each agent cites and which commands call it, so every door carries the
+              name of a real skill or command and tells you why those people share it.
+            </p>
+            <p data-i18n="views.sala.d2">
+              Position is data. A grey figure has never been delegated. The height of a book spine
+              is how established a skill is; a blank spine is a skill nobody has opened. The
+              archive of skills that half the floor cites faces the storeroom of skills nobody
+              claims.
+            </p>
+          </div>
+        </div>
+        <div class="view reverse">
+          <figure>
+            <div class="shot-frame"><img src="img/plano.png" alt="The Blueprint view: a force-directed graph of agents, skills and commands" data-i18n-alt="views.plano.alt" loading="lazy" width="1258" height="916" /></div>
+          </figure>
+          <div class="view-text">
+            <h3 data-i18n="views.plano.t">The Blueprint</h3>
+            <p data-i18n="views.plano.d">
+              The graph with every layer at once. Dotted is what your prompts declare; solid is
+              what your transcripts prove. Select anything and the side panel quotes the file and
+              line behind each claim.
+            </p>
+            <p data-i18n="views.plano.d2">
+              Press <kbd>/</kbd> to find any agent, skill or command, and <kbd>?</kbd> for the
+              legend and shortcuts.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section id="edit" class="edit">
+        <div class="section-head">
+          <h2 data-i18n="edit.title">Edit it without fear</h2>
+          <p data-i18n="edit.lede">
+            Everything you edit goes through the same door: the diff is shown before the disk is
+            touched, a backup is kept, and a line lands in an audit log. Nothing is ever deleted.
+          </p>
+        </div>
+        <div class="edit-grid">
+          <figure>
+            <div class="shot-frame"><img src="img/flujo.png" alt="The flow canvas composing a slash command, with the exact Markdown preview" data-i18n-alt="edit.alt" loading="lazy" width="1020" height="650" /></div>
+          </figure>
+          <ul class="edit-list">
+            <li>
+              <strong data-i18n="edit.a.t">Draw a relation.</strong>
+              <span data-i18n="edit.a.d">Drag from an agent to a skill in the Blueprint and the citation is written into its prompt.</span>
+            </li>
+            <li>
+              <strong data-i18n="edit.b.t">Retire a skill.</strong>
+              <span data-i18n="edit.b.d">One click sets <code>disable-model-invocation</code>. Reversible, and the fastest way to raise your active ratio.</span>
+            </li>
+            <li>
+              <strong data-i18n="edit.c.t">Compose a slash command.</strong>
+              <span data-i18n="edit.c.d">Pick who takes part, in what order, consulting what. Steps in the same phase run in parallel, and the preview is the exact Markdown that will be written.</span>
+            </li>
+            <li>
+              <strong data-i18n="edit.d.t">Archive an agent.</strong>
+              <span data-i18n="edit.d.d">It moves aside, not to the bin, and comes back with one click.</span>
+            </li>
+          </ul>
+        </div>
+      </section>
+
+      <section id="measure" class="census">
+        <div class="section-head">
+          <h2 data-i18n="census.title">Measure what actually works</h2>
           <p data-i18n="census.lede">
-            Run the census on your own installation. It takes a few seconds, even over gigabytes
-            of transcripts.
+            Your prompts say who should do what. Your transcripts say who did. The census crosses both
+            in a few seconds, even over gigabytes of sessions, and the same numbers live in the
+            interface, each one citing its source.
           </p>
         </div>
         <div class="census-grid">
-          <pre class="terminal" aria-label="Census output"><code><span class="prompt">$</span> ai-office censo
+          <pre class="terminal" aria-label="Census output"><code data-i18n="census.term"><span class="prompt">$</span> npx ai-office census
 
-  agentes              14   <b class="warn">6 no han trabajado en los últimos 90 días</b>
-  skills               28   <b class="warn">14 sin usar en los últimos 90 días</b>
-  comandos propios      8   4 ejecutados alguna vez
+  agents               14   <b class="warn">6 have not worked in the last 90 days</b>
+  skills               28   <b class="warn">14 unused in the last 90 days</b>
+  custom commands       8   4 run at least once
 
-  ratio activo  <span class="bar" data-ratio="0.32"><span></span></span>  32%
-  <span class="c">Sube al usar lo que tienes o al jubilar lo que no usarás.</span>
+  active ratio  <span class="bar" data-ratio="0.32"><span></span></span>  32%
+  <span class="c">Goes up when you use what you have or retire what you won't.</span>
 
-  el grafo que ya escribiste, y el que existe
-  agente→skill citadas en su prompt   41  declaradas
-  agente→skill demostradas            13  en el historial</code></pre>
+  the graph you wrote, and the one that exists
+  agent→skill cited in their prompt   41  declared
+  agent→skill proven                  13  in the history</code></pre>
           <ol class="margin-notes">
             <li>
               <strong data-i18n="census.n1.t">6 of 14 agents did nothing in 90 days.</strong>
               <span data-i18n="census.n1.d">You wrote their prompts. No session in the last 90 days delegated anything to them.</span>
             </li>
             <li>
-              <strong data-i18n="census.n2.t">Half the skills, never invoked.</strong>
+              <strong data-i18n="census.n2.t">Half the skills, idle.</strong>
               <span data-i18n="census.n2.d">Their descriptions still load into every session and cost tokens.</span>
             </li>
             <li>
@@ -121,12 +218,11 @@
           </ol>
         </div>
         <p class="note" data-i18n="census.lang">
-          The CLI and the interface speak Spanish today. The numbers above come from the demo
-          installation that ships with the project.
+          Numbers from the demo installation that ships with the project. Run <code>npx ai-office demo</code> to explore it yourself.
         </p>
       </section>
 
-      <section class="layers">
+      <section class="layers measure-sub">
         <div class="section-head">
           <h2 data-i18n="layers.title">The graph is already written, in prose</h2>
           <p data-i18n="layers.lede">
@@ -180,82 +276,7 @@
         </dl>
       </section>
 
-      <section id="views" class="views">
-        <div class="section-head">
-          <h2 data-i18n="views.title">Two ways to look at the same office</h2>
-        </div>
-        <div class="view">
-          <figure>
-            <div class="shot-frame"><img src="img/sala-zoom.png" alt="Close-up of a room in the Office view" data-i18n-alt="views.sala.alt" loading="lazy" width="1258" height="916" /></div>
-          </figure>
-          <div class="view-text">
-            <h3 data-i18n="views.sala.t">The Office</h3>
-            <p data-i18n="views.sala.d">
-              A floor plan in isometric pixel art. Rooms are not invented themes: they come from
-              which skills each agent cites and which commands call it, so every door carries the
-              name of a real skill or command and tells you why those people share it.
-            </p>
-            <p data-i18n="views.sala.d2">
-              Position is data. A grey figure has never been delegated. The height of a book spine
-              is how established a skill is; a blank spine is a skill nobody has opened. The
-              archive of skills that half the floor cites faces the storeroom of skills nobody
-              claims.
-            </p>
-          </div>
-        </div>
-        <div class="view reverse">
-          <figure>
-            <div class="shot-frame"><img src="img/plano.png" alt="The Blueprint view: a force-directed graph of agents, skills and commands" data-i18n-alt="views.plano.alt" loading="lazy" width="1258" height="916" /></div>
-          </figure>
-          <div class="view-text">
-            <h3 data-i18n="views.plano.t">The Blueprint</h3>
-            <p data-i18n="views.plano.d">
-              The graph with every layer at once. Dotted is what your prompts declare; solid is
-              what your transcripts prove. Select anything and the side panel quotes the file and
-              line behind each claim.
-            </p>
-            <p data-i18n="views.plano.d2">
-              Press <kbd>/</kbd> to find any agent, skill or command, and <kbd>?</kbd> for the
-              legend and shortcuts.
-            </p>
-          </div>
-        </div>
-      </section>
-
-      <section class="edit">
-        <div class="section-head">
-          <h2 data-i18n="edit.title">Change it without fear</h2>
-          <p data-i18n="edit.lede">
-            Everything you edit goes through the same door: the diff is shown before the disk is
-            touched, a backup is kept, and a line lands in an audit log. Nothing is ever deleted.
-          </p>
-        </div>
-        <div class="edit-grid">
-          <figure>
-            <div class="shot-frame"><img src="img/flujo.png" alt="The flow canvas composing a slash command, with the exact Markdown preview" data-i18n-alt="edit.alt" loading="lazy" width="1020" height="650" /></div>
-          </figure>
-          <ul class="edit-list">
-            <li>
-              <strong data-i18n="edit.a.t">Draw a relation.</strong>
-              <span data-i18n="edit.a.d">Drag from an agent to a skill in the Blueprint and the citation is written into its prompt.</span>
-            </li>
-            <li>
-              <strong data-i18n="edit.b.t">Retire a skill.</strong>
-              <span data-i18n="edit.b.d">One click sets <code>disable-model-invocation</code>. Reversible, and the fastest way to raise your active ratio.</span>
-            </li>
-            <li>
-              <strong data-i18n="edit.c.t">Compose a slash command.</strong>
-              <span data-i18n="edit.c.d">Pick who takes part, in what order, consulting what. Steps in the same phase run in parallel, and the preview is the exact Markdown that will be written.</span>
-            </li>
-            <li>
-              <strong data-i18n="edit.d.t">Archive an agent.</strong>
-              <span data-i18n="edit.d.d">It moves aside, not to the bin, and comes back with one click.</span>
-            </li>
-          </ul>
-        </div>
-      </section>
-
-      <section class="live">
+      <section class="live measure-sub">
         <div class="live-cast" aria-hidden="true">
           <img src="sprites/investigador.png" alt="" width="25" height="72" />
           <img src="sprites/analista.png" alt="" width="29" height="70" />
@@ -298,21 +319,20 @@
         </div>
         <div class="install-grid">
           <div class="install-card">
+            <h3 data-i18n="install.npm.t">In one command</h3>
+            <p data-i18n="install.npm.d">Nothing to install globally. Opens the office in your browser.</p>
+            <pre class="terminal small"><code>npx ai-office          <span class="c" data-i18n="install.npm.c1"># the office</span>
+npx ai-office census   <span class="c" data-i18n="install.npm.c2"># the numbers</span>
+npx ai-office demo     <span class="c" data-i18n="install.npm.c3"># a fictional office, safe to edit</span></code></pre>
+          </div>
+          <div class="install-card">
             <h3 data-i18n="install.plugin.t">As a Claude Code plugin</h3>
-            <p data-i18n="install.plugin.d">Recommended. The hooks are declared by the plugin, so your <code>settings.json</code> is never touched. Adds the <code>/censo</code> command.</p>
+            <p data-i18n="install.plugin.d">For live activity. The hooks are declared by the plugin, so your <code>settings.json</code> is never touched. Adds the <code>/census</code> command.</p>
             <pre class="terminal small"><code>claude plugin marketplace add alex-roc/ai-office
 claude plugin install ai-office@ai-office</code></pre>
           </div>
-          <div class="install-card">
-            <h3 data-i18n="install.src.t">From source</h3>
-            <p data-i18n="install.src.d">Clone it, run the census, open the office.</p>
-            <pre class="terminal small"><code>git clone https://github.com/alex-roc/ai-office
-cd ai-office &amp;&amp; pnpm install
-pnpm censo     <span class="c" data-i18n="install.src.c1"># the numbers</span>
-pnpm dev       <span class="c" data-i18n="install.src.c2"># the office, in your browser</span>
-pnpm demo      <span class="c" data-i18n="install.src.c3"># a fictional office, safe to edit</span></code></pre>
-          </div>
         </div>
+        <p class="note" data-i18n="install.lang">Interface and CLI in English and Spanish: switch with the EN/ES button or <code>--lang es</code>.</p>
       </section>
     </main>
 

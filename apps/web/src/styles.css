@@ -111,6 +111,9 @@ header.bar .grow { flex: 1; }
 }
 .views button { font-size: 12px; padding: 0.24rem 0.75rem; border: 0; background: transparent; }
 .views button:hover { color: var(--tinta); }
+/* El conmutador de idioma reusa la píldora de las vistas, más compacta y en mono. */
+.views.idioma { border: 0; margin: 0; min-width: 0; }
+.views.idioma button { font-family: var(--mono); font-size: 11px; padding: 0.24rem 0.5rem; letter-spacing: 0.04em; }
 .views button[data-on="true"] {
   background: var(--ambar); color: var(--sobre-ambar); font-weight: 600;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25);
@@ -440,7 +443,7 @@ header.bar { row-gap: 0.15rem; padding-top: 0.2rem; padding-bottom: 0.2rem; }
   cursor: pointer; font-size: 13px;
 }
 .buscador-lista [role="option"].activa { background: var(--ambar-hueco); }
-.buscador-lista .etiqueta { flex: 0 0 4.4rem; }
+.buscador-lista .etiqueta { flex: 0 0 5.6rem; }
 .buscador-lista .nombre {
   flex: 0 1 auto; max-width: 55%; color: var(--tinta); font-family: var(--mono); font-size: 12px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -480,3 +483,9 @@ aside.side .chico { font-size: 12px; }
 .badge.practicing { border-color: var(--ambar-claro); color: var(--ambar-claro); background: rgba(217, 160, 91, 0.12); }
 .badge.certified { background: rgba(127, 176, 138, 0.12); }
 .badge.unused { background: rgba(207, 106, 79, 0.1); }
+
+/* Mientras cargan las texturas de la Sala. */
+.sala-cargando {
+  position: absolute; inset: 0; display: grid; place-items: center;
+  font: 13px var(--mono); color: var(--apagado); pointer-events: none;
+}

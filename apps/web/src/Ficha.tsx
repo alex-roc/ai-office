@@ -1,7 +1,9 @@
 import { memo, type ReactNode } from 'react'
 import { agentesArchivados, estaArchivado } from './derivados.ts'
+import { useT } from './i18n/react.ts'
 import type { MutationRequest } from './mutations.ts'
-import { gradoEtiqueta, NOMBRE_HILO, relDate, shortPath } from './texto.ts'
+import { conCodigo } from './Rico.tsx'
+import { detalleTexto, gradoEtiqueta, nombreHilo, relDate, shortPath } from './texto.ts'
 import type { Agent, Command, Edge, Skill, Snapshot } from './types.ts'
 
 const COLORES = ['red', 'blue', 'green', 'yellow', 'purple', 'orange', 'pink', 'cyan']
@@ -20,6 +22,7 @@ const opcionesCon = (lista: string[], actual: string | null): string[] =>
   actual && !lista.includes(actual) ? [...lista, actual] : lista
 
 const Evidence = ({ edges, title }: { edges: Edge[]; title: ReactNode }) => {
+  const t = useT()
   if (edges.length === 0) return null
   return (
     <section>
@@ -34,7 +37,7 @@ const Evidence = ({ edges, title }: { edges: Edge[]; title: ReactNode }) => {
               <code>
                 {shortPath(ev.path)}
                 {ev.line ? `:${ev.line}` : ''}
-                {ev.field ? ` · campo ${ev.field}` : ''}
+                {ev.field ? t('detail.ev.field', { field: ev.field }) : ''}
               </code>
             )}
           </div>
@@ -45,19 +48,14 @@ const Evidence = ({ edges, title }: { edges: Edge[]; title: ReactNode }) => {
 }
 
 /** Qué se está viendo y cómo leerlo, según la vista ACTUAL: no se explican las líneas del Plano estando en la Sala. */
-const Explicacion = ({ vista }: { vista: Vista }) =>
-  vista === 'sala' ? (
+const Explicacion = ({ vista }: { vista: Vista }) => {
+  const t = useT()
+  return (
     <p className="empty">
-      Cada figura, lomo y tarjeta de la Sala sale de un archivo tuyo. Una persona en gris es un
-      agente al que nunca has delegado; el alto de un lomo es el grado de la skill y un lomo sin
-      tejuelo dorado es una skill que nunca se ha usado. Pulsa cualquier cosa para ver su ficha.
-    </p>
-  ) : (
-    <p className="empty">
-      Cada línea del plano sale de un archivo tuyo. Las punteadas son lo que tus prompts dicen que
-      debería pasar; las sólidas, lo que los transcripts demuestran que pasó.
+      {t(vista === 'sala' ? 'detail.explain.office' : 'detail.explain.blueprint')}
     </p>
   )
+}
 
 const FichaVacia = ({
   snapshot,
@@ -70,12 +68,13 @@ const FichaVacia = ({
   onMutate?: (req: MutationRequest, title: string) => void
   onSelect?: (id: string) => void
 }) => {
+  const t = useT()
   const archivados = agentesArchivados(snapshot)
   return (
-    <aside className="side" aria-label="Ficha">
+    <aside className="side" aria-label={t('detail.aria')}>
       <Explicacion vista={vista} />
       <section>
-        <h3>lo que se lee</h3>
+        <h3>{t('detail.reads')}</h3>
         {snapshot.catalog.roots.map((r) => (
           <div className="evidence" key={r}>
             <code>{shortPath(r)}</code>
@@ -84,7 +83,7 @@ const FichaVacia = ({
       </section>
       {archivados.length > 0 && (
         <section>
-          <h3>archivados ({archivados.length})</h3>
+          <h3>{t('detail.archivedList', { n: archivados.length })}</h3>
           {archivados.map((a) => (
             <div className="fila-archivado" key={a.id}>
               <button type="button" className="enlace" onClick={() => onSelect?.(a.id)}>
@@ -95,17 +94,18 @@ const FichaVacia = ({
                   type="button"
                   className="chip"
                   onClick={() =>
-                    onMutate({ kind: 'agent.unarchive', entityId: a.id }, `restaurar ${a.name}`)
+                    onMutate(
+                      { kind: 'agent.unarchive', entityId: a.id },
+                      t('diff.title.restore', { name: a.name }),
+                    )
                   }
                 >
-                  restaurar
+                  {t('detail.restore')}
                 </button>
               )}
             </div>
           ))}
-          <p className="nota">
-            Viven en <code>agents/.archivo/</code> y no se dibujan en la Sala ni en el Plano.
-          </p>
+          <p className="nota">{conCodigo(t('detail.archivedNote'))}</p>
         </section>
       )}
     </aside>
@@ -128,6 +128,7 @@ const FichaImpl = ({
   onMutate?: (req: MutationRequest, title: string) => void
   onSelect?: (id: string) => void
 }) => {
+  const t = useT()
   if (!id) {
     return <FichaVacia snapshot={snapshot} vista={vista} onMutate={onMutate} onSelect={onSelect} />
   }
@@ -144,58 +145,68 @@ const FichaImpl = ({
 
   if (!entity && !isMain) {
     return (
-      <aside className="side" aria-label="Ficha">
-        <p className="empty">Esta entidad aparece en el historial pero ya no existe en disco.</p>
+      <aside className="side" aria-label={t('detail.aria')}>
+        <p className="empty">{t('detail.missing')}</p>
       </aside>
     )
   }
 
-  const name = isMain ? NOMBRE_HILO : (entity?.name ?? id)
-  // El vocabulario de Claude Code, en español donde el término lo tiene (agente, comando).
-  const NOMBRE_TIPO: Record<string, string> = {
-    agent: 'agente',
-    skill: 'skill',
-    command: 'comando',
-    mcp: 'servidor MCP',
-  }
-  const kind = isMain ? 'en directo' : (NOMBRE_TIPO[entity?.kind ?? ''] ?? entity?.kind ?? '')
+  const name = isMain ? nombreHilo() : (entity?.name ?? id)
+  // El vocabulario de Claude Code: en español, agente y comando; en inglés, agent y command.
+  const tipo = entity?.kind
+  const kind = isMain
+    ? t('kind.live')
+    : tipo === 'agent' || tipo === 'skill' || tipo === 'command' || tipo === 'mcp'
+      ? t(`kind.${tipo}`)
+      : (tipo ?? '')
   const agente = entity?.kind === 'agent' ? (entity as Agent) : null
   const archivado = agente ? estaArchivado(agente) : false
 
   return (
-    <aside className="side" aria-label={`Ficha de ${name}`}>
+    <aside className="side" aria-label={t('detail.aria.of', { name })}>
       <div className="kind">
         {kind}
-        {archivado ? ' · archivado' : ''}
+        {archivado ? t('detail.archivedTag') : ''}
       </div>
       <h2>{name}</h2>
       {entity?.description && <p className="desc">{entity.description.slice(0, 400)}</p>}
 
+      {entity && entity.problems.length > 0 && (
+        <section>
+          <h3>{t('detail.problems')}</h3>
+          {entity.problems.map((p, i) => (
+            <p className="nota" key={p}>
+              {detalleTexto('problem', entity.problemDetails?.[i], p)}
+            </p>
+          ))}
+        </section>
+      )}
+
       <section>
-        <h3>hoja de servicios</h3>
+        <h3>{t('detail.service')}</h3>
         {isMain ? (
           <div className="row">
-            <span>skills que ha usado</span>
+            <span>{t('detail.mainSkills')}</span>
             <span>{snapshot.stats.mainThreadSkills}</span>
           </div>
         ) : (
           <>
             <div className="row">
-              <span>usos registrados</span>
+              <span>{t('detail.uses')}</span>
               <span>{act?.uses ?? 0}</span>
             </div>
             <div className="row">
-              <span>sesiones · proyectos</span>
+              <span>{t('detail.sessionsProjects')}</span>
               <span>
                 {act?.sessions ?? 0} · {act?.projects ?? 0}
               </span>
             </div>
             <div className="row">
-              <span>última vez</span>
+              <span>{t('detail.lastUsed')}</span>
               <span>{relDate(act?.lastUsedAt)}</span>
             </div>
             <div className="row">
-              <span>grado</span>
+              <span>{t('detail.grade')}</span>
               <span>
                 <span className={`badge ${act?.grade ?? 'unused'}`}>
                   {gradoEtiqueta(act?.grade)}
@@ -208,20 +219,20 @@ const FichaImpl = ({
 
       {agente && onMutate && !archivado && (
         <section>
-          <h3>editar</h3>
+          <h3>{t('detail.edit')}</h3>
           <div className="editor">
             <label>
-              color
+              {t('detail.color')}
               <select
                 value={agente.color ?? ''}
                 onChange={(e) =>
                   onMutate(
                     { kind: 'agent.color', entityId: agente.id, value: e.target.value || null },
-                    `color de ${agente.name}`,
+                    t('diff.title.color', { name: agente.name }),
                   )
                 }
               >
-                <option value="">sin asignar</option>
+                <option value="">{t('detail.color.none')}</option>
                 {opcionesCon(COLORES, agente.color).map((c) => (
                   <option key={c} value={c}>
                     {c}
@@ -230,18 +241,18 @@ const FichaImpl = ({
               </select>
             </label>
             <label>
-              modelo
+              {t('detail.model')}
               <select
                 // `inherit` es otra forma de escribir "heredado": las dos van a la misma opción.
                 value={agente.model === 'inherit' ? '' : (agente.model ?? '')}
                 onChange={(e) =>
                   onMutate(
                     { kind: 'agent.model', entityId: agente.id, value: e.target.value || null },
-                    `modelo de ${agente.name}`,
+                    t('diff.title.model', { name: agente.name }),
                   )
                 }
               >
-                <option value="">heredado</option>
+                <option value="">{t('detail.model.inherit')}</option>
                 {opcionesCon(MODELOS, agente.model === 'inherit' ? null : agente.model).map((m) => (
                   <option key={m} value={m}>
                     {m}
@@ -254,38 +265,40 @@ const FichaImpl = ({
             type="button"
             className="anadir"
             onClick={() =>
-              onMutate({ kind: 'agent.archive', entityId: agente.id }, `archivar ${agente.name}`)
+              onMutate(
+                { kind: 'agent.archive', entityId: agente.id },
+                t('diff.title.archive', { name: agente.name }),
+              )
             }
           >
-            archivar este agente
+            {t('detail.archive.button')}
           </button>
-          <p className="nota">
-            Archivar lo mueve a <code>agents/.archivo/</code>. No se borra nada y se puede deshacer.
-          </p>
+          <p className="nota">{conCodigo(t('detail.archive.note'))}</p>
         </section>
       )}
 
       {agente && onMutate && archivado && (
         <section>
-          <h3>archivado</h3>
+          <h3>{t('detail.archived')}</h3>
           <button
             type="button"
             className="anadir"
             onClick={() =>
-              onMutate({ kind: 'agent.unarchive', entityId: agente.id }, `restaurar ${agente.name}`)
+              onMutate(
+                { kind: 'agent.unarchive', entityId: agente.id },
+                t('diff.title.restore', { name: agente.name }),
+              )
             }
           >
-            restaurar este agente
+            {t('detail.unarchive.button')}
           </button>
-          <p className="nota">
-            Lo devuelve a <code>agents/</code>. Mientras esté archivado no aparece en la Sala.
-          </p>
+          <p className="nota">{conCodigo(t('detail.unarchive.note'))}</p>
         </section>
       )}
 
       {entity?.kind === 'skill' && onMutate && (
         <section>
-          <h3>editar</h3>
+          <h3>{t('detail.edit')}</h3>
           <button
             type="button"
             className="anadir"
@@ -295,63 +308,71 @@ const FichaImpl = ({
                   kind: (entity as Skill).disabledForModel ? 'skill.unretire' : 'skill.retire',
                   entityId: entity.id,
                 },
-                `${(entity as Skill).disabledForModel ? 'reactivar' : 'jubilar'} ${entity.name}`,
+                t(
+                  (entity as Skill).disabledForModel ? 'diff.title.unretire' : 'diff.title.retire',
+                  {
+                    name: entity.name,
+                  },
+                ),
               )
             }
           >
-            {(entity as Skill).disabledForModel ? 'reactivar esta skill' : 'jubilar esta skill'}
+            {t(
+              (entity as Skill).disabledForModel
+                ? 'detail.unretire.button'
+                : 'detail.retire.button',
+            )}
           </button>
-          <p className="nota">
-            Jubilar escribe <code>disable-model-invocation</code>: deja de competir por la atención
-            del modelo, tú puedes seguir invocándola a mano, y sube tu ratio activo.
-          </p>
+          <p className="nota">{conCodigo(t('detail.retire.note'))}</p>
         </section>
       )}
 
       {agente && (
         <section>
-          <h3>definición</h3>
+          <h3>{t('detail.definition')}</h3>
           <div className="row">
-            <span>modelo</span>
-            <span>{agente.model ?? 'heredado'}</span>
+            <span>{t('detail.model')}</span>
+            <span>{agente.model ?? t('detail.model.inherit')}</span>
           </div>
           <div className="row">
-            <span>color</span>
-            <span>{agente.color ?? 'sin asignar'}</span>
+            <span>{t('detail.color')}</span>
+            <span>{agente.color ?? t('detail.color.none')}</span>
           </div>
           <div className="row">
-            <span>tools</span>
-            <span>{agente.tools?.length ?? 'todas'}</span>
+            <span>{t('detail.def.tools')}</span>
+            <span>{agente.tools?.length ?? t('detail.def.tools.all')}</span>
           </div>
           <div className="row">
-            <span>skills precargadas</span>
+            <span>{t('detail.def.preloaded')}</span>
             <span>{agente.preloadedSkills.length}</span>
           </div>
           <div className="row">
-            <span>tamaño del prompt</span>
-            <span>~{agente.bodyTokens.toLocaleString('es')} tokens</span>
+            <span>{t('detail.def.promptSize')}</span>
+            <span>{t('detail.def.tokens', { n: agente.bodyTokens })}</span>
           </div>
         </section>
       )}
 
       {entity?.kind === 'skill' && (
         <section>
-          <h3>definición</h3>
+          <h3>{t('detail.definition')}</h3>
           <div className="row">
-            <span>description</span>
-            <span>~{(entity as Skill).descriptionTokens} tokens por sesión</span>
+            <span>{t('detail.def.description')}</span>
+            <span>
+              {t('detail.def.descriptionTokens', { n: (entity as Skill).descriptionTokens })}
+            </span>
           </div>
           <div className="row">
-            <span>cuerpo</span>
-            <span>~{(entity as Skill).bodyTokens.toLocaleString('es')} tokens al invocarla</span>
+            <span>{t('detail.def.body')}</span>
+            <span>{t('detail.def.bodyTokens', { n: (entity as Skill).bodyTokens })}</span>
           </div>
           <div className="row">
-            <span>elegible por el modelo</span>
-            <span>{(entity as Skill).disabledForModel ? 'no' : 'sí'}</span>
+            <span>{t('detail.def.eligible')}</span>
+            <span>{t((entity as Skill).disabledForModel ? 'detail.no' : 'detail.yes')}</span>
           </div>
           {snapshot.vocabularyGaps[id]?.length ? (
             <>
-              <h3 className="subtitulo">palabras que nunca has escrito</h3>
+              <h3 className="subtitulo">{t('detail.vocab')}</h3>
               <p className="desc chico">{snapshot.vocabularyGaps[id]?.join(', ')}</p>
             </>
           ) : null}
@@ -361,40 +382,38 @@ const FichaImpl = ({
       {entity?.kind === 'command' && onEditFlow && (
         <section>
           <button type="button" className="anadir" onClick={() => onEditFlow(entity.id)}>
-            abrir en el lienzo
+            {t('detail.openFlow')}
           </button>
         </section>
       )}
 
-      <Evidence edges={out.filter((e) => e.layer === 'proven')} title="lo que ha hecho" />
+      <Evidence edges={out.filter((e) => e.layer === 'proven')} title={t('detail.ev.proven')} />
       <Evidence
         edges={out.filter((e) => e.layer === 'preloaded')}
-        title={
-          <>
-            precargadas en <code>skills:</code>
-          </>
-        }
+        title={conCodigo(t('detail.ev.preloaded'))}
       />
       <Evidence
         edges={out.filter((e) => e.layer === 'declared' && e.kind === 'agent-uses-skill')}
-        title="skills que su prompt le manda leer"
+        title={t('detail.ev.declared')}
       />
       <Evidence
         edges={incoming.filter((e) => e.kind === 'command-invokes-agent')}
-        title="comandos que lo convocan"
+        title={t('detail.ev.commands')}
       />
       <Evidence
         edges={incoming.filter((e) => e.kind === 'skill-declares-client')}
-        title="skills que lo nombran"
+        title={t('detail.ev.skills')}
       />
 
       {entity && (
         <section>
-          <h3>archivo</h3>
+          <h3>{t('detail.file')}</h3>
           <div className="evidence">
             <code>{shortPath(entity.source.realPath)}</code>
             {entity.source.symlink && (
-              <div className="quote chico">visible como {shortPath(entity.source.path)}</div>
+              <div className="quote chico">
+                {t('detail.visibleAs', { path: shortPath(entity.source.path) })}
+              </div>
             )}
           </div>
         </section>

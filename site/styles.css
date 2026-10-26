@@ -364,3 +364,35 @@ p { margin: 0 0 1em; max-width: 64ch; }
 .foot p { margin: 0 auto 6px; }
 
 main > section[id] { scroll-margin-top: 64px; }
+
+/* --- Los tres verbos ---------------------------------------------------------------------- */
+
+.pillars {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: clamp(16px, 2.5vw, 28px);
+  padding-top: 0 !important;
+}
+.pillar {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-rows: auto 1fr;
+  column-gap: 18px;
+  align-items: start;
+  padding: 22px 22px 20px;
+  background: var(--madera);
+  border: 1px solid var(--linea);
+  border-radius: 8px;
+  color: inherit;
+  text-decoration: none;
+}
+.pillar:hover { border-color: var(--ambar-hondo); color: inherit; }
+.pillar img { grid-row: 1 / span 2; width: 38px; image-rendering: pixelated; }
+.pillar h3 { margin: 2px 0 6px; font-size: 28px; }
+.pillar p { margin: 0; color: var(--apagado); font-size: 16px; }
+@media (max-width: 900px) {
+  .pillars { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* Capas y actividad en vivo son parte de "Medir": sin filete propio, más pegadas al censo. */
+main > section.measure-sub { border-top: 0; padding-top: 0; }

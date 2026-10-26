@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs'
+import { type Messages, messagesFor } from './i18n.ts'
 
 /** Puerto por defecto de la interfaz local. */
 export const DEFAULT_PORT = 7377
@@ -9,19 +10,22 @@ export const DEFAULT_PORT = 7377
  * opciones de un plugin: `CLAUDE_PLUGIN_OPTION_<CLAVE>`). Un valor que no es un puerto válido es
  * un error con mensaje, no un `NaN` que acaba en un `listen` incomprensible.
  */
-export const resolvePort = (env: NodeJS.ProcessEnv = process.env): number => {
+export const resolvePort = (
+  env: NodeJS.ProcessEnv = process.env,
+  t: Messages = messagesFor('en'),
+): number => {
   const raw = env.AI_OFFICE_PORT || env.CLAUDE_PLUGIN_OPTION_PORT
   if (!raw) return DEFAULT_PORT
   const port = Number(raw)
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
-    throw new Error(`el puerto "${raw}" no es válido: usa un número entre 1 y 65535`)
+    throw new Error(t.invalidPort(raw))
   }
   return port
 }
 
 /** Versión del paquete. Se busca el `package.json` de `ai-office` tanto en desarrollo como en el
  * `dist` (que cuelga cuatro niveles más abajo, ver `scripts/build.sh`). */
-export const cliVersion = (): string => {
+export const cliVersion = (t: Messages = messagesFor('en')): string => {
   for (const rel of ['../package.json', '../../../../package.json']) {
     try {
       const pkg = JSON.parse(readFileSync(new URL(rel, import.meta.url), 'utf8')) as {
@@ -33,5 +37,5 @@ export const cliVersion = (): string => {
       /* probar la siguiente ruta */
     }
   }
-  return 'desconocida'
+  return t.unknownVersion
 }

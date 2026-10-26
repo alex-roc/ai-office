@@ -163,16 +163,24 @@ describe('reparto de la planta en salas', () => {
     const planta = agruparEnSalas(catalogoMinimo([agente('huerfano')], [], []), [])
     assert.equal(planta.salas.length, 1)
     assert.equal(planta.salas[0]?.tipo, 'suelto')
-    assert.match(planta.salas[0]?.motivo ?? '', /no cita ninguna skill/)
+    assert.match(planta.salas[0]?.motivo ?? '', /cites no skill/)
+    assert.equal(planta.salas[0]?.nombre, 'unlinked')
+    assert.deepEqual(planta.salas[0]?.razon, { tipo: 'loose', nombre: '', cuantos: 0, total: 1 })
   })
 
   it('el motivo de la placa se redacta en singular cuando la sala es de una persona', () => {
     const planta = agruparEnSalas(catalogoMinimo([agente('solo')], [skill('suya')], []), [
       usa('solo', 'suya'),
     ])
-    // "1 de sus 1 agentes citan…" restaría credibilidad a todo lo demás que afirma la interfaz.
-    assert.doesNotMatch(planta.salas[0]?.motivo ?? '', /1 de/)
-    assert.match(planta.salas[0]?.motivo ?? '', /no la comparte con nadie/)
+    // "1 of 1 cite…" restaría credibilidad a todo lo demás que afirma la interfaz.
+    assert.doesNotMatch(planta.salas[0]?.motivo ?? '', /1 of/)
+    assert.match(planta.salas[0]?.motivo ?? '', /shares it with no one/)
+    assert.deepEqual(planta.salas[0]?.razon, {
+      tipo: 'skill',
+      nombre: 'suya',
+      cuantos: 1,
+      total: 1,
+    })
   })
 
   it('toda sala se nombra con una skill o un comando que existen de verdad', () => {

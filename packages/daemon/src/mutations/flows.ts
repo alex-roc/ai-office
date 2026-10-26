@@ -1,6 +1,6 @@
 import { mkdir, readFile, stat } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
-import type { Catalog } from '@ai-office/core'
+import type { Catalog, Lang } from '@ai-office/core'
 import {
   applyCreateFile,
   applyWriteCommand,
@@ -9,6 +9,7 @@ import {
   type Flow,
   flowFileName,
   importFlow,
+  OfficeError,
   paths,
   planWriteCommand,
 } from '@ai-office/providers'
@@ -69,33 +70,46 @@ const targetOf = (flow: Flow, catalog?: Catalog): FlowTarget => {
 }
 
 /** Abre un comando existente en el lienzo, recuperando sus pasos. */
-export const openFlow = async (catalog: Catalog, commandId: string): Promise<FlowResponse> => {
+export const openFlow = async (
+  catalog: Catalog,
+  commandId: string,
+  lang: Lang = 'en',
+): Promise<FlowResponse> => {
   const command = catalog.commands.find((c) => c.id === commandId)
-  if (!command) throw new Error(`no existe el comando ${commandId}`)
-  const flow = importFlow(command, catalog.agents, catalog.skills)
+  if (!command) {
+    throw new OfficeError('command-not-found', `command ${commandId} does not exist`, {
+      kind: 'not-found',
+      params: { id: commandId },
+    })
+  }
+  const flow = importFlow(command, catalog.agents, catalog.skills, lang)
   const path = command.source.realPath
   const { etag, exists } = await readEtag(path)
-  return { flow, markdown: compileFlow(flow), path, etag, exists }
+  return { flow, markdown: compileFlow(flow, lang), path, etag, exists }
 }
 
 /** Vista previa: qué Markdown saldría de este lienzo, sin tocar nada. */
-export const previewFlow = async (flow: Flow, catalog?: Catalog): Promise<FlowResponse> => {
+export const previewFlow = async (
+  flow: Flow,
+  catalog?: Catalog,
+  lang: Lang = 'en',
+): Promise<FlowResponse> => {
   const { path } = targetOf(flow, catalog)
   const { etag, exists } = await readEtag(path)
-  return { flow, markdown: compileFlow(flow), path, etag, exists }
+  return { flow, markdown: compileFlow(flow, lang), path, etag, exists }
 }
 
-export const planFlow = async (flow: Flow, catalog?: Catalog) => {
+export const planFlow = async (flow: Flow, catalog?: Catalog, lang: Lang = 'en') => {
   const { path } = targetOf(flow, catalog)
   const { text, etag } = await readEtag(path)
-  const plan = planWriteCommand(path, text, compileFlow(flow))
+  const plan = planWriteCommand(path, text, compileFlow(flow, lang))
   const { before: _b, after: _a, ...rest } = plan
   return { ...rest, etag }
 }
 
-export const saveFlow = async (flow: Flow, etag: string, catalog?: Catalog) => {
+export const saveFlow = async (flow: Flow, etag: string, catalog?: Catalog, lang: Lang = 'en') => {
   const { name, path, opts } = targetOf(flow, catalog)
-  const markdown = compileFlow(flow)
+  const markdown = compileFlow(flow, lang)
   const { exists } = await readEtag(path)
   // Un comando nuevo no tiene etag que comparar: se crea, y la creación falla si alguien lo
   // creó mientras tanto, que es la misma protección por otro camino.

@@ -93,9 +93,9 @@ const parseSettings = (text: string): Record<string, unknown> => {
   try {
     parsed = JSON.parse(text)
   } catch (err) {
-    throw new Error(`settings.json ilegible: ${(err as Error).message}`)
+    throw new Error(`unreadable settings.json: ${(err as Error).message}`)
   }
-  if (!isRecord(parsed)) throw new Error('settings.json no es un objeto JSON')
+  if (!isRecord(parsed)) throw new Error('settings.json is not a JSON object')
   return parsed
 }
 
@@ -110,7 +110,7 @@ const stringifySettings = (parsed: Record<string, unknown>, text: string): strin
 
 /** Diff mínimo por LCS: de sobra para un settings.json de unos cientos de líneas. */
 const diffLines = (before: string, after: string): string => {
-  if (before === after) return '(sin cambios: ya estaba instalado)'
+  if (before === after) return '(no changes: already installed)'
   const a = before.split('\n')
   const b = after.split('\n')
   const n = a.length
@@ -268,7 +268,7 @@ const atomicWrite = async (
         () => false,
       )
     ) {
-      throw new Error(`settings.json es un enlace roto: ${settingsPath}`)
+      throw new Error(`settings.json is a broken symlink: ${settingsPath}`)
     }
   }
   await mkdir(dirname(target), { recursive: true })
@@ -293,7 +293,7 @@ const atomicWrite = async (
   ) {
     await rm(tmpPath, { force: true })
     throw new Error(
-      'settings.json cambió mientras preparábamos la escritura: aborto para no pisar el cambio ajeno',
+      'settings.json changed while the write was being prepared: aborting so as not to overwrite the other change',
     )
   }
   await rename(tmpPath, target)

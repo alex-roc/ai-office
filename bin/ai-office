@@ -4,12 +4,29 @@
 //
 // Opciones del plugin (`userConfig` de .claude-plugin/plugin.json): Claude Code las expone como
 // CLAUDE_PLUGIN_OPTION_<CLAVE>. `port` lo lee la propia CLI (`packages/cli/src/env.ts`, junto con
-// `AI_OFFICE_PORT`, que vale fuera del plugin) y `telemetry` el relay de hooks. Aquí solo se
-// comprueba que el plugin tenga sus dependencias, para no mostrar un stack trace de ERR_MODULE_NOT_FOUND.
+// `AI_OFFICE_PORT`, que vale fuera del plugin), `language` también la CLI (`packages/cli/src/i18n.ts`)
+// y `telemetry` el relay de hooks. Aquí solo se comprueba que el plugin tenga sus dependencias,
+// para no mostrar un stack trace de ERR_MODULE_NOT_FOUND. Esos dos avisos salen antes de que la
+// CLI exista, así que llevan sus dos idiomas aquí mismo (mismo orden de resolución que la CLI,
+// inglés por defecto).
+
 import { spawn } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+
+const langArg = process.argv.find((a) => a.startsWith('--lang='))?.slice(7)
+const langFlag = process.argv.indexOf('--lang')
+const wanted = (
+  langArg ??
+  (langFlag >= 0 ? process.argv[langFlag + 1] : undefined) ??
+  process.env.AI_OFFICE_LANG ??
+  process.env.CLAUDE_PLUGIN_OPTION_LANGUAGE ??
+  'en'
+)
+  .trim()
+  .toLowerCase()
+const es = wanted === 'es'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const root = join(here, '..')
@@ -20,7 +37,9 @@ const cli = join(root, 'packages', 'cli', 'src', 'index.ts')
 const [major, minor] = process.versions.node.split('.').map(Number)
 if (major < 22 || (major === 22 && minor < 18)) {
   console.error(
-    `ai-office necesita Node 22.18 o posterior (tienes ${process.versions.node}): ejecuta TypeScript sin compilar.`,
+    es
+      ? `ai-office necesita Node 22.18 o posterior (tienes ${process.versions.node}): ejecuta TypeScript sin compilar.`
+      : `ai-office needs Node 22.18 or later (you have ${process.versions.node}): it runs TypeScript without compiling.`,
   )
   process.exit(1)
 }
@@ -43,16 +62,24 @@ const missing = [
   .map(([, dep]) => dep)
 if (missing.length > 0) {
   console.error(
-    `ai-office: faltan las dependencias del plugin (${missing.join(', ')}).\n` +
-      'Instálalas una sola vez con:\n\n' +
-      `  cd "${root}" && pnpm install --prod\n`,
+    es
+      ? `ai-office: faltan las dependencias del plugin (${missing.join(', ')}).\n` +
+          'Instálalas una sola vez con:\n\n' +
+          `  cd "${root}" && pnpm install --prod\n`
+      : `ai-office: the plugin's dependencies are missing (${missing.join(', ')}).\n` +
+          'Install them once with:\n\n' +
+          `  cd "${root}" && pnpm install --prod\n`,
   )
   process.exit(1)
 }
 
 const child = spawn(process.execPath, [cli, ...process.argv.slice(2)], { stdio: 'inherit' })
 child.on('error', (err) => {
-  console.error(`ai-office: no se pudo arrancar (${err.message})`)
+  console.error(
+    es
+      ? `ai-office: no se pudo arrancar (${err.message})`
+      : `ai-office: could not start (${err.message})`,
+  )
   process.exit(1)
 })
 child.on('exit', (code) => {

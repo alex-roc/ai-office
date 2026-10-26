@@ -74,8 +74,8 @@ test('un flujo nuevo se crea en commands/<slug>.md', async () => {
 test('un nombre sin letras ni números da un error claro', async () => {
   setup()
   const { catalog } = await scanCatalogReport()
-  await assert.rejects(() => previewFlow(flowOf('¿¿??'), catalog), /no sirve para un comando/)
-  await assert.rejects(() => saveFlow(flowOf('!!!'), '', catalog), /no sirve para un comando/)
+  await assert.rejects(() => previewFlow(flowOf('¿¿??'), catalog), /not valid for a command/)
+  await assert.rejects(() => saveFlow(flowOf('!!!'), '', catalog), /not valid for a command/)
 })
 
 test('el primer flujo de una instalación sin commands/ se guarda: la carpeta se crea', async () => {

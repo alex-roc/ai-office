@@ -22,6 +22,13 @@ export interface Edge {
   dangling?: boolean
 }
 
+/** Un aviso o problema con `code` estable y parámetros, para traducirlo en la interfaz. */
+export interface DetalleCodigo {
+  code: string
+  message: string
+  params?: Record<string, string | number>
+}
+
 export interface EntityBase {
   id: string
   kind: 'agent' | 'skill' | 'command' | 'mcp' | 'project'
@@ -29,6 +36,8 @@ export interface EntityBase {
   description: string
   status: string
   problems: string[]
+  /** Los mismos problemas con `code` y parámetros; un daemon más antiguo no los manda. */
+  problemDetails?: DetalleCodigo[]
   source: { path: string; realPath: string; symlink: boolean }
 }
 
@@ -39,7 +48,7 @@ export interface Agent extends EntityBase {
   color: string | null
   preloadedSkills: string[]
   bodyTokens: number
-  /** Está en `agents/.archivo/`: se lista para poder restaurarlo (`agent.unarchive`), no cuenta. */
+  /** Está en la carpeta de archivados de `agents/`: se lista para poder restaurarlo (`agent.unarchive`), no cuenta. */
   archived?: boolean
 }
 
@@ -68,7 +77,17 @@ export interface Activity {
   active: boolean
 }
 
-export type TipoSala = 'skill' | 'command' | 'suelto'
+/** `suelto` es el nombre antiguo de `loose`: se aceptan los dos según la versión del daemon. */
+export type TipoSala = 'skill' | 'command' | 'suelto' | 'loose'
+
+/** El dato detrás de la placa de un despacho: la UI redacta la frase en su idioma. */
+export interface RazonSala {
+  tipo: 'skill' | 'command' | 'loose'
+  nombre: string
+  /** Cuántos ocupantes comparten el rasgo, de `total`. */
+  cuantos: number
+  total: number
+}
 
 /** Un despacho de la planta. Lo calcula el daemon a partir del grafo declarado. */
 export interface Sala {
@@ -76,8 +95,10 @@ export interface Sala {
   /** El rasgo real que une a sus ocupantes: una skill o un comando del usuario. */
   nombre: string
   tipo: TipoSala
-  /** Frase citable para la placa de la puerta. */
+  /** Frase ya redactada por el daemon: solo se usa si no llega `razon` (daemon más antiguo). */
   motivo: string
+  /** Opcional: un daemon más antiguo no la manda. */
+  razon?: RazonSala
   agents: string[]
   skills: string[]
   commands: string[]

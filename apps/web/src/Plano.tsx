@@ -12,7 +12,6 @@ import {
 import {
   type CSSProperties,
   memo,
-  type ReactNode,
   useCallback,
   useEffect,
   useImperativeHandle,
@@ -20,7 +19,9 @@ import {
   useRef,
   useState,
 } from 'react'
-import { NOMBRE_HILO, plural } from './texto.ts'
+import type { Clave } from './i18n/index.ts'
+import { useT } from './i18n/react.ts'
+import { conCodigo } from './Rico.tsx'
 import type { Edge, EdgeLayer, Snapshot } from './types.ts'
 import type { RefVista } from './vista.ts'
 
@@ -44,18 +45,10 @@ interface Link extends SimulationLinkDatum<Node> {
   edge: Edge
 }
 
-const LAYER_STYLE: Record<EdgeLayer, { color: string; dash: string; label: ReactNode }> = {
-  declared: { color: 'var(--declared)', dash: '3 3', label: 'declarada en la prosa' },
-  preloaded: {
-    color: 'var(--accent)',
-    dash: '1 0',
-    label: (
-      <>
-        precargada en <code>skills:</code>
-      </>
-    ),
-  },
-  proven: { color: 'var(--proven)', dash: '1 0', label: 'demostrada en el historial' },
+const LAYER_STYLE: Record<EdgeLayer, { color: string; dash: string; label: Clave }> = {
+  declared: { color: 'var(--declared)', dash: '3 3', label: 'plano.layer.declared' },
+  preloaded: { color: 'var(--accent)', dash: '1 0', label: 'plano.layer.preloaded' },
+  proven: { color: 'var(--proven)', dash: '1 0', label: 'plano.layer.proven' },
 }
 
 const KINDS_IN_GRAPH = new Set(['agent-uses-skill', 'command-invokes-agent'])
@@ -85,7 +78,9 @@ const construirGrafo = (snapshot: Snapshot): { nodes: Node[]; links: Link[] } =>
   const nodes: Node[] = [
     {
       id: snapshot.mainThreadId,
-      name: NOMBRE_HILO,
+      // El rótulo del hilo principal se traduce al pintar (`nombreDe`), no aquí: este grafo se
+      // memoriza por snapshot y no debe depender del idioma.
+      name: 'main',
       kind: 'main',
       uses: snapshot.stats.mainThreadSkills,
       unused: false,
@@ -211,6 +206,8 @@ const PlanoImpl = ({
   onAviso?: (texto: string) => void
   ref?: RefVista
 }) => {
+  const t = useT()
+  const nombreDe = (n: Node): string => (n.kind === 'main' ? t('main.thread') : n.name)
   const [layers, setLayers] = useState<Record<EdgeLayer, boolean>>({
     declared: true,
     preloaded: true,
@@ -396,7 +393,7 @@ const PlanoImpl = ({
     <div className="canvas" ref={boxRef}>
       <svg
         ref={svgRef}
-        aria-label="Plano del grafo de agentes, skills y comandos"
+        aria-label={t('plano.aria')}
         onPointerDown={(e) => {
           if (linkingRef.current) return
           const v = vista.current
@@ -435,7 +432,7 @@ const PlanoImpl = ({
           terminarArista()
         }}
       >
-        <title>Plano del grafo de agentes, skills y comandos</title>
+        <title>{t('plano.aria')}</title>
         <g ref={gRef}>
           {links.map((l) => {
             if (!layers[l.edge.layer]) return null
@@ -486,7 +483,7 @@ const PlanoImpl = ({
                 opacity={dim ? 0.18 : 1}
                 role="button"
                 tabIndex={0}
-                aria-label={`${n.kind === 'main' ? 'hilo principal' : n.kind} ${n.name}`}
+                aria-label={t('plano.node.aria', { kind: t(`kind.${n.kind}`), name: nombreDe(n) })}
                 aria-pressed={sel}
                 onClick={(e) => {
                   e.stopPropagation()
@@ -500,9 +497,7 @@ const PlanoImpl = ({
                   if (n.kind === 'main') {
                     // Antes no hacía nada y sin decir por qué. El hilo principal no es un archivo:
                     // no tiene un prompt donde escribir "consulta esta skill".
-                    onAviso?.(
-                      'El hilo principal eres tú, no un archivo: no hay un prompt donde escribir la relación. Arrastra desde un agente.',
-                    )
+                    onAviso?.(t('plano.main'))
                     return
                   }
                   if (esOrigen) empezarArista(n)
@@ -512,8 +507,7 @@ const PlanoImpl = ({
                   if (!origen) return
                   e.stopPropagation()
                   if (n.kind === 'skill') onDrawEdge?.(origen.id, n.id)
-                  else if (n.id !== origen.id)
-                    onAviso?.('Suelta sobre una skill para crear la relación.')
+                  else if (n.id !== origen.id) onAviso?.(t('plano.drop'))
                   terminarArista()
                 }}
                 style={{
@@ -525,10 +519,10 @@ const PlanoImpl = ({
                 }}
               >
                 <title>
-                  {n.name} ·{' '}
+                  {nombreDe(n)} ·{' '}
                   {n.kind === 'main'
-                    ? plural(n.uses, 'skill usada', 'skills usadas')
-                    : plural(n.uses, 'uso', 'usos')}
+                    ? t('count.skillsUsed', { n: n.uses })
+                    : t('count.uses', { n: n.uses })}
                 </title>
                 {n.kind === 'skill' ? (
                   <rect
@@ -562,7 +556,7 @@ const PlanoImpl = ({
                     strokeWidth: 3,
                   }}
                 >
-                  {n.name}
+                  {nombreDe(n)}
                 </text>
               </g>
             )
@@ -571,7 +565,7 @@ const PlanoImpl = ({
       </svg>
       {editing && (
         <p className="pista-edicion" role="status">
-          Modo edición: arrastra de un agente a una skill para escribir la relación en su prompt.
+          {t('plano.editHint')}
         </p>
       )}
       <div className="leyenda-plano">
@@ -591,7 +585,7 @@ const PlanoImpl = ({
                   borderTopStyle: layer === 'declared' ? 'dashed' : 'solid',
                 }}
               />
-              {LAYER_STYLE[layer].label}
+              {conCodigo(t(LAYER_STYLE[layer].label))}
             </button>
           ))}
         </div>

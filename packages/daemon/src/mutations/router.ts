@@ -1,5 +1,5 @@
 import { readFile, stat } from 'node:fs/promises'
-import type { Agent, Catalog, Skill } from '@ai-office/core'
+import type { Agent, Catalog, Lang, Skill } from '@ai-office/core'
 import {
   AGENT_COLORS,
   type AgentColor,
@@ -15,6 +15,7 @@ import {
   applyUnretireSkill,
   etagOf,
   type MutationPlan,
+  OfficeError,
   planArchiveAgent,
   planRetireSkill,
   planSetAgentColor,
@@ -52,6 +53,10 @@ export interface MutationRequest {
   kind: MutationKind
   entityId: string
   value?: unknown
+  /** Idioma de la interfaz. Hoy ninguna mutación escribe prosa en el archivo (las secciones
+   * gestionadas son listas de nombres), así que no cambia nada; se acepta para que la interfaz
+   * lo mande siempre y para el día en que alguna lo necesite. */
+  lang?: Lang
 }
 
 export interface PlanResponse extends Omit<MutationPlan, 'before' | 'after'> {
@@ -69,7 +74,10 @@ const findEntity = (
   if (agent) return { entity: agent, kind: 'agent' }
   const skill = catalog.skills.find((s) => s.id === id)
   if (skill) return { entity: skill, kind: 'skill' }
-  throw new Error(`no existe la entidad ${id}`)
+  throw new OfficeError('entity-not-found', `entity ${id} does not exist`, {
+    kind: 'not-found',
+    params: { id },
+  })
 }
 
 /**
@@ -82,8 +90,16 @@ const extraRootsFor = (entity: Agent | Skill): string[] =>
 /** Archivar un archivado o restaurar uno activo movería el archivo a donde no corresponde. */
 const assertArchiveState = (entity: Agent | Skill, kind: MutationKind): void => {
   const archived = entity.kind === 'agent' && entity.archived === true
-  if (kind === 'agent.archive' && archived) throw new Error(`${entity.name} ya está archivado`)
-  if (kind === 'agent.unarchive' && !archived) throw new Error(`${entity.name} no está archivado`)
+  if (kind === 'agent.archive' && archived) {
+    throw new OfficeError('already-archived', `${entity.name} is already archived`, {
+      params: { name: entity.name },
+    })
+  }
+  if (kind === 'agent.unarchive' && !archived) {
+    throw new OfficeError('not-archived', `${entity.name} is not archived`, {
+      params: { name: entity.name },
+    })
+  }
 }
 
 const readCurrent = async (path: string): Promise<{ text: string; etag: string }> => {
@@ -105,7 +121,7 @@ export const planMutation = async (
       case 'agent.color': {
         const color = req.value === null ? null : String(req.value)
         if (color !== null && !AGENT_COLORS.includes(color as AgentColor)) {
-          throw new Error(`color no válido: ${color}`)
+          throw new OfficeError('invalid-color', `invalid color: ${color}`, { params: { color } })
         }
         return planSetAgentColor(path, text, color as AgentColor | null)
       }
@@ -133,7 +149,9 @@ export const planMutation = async (
       case 'agent.unarchive':
         return planUnarchiveAgent(path, text)
       default:
-        throw new Error(`operación desconocida: ${String(req.kind)}`)
+        throw new OfficeError('unknown-operation', `unknown operation: ${String(req.kind)}`, {
+          params: { kind: String(req.kind) },
+        })
     }
   })()
 
@@ -198,6 +216,8 @@ export const applyMutation = async (
     case 'agent.unarchive':
       return applyUnarchiveAgent(name, visiblePath, req.etag, opts)
     default:
-      throw new Error(`operación desconocida: ${String(req.kind)}`)
+      throw new OfficeError('unknown-operation', `unknown operation: ${String(req.kind)}`, {
+        params: { kind: String(req.kind) },
+      })
   }
 }

@@ -1,206 +1,223 @@
-# Gotchas que ya costaron tiempo
+# Gotchas that already cost us time
 
-Cada uno de estos costó al menos una sesión de depuración. Léelos antes de tocar la Sala, el
-Plano, el daemon o los hooks: casi todos fallan **en silencio**.
+[Español](es/GOTCHAS.md)
 
-**Variables CSS en SVG.** Un atributo de presentación (`fill="var(--ink)"`, `stroke="var(--x)"`) NO
-resuelve variables CSS: el elemento se dibuja invisible, sin ningún error en consola. Los colores
-van siempre por `style={{ fill, stroke }}`, que sí es propiedad CSS. Pasó en `Plano.tsx` y costó
-una sesión de depuración con el DOM correcto y la pantalla en blanco.
+Each of these cost at least one debugging session. Read them before touching the Office, the
+Blueprint, the daemon or the hooks: almost all of them fail **silently**.
 
-**d3-force dentro de React.** No animar la simulación con `requestAnimationFrame` + `setState`: con
-StrictMode el doble montaje deja el layout colapsado en el origen, y además contradice la regla de
-no meter estado de 60 fps en React. Se calcula el layout de una vez (`sim.stop()` + N ticks) y se
-congela; queda determinista y el pan/zoom es lo único interactivo.
+**CSS variables in SVG.** A presentation attribute (`fill="var(--ink)"`, `stroke="var(--x)"`) does
+NOT resolve CSS variables: the element is drawn invisible, with no error in the console. Colors
+always go through `style={{ fill, stroke }}`, which is a CSS property and does work. It happened in
+`Plano.tsx` and cost a debugging session with the DOM correct and a blank screen.
 
-**pnpm 11 y los build scripts.** La aprobación va en `pnpm-workspace.yaml` con la clave
-`allowBuilds: { esbuild: true }`. Ni `onlyBuiltDependencies` en `package.json` ni en `.npmrc`
-funcionan en esta versión, y `pnpm approve-builds` escribe una clave duplicada que rompe el YAML.
+**d3-force inside React.** Don't animate the simulation with `requestAnimationFrame` + `setState`:
+with StrictMode the double mount leaves the layout collapsed at the origin, and it also contradicts
+the rule of keeping 60 fps state out of React. The layout is computed once (`sim.stop()` + N ticks)
+and frozen; it stays deterministic and pan/zoom are the only interactive parts.
 
-**Vite escucha en IPv6 y el daemon en IPv4.** El dev server responde en `localhost` (`::1`) pero no
-en `127.0.0.1`; el daemon solo en `127.0.0.1` a propósito. El proxy de Vite los une, y necesita
-**`ws: true`** o el upgrade del WebSocket no se reenvía: la interfaz se queda sin eventos en vivo
-en silencio, sin ningún error.
+**pnpm 11 and build scripts.** Approval goes in `pnpm-workspace.yaml` under the key
+`allowBuilds: { esbuild: true }`. Neither `onlyBuiltDependencies` in `package.json` nor in `.npmrc`
+works in this version, and `pnpm approve-builds` writes a duplicate key that breaks the YAML.
 
-**El guard de Fastify se salta con una ruta codificada.** Decidir con `req.url` a pelo
-(`startsWith('/api/')`) deja pasar `POST /%61pi/mutations/apply` sin token: find-my-way decodifica
-el percent-encoding ANTES de enrutar, así que el manejador de `/api/...` se ejecuta aunque el guard
-no vea `/api`. El guard decide con la ruta normalizada (decodificada, también el doble, con `//`,
-`..` y mayúsculas resueltos) y con la que el router resolvió, y trata lo público como lista blanca
-exacta, no al revés. Lo cubre `packages/daemon/test/auth.test.ts`, incluida una petición HTTP real.
+**Vite listens on IPv6 and the daemon on IPv4.** The dev server answers on `localhost` (`::1`) but
+not on `127.0.0.1`; the daemon only on `127.0.0.1`, on purpose. Vite's proxy joins them, and it needs
+**`ws: true`** or the WebSocket upgrade is not forwarded: the UI silently ends up with no live events
+and no error.
 
-**El frontmatter YAML no se escribe con plantillas.** `description: ${texto}` a pelo es una
-inyección: un `:` o un `#` lo rompen y un salto de línea seguido de `allowed-tools: Bash(*)` añade
-una clave que Claude Code obedece. `compileFlow` emite el frontmatter con la librería `yaml`, y las
-notas libres se sanean para que no puedan abrir otro bloque `---` ni falsificar los marcadores de
-flujo. Mismo cuidado con los nombres de agente al construir una `RegExp`: se escapan.
+**The Fastify guard is bypassed with an encoded path.** Deciding on a raw `req.url`
+(`startsWith('/api/')`) lets `POST /%61pi/mutations/apply` through without a token: find-my-way
+decodes percent-encoding BEFORE routing, so the `/api/...` handler runs even though the guard doesn't
+see `/api`. The guard decides on the normalized path (decoded, double too, with `//`, `..` and case
+resolved) and on the one the router resolved, and treats what is public as an exact whitelist, not
+the other way round. Covered by `packages/daemon/test/auth.test.ts`, including a real HTTP request.
 
-**El WebSocket no puede autenticarse por cabecera.** Una petición de upgrade no lleva
-`Authorization`, así que el guard deja pasar `/api/live` y el token viaja en el primer frame. Si se
-olvida esa excepción, el socket abre y se cierra sin decir por qué.
+**YAML frontmatter is not written with templates.** A raw `description: ${text}` is an injection: a
+`:` or a `#` breaks it, and a newline followed by `allowed-tools: Bash(*)` adds a key that Claude
+Code obeys. `compileFlow` emits the frontmatter with the `yaml` library, and free-form notes are
+sanitized so they cannot open another `---` block or forge the flow markers. Same care with agent
+names when building a `RegExp`: they are escaped.
 
-**El token cambia en cada arranque del daemon.** Pegar el enlace nuevo en una pestaña ya abierta
-solo cambia el hash y no recarga la página, así que leer el token una vez al cargar el módulo deja
-la interfaz muerta con 401 sin explicación. Se relee en cada petición y se escucha `hashchange`.
+**The WebSocket cannot authenticate by header.** An upgrade request carries no `Authorization`, so
+the guard lets `/api/live` through and the token travels in the first frame. If that exception is
+forgotten, the socket opens and closes without saying why.
 
-**El hook sabe nombres, no identidades.** Un evento trae `skill: "style-guide"`, no el id del
-catálogo. El daemon lo resuelve al publicar, que es donde el catálogo existe; sin eso la interfaz
-recibe el evento pero no sabe a qué figura de la sala corresponde y no pasa nada visible.
+**The token changes on every daemon start.** Pasting the new link into an already open tab only
+changes the hash and doesn't reload the page, so reading the token once at module load leaves the UI
+dead with 401 and no explanation. It is re-read on every request and `hashchange` is listened to.
 
-**El pixel art depende de cuatro cosas a la vez, y con que falte una se convierte en acuarela.**
-`resolution: 1` en la `Application` (no `devicePixelRatio`), `antialias: false`, `scaleMode:
-'nearest'` en TODA textura, escala de cámara **entera** (nada de 1,37) y `image-rendering:
-pixelated` en el canvas. Quien ampliaba era el navegador, y sin esa última línea de CSS interpola
-y se pierde de golpe el aspecto que costó toda una sesión conseguir.
+**The hook knows names, not identities.** An event carries `skill: "style-guide"`, not the catalog
+id. The daemon resolves it when publishing, which is where the catalog exists; without that the UI
+receives the event but doesn't know which figure in the Office it corresponds to, and nothing visible
+happens.
 
-**Reducir pixel art generado se hace por MODA, no por media.** Las hojas salen a 1024 px y hay que
-bajarlas a ~70. Cualquier redimensionado normal promedia e inventa colores intermedios: los bordes
-se emborronan y la paleta deja de estar cerrada. `tools/sprites/recortar.mjs` toma el color más
-repetido de cada bloque, y el bloque sale transparente si menos de la mitad tenía tinta. Además,
-todas las piezas de una hoja se reducen con el MISMO factor (`--alto` se aplica a la más alta):
-escalar cada una a su altura destruiría las proporciones entre una silla y una persona.
+**Pixel art depends on four things at once, and if one is missing it turns into watercolor.**
+`resolution: 1` on the `Application` (not `devicePixelRatio`), `antialias: false`, `scaleMode:
+'nearest'` on EVERY texture, an **integer** camera scale (no 1.37) and `image-rendering: pixelated`
+on the canvas. The browser was the one doing the magnifying, and without that last line of CSS it
+interpolates and the look that took a whole session to achieve is lost at once.
 
-**La baldosa isométrica ensancha 2·w/h por fila, no w/h.** Con la mitad del ancho las baldosas no
-se tocan y el suelo sale agujereado, cosa que solo se ve al mirar de cerca. Y cubre algo MÁS que
-el rombo geométrico a propósito: las dos filas centrales van las dos a ancho completo para que las
-baldosas engranen en vez de dejar una costura. Los dos hechos están fijados en `lienzo.test.ts`.
+**Shrinking generated pixel art is done by MODE, not by average.** The sheets come out at 1024 px
+and have to be brought down to ~70. Any normal resize averages and invents intermediate colors:
+edges blur and the palette stops being closed. `tools/sprites/recortar.mjs` takes the most frequent
+color of each block, and the block comes out transparent if less than half of it had ink. Also, all
+the pieces of a sheet are shrunk by the SAME factor (`--alto` applies to the tallest one): scaling
+each piece to its own height would destroy the proportions between a chair and a person.
 
-**Las paredes van de una pieza.** Teselar una pared inclinada por baldosas deja una costura de un
-píxel en cada junta que se ve muchísimo al ampliar. `paredLarga(segmentos, lado)` genera la pared
-entera en un lienzo.
+**The isometric tile widens 2·w/h per row, not w/h.** With half the width the tiles don't touch and
+the floor comes out full of holes, which only shows up when you look closely. And it covers
+something MORE than the geometric rhombus on purpose: the two central rows both go at full width so
+the tiles interlock instead of leaving a seam. Both facts are pinned in `lienzo.test.ts`.
 
-**Renombrar una variable CSS rompe el Plano en silencio.** `Plano.tsx` resuelve `var(--ink)` y
-compañía DESDE JS. Un `var()` que no existe no da error ni aviso: simplemente no pinta. Por eso
-`styles.css` mantiene nueve alias en inglés apuntando a la paleta en español. Es el mismo gotcha
-de arriba visto desde el otro lado.
+**Walls go in one piece.** Tiling a slanted wall by tiles leaves a one-pixel seam at every joint that
+is very visible when zoomed in. `paredLarga(segmentos, lado)` generates the whole wall in a single
+canvas.
 
-**El `stage` de Pixi con `hitArea` universal se traga el tap.** El manejador de "clic en el vacío"
-recibe también el evento que ya atendió una figura, así que deselecciona justo después de
-seleccionar y el clic parece no hacer nada. Hay que comprobar `e.target === stage`.
+**Renaming a CSS variable silently breaks the Blueprint.** `Plano.tsx` resolves `var(--ink)` and
+friends FROM JS. A `var()` that doesn't exist gives no error or warning: it just doesn't paint. That
+is why `styles.css` keeps nine English aliases pointing at the Spanish palette. It is the same gotcha
+as above seen from the other side.
 
-**Separar rótulos exige un escalón mayor que el propio rótulo.** Bajar 12 px un texto de 16 sigue
-solapando, y un escalonado fijo o por carriles tampoco vale: cada rótulo arranca a la altura de su
-figura. Se comparan rectángulos de verdad y el escalón sale de `rotulo.height`.
+**A Pixi `stage` with a universal `hitArea` swallows the tap.** The "click on empty space" handler
+also receives the event that a figure already handled, so it deselects right after selecting and the
+click seems to do nothing. You have to check `e.target === stage`.
 
-**`Escena.iniciar()` es asíncrono y el snapshot llega antes.** Carga veinte texturas; el efecto de
-React que aplica el snapshot corre mucho antes y, como el snapshot ya no vuelve a cambiar, no se
-repetiría nunca y la sala se quedaría vacía. `Sala.tsx` guarda el último en una `ref` y lo aplica
-al resolverse. Por lo mismo, cualquier sonda de depuración contra la escena tiene que esperar a
-que cargue: medir a los dos segundos da "no se ejecuta" y manda a perseguir un fallo que no existe.
+**Separating labels needs a step larger than the label itself.** Moving a 16 px text down 12 px still
+overlaps, and a fixed or lane-based staggering doesn't work either: each label starts at the height
+of its figure. Real rectangles are compared and the step comes from `rotulo.height`.
 
-**El inspector del navegador corre en un mundo aislado.** No ve los `globalThis`/`window` que pone
-la página. Para sacar una medición de dentro de Pixi hay que escribirla al DOM (`dataset`,
-`document.title`), que sí es compartido.
+**`Escena.iniciar()` is asynchronous and the snapshot arrives first.** It loads twenty textures; the
+React effect that applies the snapshot runs long before and, since the snapshot no longer changes, it
+would never repeat and the Office would stay empty. `Sala.tsx` keeps the latest one in a `ref` and
+applies it once loading resolves. By the same token, any debugging probe against the scene has to
+wait for it to load: measuring at two seconds gives "doesn't run" and sends you chasing a failure
+that doesn't exist.
 
-**Vite sirve `index.html` desde la caché del navegador.** Tras un `pnpm build:web`, recargar normal
-puede seguir cargando el bundle anterior por su hash viejo, y se depura una y otra vez un fallo ya
-corregido. Recarga dura (cmd+shift+R) antes de dar nada por roto.
+**The browser inspector runs in an isolated world.** It doesn't see the `globalThis`/`window` that
+the page sets. To get a measurement out of Pixi you have to write it to the DOM (`dataset`,
+`document.title`), which is shared.
 
-**Agrupar por similitud sin descontar lo común no agrupa nada.** Media plantilla cita las mismas
-skills de contexto, así que un Jaccard a pelo da un bloque de nueve agentes y cuatro sueltos. Con
-IDF (y solo con IDF) salen nueve despachos con sentido. Está medido en `salas.test.ts`.
+**Vite serves `index.html` from the browser cache.** After a `pnpm build:web`, a normal reload may
+keep loading the previous bundle through its old hash, and you debug over and over a bug that is
+already fixed. Hard reload (cmd+shift+R) before assuming anything is broken.
 
-**La planta ya no tiene tamaño fijo.** `iso.ts` exportaba `COLS`/`ROWS` como constantes; ahora el
-suelo depende de cuántos despachos salgan del reparto, así que `toScreen` devuelve coordenadas
-SIN desplazar y el origen (`origenX(filas)`) se aplica una sola vez al contenedor del mundo.
+**Grouping by similarity without discounting the common stuff groups nothing.** Half the staff cites
+the same context skills, so a raw Jaccard gives one block of nine agents and four loose ones. With
+IDF (and only with IDF) nine sensible rooms come out. It is measured in `salas.test.ts`.
 
-**La rejilla más cuadrada NO es la más pequeña.** En isométrico el rombo mide `(cols + filas)` de
-ancho y la mitad de alto, así que la forma de la rejilla no cambia la proporción en pantalla, solo
-el tamaño — y como una celda es más ancha que alta, con diez despachos 2x5 ocupa 960 px y 4x3
-ocupa 1024. Se busca a lo bruto el reparto que minimiza `cols + filas`.
+**The floor plan no longer has a fixed size.** `iso.ts` used to export `COLS`/`ROWS` as constants;
+now the floor depends on how many rooms come out of the assignment, so `toScreen` returns UNSHIFTED
+coordinates and the origin (`origenX(filas)`) is applied once to the world container.
 
-**Falta una esquina entre las dos paredes exteriores.** El tramo que va del vértice izquierdo de
-la primera baldosa al vértice superior no pertenece a ninguna de las dos paredes: hay que dibujar
-la del fondo con un segmento MÁS, medio paso a la izquierda y medio arriba, o queda una muesca
-negra justo donde primero mira el ojo.
+**The squarest grid is NOT the smallest.** In isometric the rhombus is `(cols + rows)` wide and half
+as tall, so the grid's shape doesn't change the on-screen proportion, only the size — and since a
+cell is wider than tall, with ten rooms 2x5 takes 960 px and 4x3 takes 1024. The split that
+minimizes `cols + rows` is found by brute force.
 
-**Diecinueve rótulos no caben en una planta, y ningún reparto lo arregla.** A vista general mandan
-las placas de los despachos; los nombres se encienden al pasar de 2x de zoom, al señalar el
-despacho o al seleccionar a alguien. Intentar que quepan todos fue tiempo perdido dos veces.
+**A corner is missing between the two outer walls.** The stretch from the left vertex of the first
+tile to the top vertex belongs to neither wall: the back wall has to be drawn with ONE more segment,
+half a step to the left and half up, or a black notch is left right where the eye first looks.
 
-**Sin pasillo, los despachos no se leen como despachos.** Pegados unos a otros la planta parece
-una sola nave a rayas de colores. El pasillo no hace falta dibujarlo: basta con que el suelo que
-no pertenece a ninguna bahía salga con el parqué del edificio.
+**Nineteen labels don't fit on a floor plan, and no layout fixes it.** In the overview the room
+plaques take over; names light up past 2x zoom, when pointing at the room or when selecting someone.
+Trying to make them all fit was wasted time twice.
 
-**Al reducir por debajo de 1x hay que cambiar a filtrado `linear`.** `nearest` es obligatorio al
-AMPLIAR —es lo que mantiene el píxel duro— pero al reducir va tirando uno de cada dos píxeles y
-la miniatura queda comida y parpadeante. Por eso `texturas.ts` lleva un registro de todo lo
-creado y `filtrarTodo()` cambia el modo al cruzar el 1x, no en cada cuadro.
+**Without a corridor, rooms don't read as rooms.** Stuck against each other, the floor plan looks like
+one big striped hall. The corridor doesn't need to be drawn: it is enough for the floor that belongs
+to no bay to come out in the building's parquet.
 
-**El minimapa comparte proyección con la planta.** Uno cenital sería más legible en abstracto,
-pero entonces el recuadro de "lo que estás viendo" saldría girado y deformado; compartiendo
-proyección es un rectángulo, y hay que recortarlo al panel o al alejarse pinta dos rayas sueltas
-por encima de la escena.
+**When shrinking below 1x you must switch to `linear` filtering.** `nearest` is mandatory when
+MAGNIFYING —it is what keeps the pixel hard— but when shrinking it drops every other pixel and the
+thumbnail comes out chewed up and flickering. That is why `texturas.ts` keeps a registry of
+everything created and `filtrarTodo()` switches the mode when crossing 1x, not on every frame.
 
-**Un `replace` que no encuentra su texto no avisa.** Pasó al editar `escena.ts` justo después de
-un `biome check --write`, que había colapsado un encadenamiento de varias líneas en una sola: la
-sustitución no casó, no falló, y se depuró durante un rato un arreglo que nunca llegó al archivo.
-Si editas por script, **afirma que el patrón existe** antes de sustituir.
+**The minimap shares the floor plan's projection.** A top-down one would be more legible in the
+abstract, but then the "what you are looking at" frame would come out rotated and distorted; sharing
+the projection makes it a rectangle, and it has to be clipped to the panel or, when zooming out, it
+draws two stray lines over the scene.
 
-**Un lienzo de Pixi no se entera de que su contenedor cambió de tamaño.** `resizeTo` solo escucha
-el `resize` de la VENTANA. Al descartar la banda de bienvenida o al aparecer una banda de error,
-el contenedor crece pero el canvas se quedaba con el tamaño viejo y dejaba una franja negra.
-`Escena` observa el host con un `ResizeObserver` y llama a `app.resize()`.
+**A `replace` that doesn't find its text doesn't warn.** It happened when editing `escena.ts` right
+after a `biome check --write`, which had collapsed a multi-line chain into a single line: the
+substitution didn't match, didn't fail, and we debugged for a while a fix that never reached the file.
+If you edit by script, **assert that the pattern exists** before substituting.
 
-**Resolución entera es la única excepción a `resolution: 1`.** Con un devicePixelRatio ENTERO (2,
-3) cada píxel de arte es un bloque exacto de 2x2 o 3x3 físicos, idéntico a lo que hacía el
-navegador al ampliar, y los rótulos de texto salen nítidos en Retina. Con 1,25 o 1,5 el reparto es
-desigual y se rompe el pixel art: ahí se queda en 1. Comprobado a ojo con `agent-browser set
-viewport 1280 700 2`.
+**A Pixi canvas doesn't notice that its container changed size.** `resizeTo` only listens to the
+WINDOW's `resize`. When dismissing the welcome band or when an error band appears, the container
+grows but the canvas kept its old size and left a black strip. `Escena` observes the host with a
+`ResizeObserver` and calls `app.resize()`.
 
-**Dos vistas montadas a la vez se ocultan con `visibility`, no con `display: none`.** Con
-`display: none` el host mide 0x0 y Pixi, que solo reacciona al `resize` de la ventana, queda con un
-lienzo de tamaño cero al volver. La Sala oculta además pausa su ticker.
+**Integer resolution is the only exception to `resolution: 1`.** With an INTEGER devicePixelRatio
+(2, 3) each art pixel is an exact 2x2 or 3x3 block of physical pixels, identical to what the browser
+did when magnifying, and text labels come out crisp on Retina. With 1.25 or 1.5 the split is uneven
+and pixel art breaks: there it stays at 1. Checked by eye with `agent-browser set viewport 1280 700
+2`.
 
-**Pixi no se destruye dos veces ni a medio inicializar.** Si `destruir()` llega mientras
-`iniciar()` espera a Pixi o a las texturas, `Escena` lo registra y `iniciar` se retira solo;
-`destruir()` es idempotente.
+**Two views mounted at once are hidden with `visibility`, not `display: none`.** With `display: none`
+the host measures 0x0 and Pixi, which only reacts to the window's `resize`, is left with a
+zero-size canvas on return. The hidden Office also pauses its ticker.
 
-**El zoom con rueda no puede dar un paso por evento.** Un gesto de trackpad son cientos de eventos
-y llevaba de 0,5x a 4x de un golpe. `Escena.rueda` acumula y da UN paso por gesto (silencio de
-140 ms entre gestos); para más, `+`/`-`.
+**Pixi is not destroyed twice, nor half-initialized.** If `destruir()` arrives while `iniciar()` is
+waiting on Pixi or the textures, `Escena` records it and `iniciar` withdraws on its own; `destruir()`
+is idempotent.
 
-**El token se relee por `hashchange` Y se reconecta el WebSocket.** `api.ts` avisa a los
-suscriptores (`subscribeToken`): `App` recarga el snapshot y `useLiveConnection` reabre el socket
-con el token nuevo. `connected` solo pasa a true al recibir la primera respuesta: un token malo
-también abre el socket y el servidor lo cierra sin decir por qué.
+**Wheel zoom cannot take one step per event.** A trackpad gesture is hundreds of events and went from
+0.5x to 4x in one go. `Escena.rueda` accumulates and takes ONE step per gesture (140 ms of silence
+between gestures); for more, `+`/`-`.
 
-**El 500 vacío de Vite es "no hay daemon".** Con el daemon caído, el proxy de desarrollo contesta
-500 sin cuerpo JSON; el daemon siempre contesta sus errores con JSON. `api.ts` traduce un 5xx sin
-JSON a "no se puede hablar con el daemon".
+**The token is re-read on `hashchange` AND the WebSocket reconnects.** `api.ts` notifies subscribers
+(`subscribeToken`): `App` reloads the snapshot and `useLiveConnection` reopens the socket with the
+new token. `connected` only becomes true on receiving the first response: a bad token also opens the
+socket and the server closes it without saying why.
 
-**HMR de Vite duplica `api.ts` si lo editas con la página abierta.** Quedan dos copias del módulo
-con tokens distintos y el estado parece roto sin estarlo. Recarga dura antes de depurar.
+**Vite's empty 500 means "there is no daemon".** With the daemon down, the dev proxy answers 500
+with no JSON body; the daemon always answers its errors with JSON. `api.ts` translates a non-JSON
+5xx to "cannot talk to the daemon".
 
-**`fs.watch` pierde lo que ocurre justo después de crearse (macOS).** Un hook que escribe en el
-spool en los primeros milisegundos tras arrancar el daemon no dispara ningún evento, y no hay
-error. Se vio como un test intermitente (~5 %) de `watchSpool` que dejaba el proceso colgado.
-`watchSpool` no confía solo en el watcher: revisa el directorio cada segundo.
+**Vite HMR duplicates `api.ts` if you edit it with the page open.** Two copies of the module remain
+with different tokens and the state looks broken without being so. Hard reload before debugging.
 
-**Leer-y-borrar el spool pierde líneas.** El relay sigue añadiendo al archivo del día mientras el
-daemon lo procesa. Se renombra a `.draining` antes de leer: el relay crea uno nuevo y nada se pisa.
+**`fs.watch` loses what happens right after being created (macOS).** A hook that writes to the spool
+in the first milliseconds after the daemon starts fires no event, and there is no error. It showed up
+as an intermittent test (~5 %) of `watchSpool` that left the process hanging. `watchSpool` doesn't
+rely on the watcher alone: it checks the directory every second.
 
-**Un hook registrado desde la caché de `npx` muere en silencio.** Claude Code ignora un hook cuyo
-archivo ya no existe. Por eso `hooks install` copia el relay a `~/.claude/ai-office/bin/` y registra
-esa ruta; `doctor` avisa si un hook de settings.json apunta a algo que ya no existe.
+**Read-and-delete on the spool loses lines.** The relay keeps appending to the day's file while the
+daemon processes it. It is renamed to `.draining` before reading: the relay creates a new one and
+nothing is overwritten.
 
-**Las mamparas laterales de un despacho se dibujaban una baldosa desplazadas.** `mamparaColumna`
-colocaba el lienzo con el mismo desplazamiento `(-w/2, +h/2)` que la pared exterior izquierda, pero
-el lienzo de una pared que SUBE hacia la derecha tiene su borde inferior izquierdo en
-`(0, longitud·h/2 + alto)`, no en `(0, alto)`. Por dentro de la planta se disimulaba (caía sobre el
-pasillo); en el borde del edificio salía flotando fuera del suelo. La esquina inferior izquierda
-del lienzo tiene que caer EXACTAMENTE en `toScreen(col, row1)`.
+**A hook registered from the `npx` cache dies silently.** Claude Code ignores a hook whose file no
+longer exists. That is why `hooks install` copies the relay to `~/.claude/ai-office/bin/` and
+registers that path; `doctor` warns if a settings.json hook points at something that no longer
+exists.
 
-**El primer encuadre puede hacerse con el tamaño viejo del lienzo.** Si el snapshot llega antes de
-que la cabecera, la bienvenida o un aviso terminen de ocupar su sitio (pasa siempre en la demo
-estática, que lee un JSON local en milisegundos), `encajar()` calcula con un alto que ya no es el
-real y la planta queda fuera de la vista: lienzo "vacío" sin ningún error. Mientras el usuario no
-haya movido la cámara, cada cambio de tamaño vuelve a encuadrar.
+**A room's side partitions were drawn one tile off.** `mamparaColumna` placed the canvas with the
+same `(-w/2, +h/2)` offset as the outer left wall, but the canvas of a wall that RISES to the right
+has its bottom-left edge at `(0, length·h/2 + height)`, not at `(0, height)`. Inside the floor plan
+it was disguised (it fell over the corridor); at the edge of the building it came out floating
+outside the floor. The canvas's bottom-left corner has to land EXACTLY on `toScreen(col, row1)`.
 
-**`frontmatter.ts` no puede importar nada de Node.** El compilador de flujos (`compile.ts`) corre
-también en el navegador, en la demo estática, y arrastra a `frontmatter.ts`. Por eso `etagOf`
-(que usa `node:crypto`) vive aparte, en `etag.ts`. Un import de Node ahí rompe la demo en el build.
+**The first framing can be done with the canvas's old size.** If the snapshot arrives before the
+header, the welcome band or a notice finish taking up their place (it always happens in the static
+demo, which reads a local JSON in milliseconds), `encajar()` computes with a height that is no longer
+the real one and the floor plan ends up out of view: an "empty" canvas with no error. As long as the
+user hasn't moved the camera, every size change re-frames.
 
-**En macOS el directorio temporal es un symlink** (`/var` → `/private/var`). Los `realPath` del
-catálogo salen con la forma resuelta, así que al reescribir rutas temporales (el snapshot de la
-demo) hay que sustituir las dos formas o queda un `/private~/.claude/...` en pantalla.
+**`frontmatter.ts` cannot import anything from Node.** The flow compiler (`compile.ts`) also runs in
+the browser, in the static demo, and drags `frontmatter.ts` along. That is why `etagOf` (which uses
+`node:crypto`) lives apart, in `etag.ts`. A Node import there breaks the demo at build time.
+
+**On macOS the temp directory is a symlink** (`/var` → `/private/var`). The catalog's `realPath`s
+come out in the resolved form, so when rewriting temp paths (the demo's snapshot) you have to replace
+both forms or a `/private~/.claude/...` stays on screen.
+
+**i18n: the English catalog is the source of truth.** Every visible text goes first into the English
+catalog (web and CLI each have their own) and Spanish is derived from it: a test checks that the
+Spanish one has exactly the same keys, so a missing or stray key fails CI instead of showing a raw
+key to someone. And the Office's Pixi texts (labels, plaques) are not React: they don't re-render on
+their own when the language changes, so the scene regenerates them on a language switch. Adding a
+text in Pixi without going through that path leaves it stuck in the previous language, with no error.
+
+**`t()` outside React does not re-render anything.** The Office is drawn by Pixi, outside React: its
+plates, tooltips and labels are written once when the scene is painted. Switching language must
+re-apply the snapshot to the scene (`Sala.tsx` does it), or the Office stays in the old language
+while the rest of the page changes. Toasts are composed when they are created and keep their
+language; errors in bands and dialogs keep their key and are translated again.

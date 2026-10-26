@@ -90,7 +90,7 @@ test('setAgentColor: aplicar y revertir deja el archivo idéntico', async () => 
 test('setAgentColor: color inválido lanza al planear', () => {
   assert.throws(
     () => planSetAgentColor('/x/agent.md', AGENT_DOC, 'magenta' as never),
-    /color inválido/,
+    /invalid color/,
   )
 })
 
@@ -156,14 +156,14 @@ test('setAgentPreloadedSkills: warning obligatorio con el costo estimado, y cita
     skillsCatalog,
   )
   assert.ok(
-    plan.warnings.some((w) => w.includes('precargar no añade capacidad')),
+    plan.warnings.some((w) => w.includes('preloading adds no capability')),
     'debe explicar que precargar no da capacidad nueva',
   )
   assert.ok(
     plan.warnings.some((w) => w.includes('100')),
     'debe estimar los tokens (400 chars ~ 100 tokens)',
   )
-  assert.ok(plan.warnings.some((w) => w.includes('cita rota') && w.includes('no-existe')))
+  assert.ok(plan.warnings.some((w) => w.includes('broken citation') && w.includes('no-existe')))
 })
 
 test('setAgentPreloadedSkills: aplicar y revertir deja el archivo idéntico', async () => {
@@ -263,13 +263,34 @@ test('archiveAgent/unarchiveAgent: mover y devolver deja el archivo idéntico y 
 
   const etag1 = await etagOfFile(path)
   const archived = await applyArchiveAgent('code-reviewer', path, etag1)
-  assert.equal(archived.path, join(claudeHome, 'agents', '.archivo', 'code-reviewer.md'))
+  assert.equal(archived.path, join(claudeHome, 'agents', '.archive', 'code-reviewer.md'))
   assert.equal(await readFile(archived.path, 'utf8'), AGENT_DOC)
   await assert.rejects(readFile(path, 'utf8'), 'ya no debe existir en la ruta original')
 
   const restored = await applyUnarchiveAgent('code-reviewer', archived.path, archived.etag)
   assert.equal(restored.path, path)
   assert.equal(await readFile(path, 'utf8'), AGENT_DOC, 'vuelve idéntico byte a byte')
+})
+
+test('un agente de la carpeta antigua .archivo se restaura a su sitio', async () => {
+  const { claudeHome } = await scratch()
+  await mkdir(join(claudeHome, 'agents', '.archivo'), { recursive: true })
+  const legacy = join(claudeHome, 'agents', '.archivo', 'code-reviewer.md')
+  await writeFile(legacy, AGENT_DOC, 'utf8')
+  const restored = await applyUnarchiveAgent('code-reviewer', legacy, await etagOfFile(legacy))
+  assert.equal(restored.path, join(claudeHome, 'agents', 'code-reviewer.md'))
+})
+
+test('el plan de una mutación trae los avisos con código', () => {
+  const plan = planSetAgentPreloadedSkills('/x/a.md', AGENT_DOC, ['no-existe'], [])
+  assert.deepEqual(
+    plan.warningDetails.map((w) => w.code),
+    ['broken-citation', 'preload-cost'],
+  )
+  assert.deepEqual(
+    plan.warnings,
+    plan.warningDetails.map((w) => w.message),
+  )
 })
 
 test('archivar o restaurar nunca pisa un archivo que ya está en el destino', async () => {
@@ -282,14 +303,14 @@ test('archivar o restaurar nunca pisa un archivo que ya está en el destino', as
   await writeFile(path, 'el nuevo', 'utf8')
   await assert.rejects(
     applyUnarchiveAgent('code-reviewer', archived.path, archived.etag),
-    /ya hay un archivo/,
+    /already exists/,
   )
   assert.equal(await readFile(path, 'utf8'), 'el nuevo')
 
   // Y archivar el nuevo tampoco pisa el archivado anterior.
   await assert.rejects(
     applyArchiveAgent('code-reviewer', path, await etagOfFile(path)),
-    /ya hay un archivo/,
+    /already exists/,
   )
   assert.equal(await readFile(archived.path, 'utf8'), AGENT_DOC)
 })
@@ -303,7 +324,7 @@ test('archivar un agente que es symlink se rechaza: dejaría un enlace roto', as
   await symlink(real, link)
   await assert.rejects(
     applyArchiveAgent('code-reviewer', link, await etagOfFile(real)),
-    /enlace simbólico/,
+    /symbolic link/,
   )
   assert.equal(await readFile(real, 'utf8'), AGENT_DOC)
 })
@@ -332,10 +353,7 @@ test('guard de rutas: rechaza un destino fuera de las raíces permitidas', async
   await writeFile(path, AGENT_DOC, 'utf8')
   const etag1 = await etagOfFile(path)
 
-  await assert.rejects(
-    applySetAgentColor('code-reviewer', path, 'blue', etag1),
-    /raíces permitidas/,
-  )
+  await assert.rejects(applySetAgentColor('code-reviewer', path, 'blue', etag1), /allowed roots/)
 })
 
 test('planRetireSkill es puro: no toca disco ni cambia si ya está retirada', () => {
@@ -359,7 +377,10 @@ test('applyCreateFile no sobrescribe un archivo que ya existe', async () => {
   const creado = await applyCreateFile('command', 'nuevo', path, 'primero\n')
   assert.equal(await readFile(creado.path, 'utf8'), 'primero\n')
 
-  await assert.rejects(() => applyCreateFile('command', 'nuevo', path, 'segundo\n'), /ya existe/)
+  await assert.rejects(
+    () => applyCreateFile('command', 'nuevo', path, 'segundo\n'),
+    /already exists/,
+  )
   assert.equal(await readFile(path, 'utf8'), 'primero\n', 'el contenido original sigue intacto')
 })
 

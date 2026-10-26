@@ -1,5 +1,7 @@
-import { memo, useEffect, useImperativeHandle, useRef } from 'react'
+import { memo, useEffect, useImperativeHandle, useRef, useState } from 'react'
+import { useLang, useT } from '../i18n/react.ts'
 import { onEvento } from '../live.ts'
+import { conCodigo } from '../Rico.tsx'
 import type { Snapshot } from '../types.ts'
 import type { RefVista } from '../vista.ts'
 import { Escena } from './escena.ts'
@@ -14,6 +16,15 @@ import { Escena } from './escena.ts'
  * Vive montado todo el rato, incluso con el Plano delante: destruir y recrear la aplicación de
  * Pixi al cambiar de vista tardaba y perdía la cámara. Oculta, solo se pausa su bucle.
  */
+const LEYENDA = [
+  'office.legend.grey',
+  'office.legend.spine',
+  'office.legend.nolabel',
+  'office.legend.shelves',
+  'office.legend.card',
+  'office.legend.plate',
+] as const
+
 const SalaImpl = ({
   snapshot,
   selected,
@@ -28,6 +39,11 @@ const SalaImpl = ({
   activa?: boolean
   ref?: RefVista
 }) => {
+  const t = useT()
+  // Las texturas tardan unos segundos la primera vez (más en una máquina sin GPU): sin aviso, el
+  // lienzo vacío parece un fallo.
+  const [lista, setLista] = useState(false)
+  const lang = useLang()
   const hostRef = useRef<HTMLDivElement>(null)
   const escenaRef = useRef<Escena | null>(null)
   // La selección se lee desde el callback de Pixi, que se registra una sola vez: sin esta
@@ -59,6 +75,7 @@ const SalaImpl = ({
         escena.seleccionar(selectedRef.current)
         escena.encajar()
         escena.activar(activaRef.current)
+        setLista(true)
       },
       (e) => console.error('No se pudo iniciar la Sala', e),
     )
@@ -70,13 +87,16 @@ const SalaImpl = ({
     }
   }, [])
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `lang` no se lee dentro, pero cambia los textos de Pixi
   useEffect(() => {
     const escena = escenaRef.current
     if (!escena) return
     // Se reencuadra solo si cambió el conjunto de entidades: encajar tras cada snapshot movía la
     // vista mientras el usuario la estaba mirando.
+    // También al cambiar de idioma: placas, tooltips y rótulos son texto de Pixi y se regeneran
+    // reconstruyendo la planta. Como el conjunto de entidades no cambia, la cámara se queda donde está.
     if (escena.aplicar(snapshot)) escena.encajar()
-  }, [snapshot])
+  }, [snapshot, lang])
 
   useEffect(() => {
     escenaRef.current?.seleccionar(selected)
@@ -145,30 +165,13 @@ const SalaImpl = ({
           arrastre.current = null
         }}
       />
+      {!lista && <div className="sala-cargando">{t('office.loading')}</div>}
       <details className="leyenda-sala">
-        <summary>cómo leer la sala</summary>
+        <summary>{t('office.legend.summary')}</summary>
         <ul>
-          <li>
-            <b>Persona en gris</b>: agente al que nunca has delegado. En color: ya ha trabajado.
-          </li>
-          <li>
-            <b>Alto del lomo</b>: grado de la skill (sin estrenar, estrenada, en práctica,
-            acreditada). El color es el agente que más la usa.
-          </li>
-          <li>
-            <b>Lomo sin tejuelo dorado</b>: skill que nunca se ha usado.
-          </li>
-          <li>
-            <b>Archivo común</b> (balda alta del vestíbulo): skills que cita media planta.{' '}
-            <b>Depósito</b> (balda baja): skills que no cita ningún agente.
-          </li>
-          <li>
-            <b>Tarjeta con chincheta roja</b>: comando que se ha ejecutado; gris, nunca.
-          </li>
-          <li>
-            <b>Placa de la puerta</b>: pasa el ratón para ver por qué esos agentes comparten
-            despacho.
-          </li>
+          {LEYENDA.map((k) => (
+            <li key={k}>{conCodigo(t(k))}</li>
+          ))}
         </ul>
       </details>
     </div>

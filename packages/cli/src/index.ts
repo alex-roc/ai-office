@@ -1,20 +1,31 @@
 #!/usr/bin/env node
-import { censo } from './commands/censo.ts'
+import type { Lang } from '@ai-office/core'
+import { census } from './commands/census.ts'
 import { demo } from './commands/demo.ts'
 import { doctor, hooksInstall, hooksUninstall } from './commands/hooks.ts'
 import { start } from './commands/start.ts'
 import { cliVersion, resolvePort } from './env.ts'
+import { type Messages, messagesFor, resolveLang } from './i18n.ts'
 import { bold, dim } from './ui.ts'
+
+/** Lo que cada subcomando recibe: el idioma resuelto y sus mensajes. */
+interface Ctx {
+  lang: Lang
+  t: Messages
+}
 
 /**
  * Cada subcomando se declara una vez: lo que hace y lo que dice la ayuda salen del mismo sitio.
- * Para añadir uno (p. ej. `demo`), basta con una entrada nueva en `commands`.
+ * Para añadir uno (p. ej. `demo`), basta con una entrada nueva en `commands`. Los textos de la
+ * ayuda son funciones del catálogo de mensajes, así que salen en el idioma elegido.
  */
 interface CliCommand {
   usage: string
-  summary: string
-  options?: [flag: string, summary: string][]
-  run: (args: string[]) => Promise<void>
+  summary: (t: Messages) => string
+  options?: [flag: string, summary: (t: Messages) => string][]
+  /** Otros nombres con los que se invoca (compatibilidad); la ayuda solo muestra el principal. */
+  aliases?: string[]
+  run: (args: string[], ctx: Ctx) => Promise<void>
 }
 
 const flagValue = (args: string[], flag: string): string | undefined => {
@@ -25,100 +36,118 @@ const flagValue = (args: string[], flag: string): string | undefined => {
 const commands: Record<string, CliCommand> = {
   start: {
     usage: 'ai-office',
-    summary: 'abre la interfaz en el navegador (también `ai-office start`)',
+    summary: (t) => t.help.start,
     options: [
-      ['--no-open', 'solo imprime el enlace, sin abrir el navegador'],
-      ['AI_OFFICE_PORT=7377', 'puerto de la interfaz (en el plugin, la opción «Puerto»)'],
+      ['--no-open', (t) => t.help.noOpen],
+      ['AI_OFFICE_PORT=7377', (t) => t.help.port],
     ],
-    run: (args) => start(resolvePort(), { open: !args.includes('--no-open') }),
+    run: (args, { lang, t }) =>
+      start(resolvePort(process.env, t), { open: !args.includes('--no-open'), lang, t }),
   },
-  censo: {
-    usage: 'ai-office censo',
-    summary: 'diagnóstico de lo que tienes y de lo que usas',
-    options: [['--cartel [ruta.svg]', 'guarda el censo como imagen compartible']],
-    run: async (args) => {
-      // `--cartel` sin ruta guarda en `ai-office-censo.svg`.
-      const i = args.indexOf('--cartel')
-      const next = flagValue(args, '--cartel')
-      await censo(i < 0 ? undefined : next && !next.startsWith('--') ? next : 'ai-office-censo.svg')
+  census: {
+    usage: 'ai-office census',
+    summary: (t) => t.help.census,
+    // `censo` y `--cartel` son los nombres en español de antes: siguen funcionando.
+    aliases: ['censo'],
+    options: [['--poster [file.svg]', (t) => t.help.poster]],
+    run: async (args, ctx) => {
+      // `--poster` sin ruta guarda en `ai-office-census.svg`.
+      const flag = ['--poster', '--cartel'].find((f) => args.includes(f))
+      const next = flag ? flagValue(args, flag) : undefined
+      await census(
+        ctx,
+        flag === undefined
+          ? undefined
+          : next && !next.startsWith('--')
+            ? next
+            : 'ai-office-census.svg',
+      )
     },
   },
   doctor: {
     usage: 'ai-office doctor',
-    summary: 'comprueba la instalación: hooks, plugin, daemon y actividad pendiente',
-    run: () => doctor(resolvePort()),
+    summary: (t) => t.help.doctor,
+    run: (_args, { t }) => doctor(resolvePort(process.env, t), t),
   },
   hooks: {
     usage: 'ai-office hooks install|uninstall',
-    summary: 'instala los hooks de actividad en settings.json (muestra el diff antes) o los retira',
+    summary: (t) => t.help.hooks,
     options: [
-      ['--yes', 'aplica el cambio sin volver a preguntar'],
-      ['--dry-run', 'solo muestra el diff'],
+      ['--yes', (t) => t.help.yes],
+      ['--dry-run', (t) => t.help.dryRun],
     ],
-    run: async (args) => {
+    run: async (args, { t }) => {
       const sub = args[0]
       const yes = args.includes('--yes')
-      if (sub === 'install') await hooksInstall({ yes, dryRun: args.includes('--dry-run') })
-      else if (sub === 'uninstall') await hooksUninstall({ yes })
+      if (sub === 'install') await hooksInstall({ yes, dryRun: args.includes('--dry-run') }, t)
+      else if (sub === 'uninstall') await hooksUninstall({ yes }, t)
       else {
-        console.log('  uso: ai-office hooks install|uninstall [--yes] [--dry-run]')
+        console.log(`  ${t.hooks.usage}`)
         process.exitCode = 1
       }
     },
   },
   demo: {
     usage: 'ai-office demo',
-    summary: 'la interfaz sobre una instalación ficticia: se puede editar todo sin riesgo',
+    summary: (t) => t.help.demo,
     options: [
-      ['--no-open', 'solo imprime el enlace, sin abrir el navegador'],
-      ['--port 7379', 'puerto (por defecto 7379, para convivir con el real)'],
+      ['--no-open', (t) => t.help.noOpen],
+      ['--port 7379', (t) => t.help.demoPort],
     ],
-    run: (args) => {
+    run: (args, { lang, t }) => {
       // Misma validación que el puerto normal: `--port abc` da un mensaje claro, no un NaN.
       const raw = flagValue(args, '--port')
-      const port = raw ? resolvePort({ AI_OFFICE_PORT: raw }) : 7379
-      return demo(port, { open: !args.includes('--no-open') })
+      const port = raw ? resolvePort({ AI_OFFICE_PORT: raw }, t) : 7379
+      return demo(port, { open: !args.includes('--no-open'), lang, t })
     },
   },
 }
 
-const help = (): string => {
+const findCommand = (name: string): CliCommand | undefined =>
+  commands[name] ?? Object.values(commands).find((c) => c.aliases?.includes(name))
+
+const help = (t: Messages): string => {
   const rows = Object.values(commands).flatMap((c) => [
-    `  ${bold(c.usage.padEnd(36))} ${c.summary}`,
-    ...(c.options ?? []).map(([flag, text]) => dim(`      ${flag.padEnd(34)} ${text}`)),
+    `  ${bold(c.usage.padEnd(36))} ${c.summary(t)}`,
+    ...(c.options ?? []).map(([flag, text]) => dim(`      ${flag.padEnd(34)} ${text(t)}`)),
   ])
   return `
-${bold('ai-office')} - visor y editor de tu arquitectura de agentes en Claude Code
+${bold('ai-office')} - ${t.help.tagline}
 
 ${rows.join('\n')}
-  ${bold('ai-office --version'.padEnd(36))} muestra la versión
+  ${bold('ai-office --lang en|es'.padEnd(36))} ${t.help.lang}
+  ${bold('ai-office --version'.padEnd(36))} ${t.help.version}
 
-${dim('Todo se lee de ~/.claude (o de CLAUDE_CONFIG_DIR). Nada sale de esta máquina.')}
+${dim(t.help.footer)}
 `
 }
 
 const main = async (): Promise<void> => {
-  const [cmd, ...rest] = process.argv.slice(2)
+  // El idioma se resuelve primero y la opción `--lang` se retira: los subcomandos no la ven.
+  const { lang, args: argv } = resolveLang(process.argv.slice(2))
+  const t = messagesFor(lang)
+  const ctx: Ctx = { lang, t }
+  const [cmd, ...rest] = argv
   if (cmd === '--version' || cmd === '-v') {
-    console.log(cliVersion())
+    console.log(cliVersion(t))
     return
   }
   if (cmd === '--help' || cmd === '-h' || cmd === 'help') {
-    console.log(help())
+    console.log(help(t))
     return
   }
   // Sin subcomando (o solo con opciones, como `ai-office --no-open`) se arranca la interfaz.
   if (cmd === undefined || cmd.startsWith('-')) {
-    await commands.start?.run(cmd === undefined ? [] : [cmd, ...rest])
+    await commands.start?.run(cmd === undefined ? [] : [cmd, ...rest], ctx)
     return
   }
-  const command = commands[cmd]
+  const command = findCommand(cmd)
   if (!command) {
-    console.log(help())
+    console.log(help(t))
     process.exitCode = 1
     return
   }
-  await command.run(rest)
+  await command.run(rest, ctx)
 }
 
 main().catch((err: unknown) => {

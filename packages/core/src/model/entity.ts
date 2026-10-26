@@ -43,6 +43,16 @@ export type EntityStatus =
   /** El archivo existe pero su frontmatter no valida. */
   | 'invalid'
 
+/**
+ * Un problema de forma detectado al leer un archivo. `message` es el texto en inglés (el
+ * respaldo); `code` + `params` permiten a la interfaz redactarlo en su idioma.
+ */
+export interface EntityProblem {
+  code: string
+  message: string
+  params?: Record<string, string | number>
+}
+
 export interface EntityBase {
   id: EntityId
   kind: EntityKind
@@ -54,8 +64,11 @@ export interface EntityBase {
   source: Source
   status: EntityStatus
   shadowedBy?: EntityId
-  /** Problemas de forma detectados al leer. Nunca impiden mostrar la entidad. */
+  /** Problemas de forma detectados al leer. Nunca impiden mostrar la entidad. Son los `message`
+   * (en inglés) de `problemDetails`, en el mismo orden. */
   problems: string[]
+  /** Los mismos problemas con `code` y parámetros, para traducirlos en la interfaz. */
+  problemDetails?: EntityProblem[]
   /**
    * Línea del archivo en la que empieza el cuerpo. Se suma a las posiciones halladas
    * dentro del cuerpo para que toda evidencia cite una línea real y abrible del archivo.
@@ -76,7 +89,7 @@ export interface Agent extends EntityBase {
   body: string
   bodyTokens: number
   /**
-   * Está en `agents/.archivo/`: Claude Code no lo carga. Se lista para poder restaurarlo, pero no
+   * Está en `agents/.archive/` (o en el antiguo `agents/.archivo/`): Claude Code no lo carga. Se lista para poder restaurarlo, pero no
    * entra en grafos, despachos ni estadísticas.
    */
   archived?: boolean

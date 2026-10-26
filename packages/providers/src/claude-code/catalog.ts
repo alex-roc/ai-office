@@ -10,7 +10,7 @@ import {
   type Source,
 } from '@ai-office/core'
 import { estimateTokens, parseMarkdownDoc } from './frontmatter.ts'
-import { paths } from './paths.ts'
+import { ARCHIVE_DIR, LEGACY_ARCHIVE_DIR, paths } from './paths.ts'
 
 const asStringList = (v: unknown): string[] | null => {
   if (v == null) return null
@@ -63,29 +63,41 @@ const reportError = (errors: string[] | undefined, path: string, err: unknown): 
   errors?.push(`${path}: ${err instanceof Error ? err.message : String(err)}`)
 }
 
-/** Dónde Claude Code ve los agentes retirados por ai-office: reversible, nunca se borra nada. */
-const ARCHIVE_DIRNAME = '.archivo'
-
-const readAgent = async (path: string, file: string, archived: boolean): Promise<Agent> => {
+/** `archiveDir` es la carpeta de retirados de la que viene (`.archive` o la antigua `.archivo`),
+ * o `null` si el agente está activo. */
+const readAgent = async (path: string, file: string, archiveDir: string | null): Promise<Agent> => {
+  const archived = archiveDir !== null
   const text = await readFile(path, 'utf8')
   const doc = parseMarkdownDoc(text)
   const name = str(doc.data.name) ?? basename(file, '.md')
   const description = str(doc.data.description) ?? ''
-  const problems = [...doc.problems]
-  if (!description) problems.push('sin description: el modelo no sabrá cuándo delegarle')
-  if (name !== basename(file, '.md')) problems.push(`name "${name}" no coincide con el archivo`)
+  const problemDetails = [...doc.problems]
+  if (!description) {
+    problemDetails.push({
+      code: 'agent-no-description',
+      message: 'no description: the model will not know when to delegate to it',
+    })
+  }
+  if (name !== basename(file, '.md')) {
+    problemDetails.push({
+      code: 'name-mismatch',
+      message: `name "${name}" does not match the file name`,
+      params: { name },
+    })
+  }
   return {
     // Un archivado puede compartir nombre con uno activo: el id lleva el directorio de retirados
     // para que nunca se confundan.
-    id: makeId('agent', 'claude-code', 'user', archived ? `${ARCHIVE_DIRNAME}/${name}` : name),
+    id: makeId('agent', 'claude-code', 'user', archived ? `${archiveDir}/${name}` : name),
     kind: 'agent',
     name,
     scope: 'user',
     provider: 'claude-code',
     description,
     source: await sourceOf(path),
-    status: problems.some((p) => p.startsWith('YAML')) ? 'invalid' : 'active',
-    problems,
+    status: problemDetails.some((p) => p.code.startsWith('yaml')) ? 'invalid' : 'active',
+    problems: problemDetails.map((p) => p.message),
+    problemDetails,
     bodyStartLine: doc.bodyStartLine,
     tools: asStringList(doc.data.tools),
     model: str(doc.data.model),
@@ -99,15 +111,16 @@ const readAgent = async (path: string, file: string, archived: boolean): Promise
 
 export const scanAgents = async (dir = paths().agents, errors?: string[]): Promise<Agent[]> => {
   const out: Agent[] = []
-  for (const [folder, archived] of [
-    [dir, false],
-    [join(dir, ARCHIVE_DIRNAME), true],
+  for (const [folder, archiveDir] of [
+    [dir, null],
+    [join(dir, ARCHIVE_DIR), ARCHIVE_DIR],
+    [join(dir, LEGACY_ARCHIVE_DIR), LEGACY_ARCHIVE_DIR],
   ] as const) {
     for (const file of await listDir(folder)) {
       if (!file.endsWith('.md')) continue
       const path = join(folder, file)
       try {
-        out.push(await readAgent(path, file, archived))
+        out.push(await readAgent(path, file, archiveDir))
       } catch (err) {
         // Un symlink roto o un .md ilegible no puede tumbar el escaneo entero.
         reportError(errors, path, err)
@@ -161,7 +174,8 @@ export const scanCommands = async (
         description: str(doc.data.description) ?? '',
         source: await sourceOf(path),
         status: 'active',
-        problems: doc.problems,
+        problems: doc.problems.map((p) => p.message),
+        problemDetails: doc.problems,
         bodyStartLine: doc.bodyStartLine,
         argumentHint: str(doc.data['argument-hint']),
         body: doc.body,
@@ -197,7 +211,8 @@ export const scanSkills = async (dir = paths().skills, errors?: string[]): Promi
           description: '',
           source: await sourceOf(skillDir),
           status: 'orphan-link',
-          problems: ['sin SKILL.md legible'],
+          problems: ['no readable SKILL.md'],
+          problemDetails: [{ code: 'no-skill-md', message: 'no readable SKILL.md' }],
           bodyStartLine: 1,
           allowedTools: null,
           disabledForModel: false,
@@ -213,8 +228,13 @@ export const scanSkills = async (dir = paths().skills, errors?: string[]): Promi
       const name = str(doc.data.name) ?? entry
       const description = str(doc.data.description) ?? ''
       const source = await sourceOf(mdPath)
-      const problems = [...doc.problems]
-      if (!description) problems.push('sin description: el modelo nunca la elegirá por su cuenta')
+      const problemDetails = [...doc.problems]
+      if (!description) {
+        problemDetails.push({
+          code: 'skill-no-description',
+          message: 'no description: the model will never pick it on its own',
+        })
+      }
 
       const existing = byRealPath.get(source.realPath)
       if (existing) {
@@ -229,8 +249,9 @@ export const scanSkills = async (dir = paths().skills, errors?: string[]): Promi
         provider: 'claude-code',
         description,
         source,
-        status: problems.some((p) => p.startsWith('YAML')) ? 'invalid' : 'active',
-        problems,
+        status: problemDetails.some((p) => p.code.startsWith('yaml')) ? 'invalid' : 'active',
+        problems: problemDetails.map((p) => p.message),
+        problemDetails,
         bodyStartLine: doc.bodyStartLine,
         allowedTools: asStringList(doc.data['allowed-tools']),
         disabledForModel: doc.data['disable-model-invocation'] === true,
